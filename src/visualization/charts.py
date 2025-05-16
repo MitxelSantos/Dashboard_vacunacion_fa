@@ -126,7 +126,7 @@ def create_pie_chart(data, names, values, title, color_map, height=400, filters=
         fig: Figura de Plotly
     """
     # Ajustar altura para dispositivos móviles
-    if st.session_state.get("_is_small_screen", False):
+    if st.session_state.get('_is_small_screen', False):
         height = max(300, height - 50)
 
     # Añadir información de filtros al título si existe
@@ -159,43 +159,45 @@ def create_pie_chart(data, names, values, title, color_map, height=400, filters=
         "#BF8040",  # Bronce
     ]
 
-    # Mapas de colores por categoría para mantener consistencia
+    # Mapeo de colores por categoría para mantener consistencia
     category_color_maps = {
         # Genero/Sexo
         "masculino": "#7D0F2B",  # Vinotinto para masculino
-        "femenino": "#F2A900",  # Amarillo para femenino
-        "no binario": "#5A4214",  # Marrón para no binario
+        "femenino": "#F2A900",   # Amarillo para femenino
+        "no binario": "#5A4214", # Marrón para no binario
         # Las mismas reglas para mayúsculas
         "MASCULINO": "#7D0F2B",
         "FEMENINO": "#F2A900",
         "NO BINARIO": "#5A4214",
         # Abreviaturas
-        "M": "#7D0F2B",
-        "F": "#F2A900",
-        "NB": "#5A4214",
+        "m": "#7D0F2B",
+        "f": "#F2A900",
+        "nb": "#5A4214",
+        
         # Otros valores comunes
         "si": "#7D0F2B",
         "no": "#F2A900",
         "sí": "#7D0F2B",
-        "Sin especificar": "#A83C50",  # Color coherente para valores no especificados
+        "sin especificar": "#A83C50",  # Color coherente para valores no especificados
+        "Sin especificar": "#A83C50"
     }
-
+    
     # Determinar colores para las categorías presentes
     colors = []
-
+    
     # Primero revisar si es un gráfico de género/sexo
     is_gender_chart = "genero" in title.lower() or "sexo" in title.lower()
-
+    
     for cat in categories:
         cat_str = str(cat).lower()
         assigned_color = None
-
+        
         # Buscar en nuestro mapa de categorías
         for key, color in category_color_maps.items():
             if cat_str == key.lower() or key.lower() in cat_str:
                 assigned_color = color
                 break
-
+                
         # Si no se encontró un color específico
         if assigned_color is None:
             # Usar un color del mapa suministrado (si existe)
@@ -217,7 +219,7 @@ def create_pie_chart(data, names, values, title, color_map, height=400, filters=
                 # Color por índice para categorías no reconocidas
                 idx = len(colors) % len(institutional_colors)
                 assigned_color = institutional_colors[idx]
-
+                
         colors.append(assigned_color)
 
     # Crear el gráfico
@@ -236,22 +238,22 @@ def create_pie_chart(data, names, values, title, color_map, height=400, filters=
         paper_bgcolor="white",
         margin=dict(l=10, r=10, t=40, b=10),
         title={"y": 0.98, "x": 0.5, "xanchor": "center", "yanchor": "top"},
-        title_font=dict(
-            size=16 if not st.session_state.get("_is_small_screen", False) else 14
-        ),
+        title_font=dict(size=16 if not st.session_state.get('_is_small_screen', False) else 14),
         autosize=True,  # Importante para responsividad
     )
 
     # Configuración responsiva para dispositivos móviles
-    if st.session_state.get("_is_small_screen", False):
+    if st.session_state.get('_is_small_screen', False):
         # Etiquetas más simplificadas para pantallas pequeñas
         fig.update_traces(textposition="inside", textinfo="percent")
         # Leyenda más compacta
-        fig.update_layout(
-            legend=dict(
-                font=dict(size=10), yanchor="top", y=0.99, xanchor="left", x=0.01
-            )
-        )
+        fig.update_layout(legend=dict(
+            font=dict(size=10),
+            yanchor="top",
+            y=0.99,
+            xanchor="left",
+            x=0.01
+        ))
     else:
         fig.update_traces(textposition="inside", textinfo="percent+label")
 

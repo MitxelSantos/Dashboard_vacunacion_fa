@@ -30,17 +30,43 @@ import sys
 vista_modules = ["overview", "geographic", "demographic", "insurance", "trends"]
 vistas = {}
 
-# Importar cada vista si existe
-for module_name in vista_modules:
-    module_path = ROOT_DIR / "vistas" / f"{module_name}.py"
-    if module_path.exists():
-        spec = importlib.util.spec_from_file_location(f"vistas.{module_name}", module_path)
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[f"vistas.{module_name}"] = module
-        spec.loader.exec_module(module)
-        vistas[module_name] = module
-    else:
-        print(f"Advertencia: No se encontró el módulo vista/{module_name}.py")
+# Import para vistas con manejo de errores
+vistas_modules = {}
+
+try:
+    from vistas import overview
+
+    vistas_modules["overview"] = overview
+except ImportError:
+    st.error("No se pudo importar el módulo overview")
+
+try:
+    from vistas import geographic
+
+    vistas_modules["geographic"] = geographic
+except ImportError:
+    st.error("No se pudo importar el módulo geographic")
+
+try:
+    from vistas import demographic
+
+    vistas_modules["demographic"] = demographic
+except ImportError:
+    st.error("No se pudo importar el módulo demographic")
+
+try:
+    from vistas import insurance
+
+    vistas_modules["insurance"] = insurance
+except ImportError:
+    st.error("No se pudo importar el módulo insurance")
+
+try:
+    from vistas import trends
+
+    vistas_modules["trends"] = trends
+except ImportError:
+    st.error("No se pudo importar el módulo trends")
 
 
 from src.data.loader import load_datasets
@@ -379,9 +405,15 @@ def main():
 
     # Contenido de cada pestaña
     with tab1:
-        overview.show(
-            data, st.session_state.filters, COLORS, st.session_state.fuente_poblacion
-        )
+        if "overview" in vistas_modules:
+            vistas_modules["overview"].show(
+                data,
+                st.session_state.filters,
+                COLORS,
+                st.session_state.fuente_poblacion,
+            )
+        else:
+            st.warning("El módulo de visión general no está disponible")
 
     with tab2:
         geographic.show(
