@@ -1,3 +1,7 @@
+import streamlit as st  # Añadir esta importación al inicio del archivo
+from pathlib import Path
+import base64  # Para la función get_image_as_base64
+
 def configure_page(page_title, page_icon, layout="wide"):
     """
     Configura el estilo y el tema de la página.
@@ -34,67 +38,69 @@ def configure_page(page_title, page_icon, layout="wide"):
                 --background-color: #F5F5F5;
             }
             
-            /* Estilos para la barra lateral */
-            .sidebar .sidebar-content {
-                background-color: #F8F9FA;
-            }
-            
             /* Estilos para títulos */
             h1, h2, h3 {
                 color: var(--primary-color);
             }
-            
-            /* Botones primarios */
-            .stButton>button {
-                background-color: var(--primary-color);
-                color: white;
-            }
         </style>
         """, unsafe_allow_html=True)
 
-def create_download_links(data, filters, fuente_poblacion):
+def get_image_as_base64(file_path):
     """
-    Crea enlaces para descargar los datos filtrados en diferentes formatos.
+    Convierte una imagen a base64 para incrustarla en HTML.
     
     Args:
-        data (dict): Diccionario con los dataframes
-        filters (dict): Filtros aplicados
-        fuente_poblacion (str): Fuente de datos de población seleccionada
+        file_path (str): Ruta del archivo de imagen
+        
+    Returns:
+        str: Cadena base64 de la imagen
     """
-    from src.data.preprocessor import apply_filters
-    import base64
+    with open(file_path, "rb") as img_file:
+        return base64.b64encode(img_file.read()).decode()
+
+def display_pdf(file_path):
+    """
+    Muestra un PDF en la aplicación.
     
-    # Aplicar filtros
-    filtered_data = apply_filters(data, filters, fuente_poblacion)
+    Args:
+        file_path (str): Ruta del archivo PDF
+    """
+    with open(file_path, "rb") as f:
+        base64_pdf = base64.b64encode(f.read()).decode('utf-8')
+        pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf"></iframe>'
+        st.markdown(pdf_display, unsafe_allow_html=True)
+
+def format_number(number):
+    """
+    Formatea un número para mostrar en la interfaz.
     
-    # Crear enlace para CSV
-    csv = filtered_data["metricas"].to_csv(index=False)
-    b64_csv = base64.b64encode(csv.encode()).decode()
-    href_csv = f'<a href="data:file/csv;base64,{b64_csv}" download="metricas_vacunacion_{fuente_poblacion}.csv">Descargar datos como CSV</a>'
-    
-    # Crear enlace para Excel
-    output = io.BytesIO()
-    writer = pd.ExcelWriter(output, engine='xlsxwriter')
-    filtered_data["metricas"].to_excel(writer, sheet_name=f'Metricas_{fuente_poblacion}', index=False)
-    filtered_data["vacunacion"].to_excel(writer, sheet_name='Vacunacion', index=False)
-    writer.save()
-    excel_data = output.getvalue()
-    b64_excel = base64.b64encode(excel_data).decode()
-    href_excel = f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64_excel}" download="datos_vacunacion_{fuente_poblacion}.xlsx">Descargar datos como Excel</a>'
-    
-    st.markdown("### Descargar datos filtrados")
-    st.markdown(href_csv, unsafe_allow_html=True)
-    st.markdown(href_excel, unsafe_allow_html=True)
-    
-    # Añadir información sobre los filtros aplicados
-    filtros_aplicados = []
-    for key, value in filters.items():
-        if value != "Todos":
-            filtros_aplicados.append(f"{key}: {value}")
-    
-    if filtros_aplicados:
-        st.info(f"Filtros aplicados: {', '.join(filtros_aplicados)}")
+    Args:
+        number (float): Número a formatear
+        
+    Returns:
+        str: Número formateado
+    """
+    if number >= 1_000_000:
+        return f"{number/1_000_000:.2f} M"
+    elif number >= 1_000:
+        return f"{number/1_000:.1f} k"
     else:
-        st.info("No hay filtros aplicados. Se muestran todos los datos.")
+        return f"{number:.0f}"
+
+def create_download_link(df, filename, text):
+    """
+    Crea un enlace para descargar un DataFrame como CSV.
     
-    st.info(f"Fuente de datos de población: {fuente_poblacion}")
+    Args:
+        df (pd.DataFrame): DataFrame a descargar
+        filename (str): Nombre del archivo
+        text (str): Texto del enlace
+        
+    Returns:
+        str: Enlace HTML para descargar
+    """
+    import base64
+    csv = df.to_csv(index=False)
+    b64 = base64.b64encode(csv.encode()).decode()
+    href = f'<a href="data:file/csv;base64,{b64}" download="{filename}">{text}</a>'
+    return href
