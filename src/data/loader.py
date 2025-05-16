@@ -614,18 +614,28 @@ def normalize_dataframe(df):
     for req_col in required_columns:
         if req_col not in df.columns:
             print(f"Creando columna faltante: {req_col}")
+
+            # Asegurarse de que todas las columnas estén como tipo objeto para evitar problemas con categorical
+            for col in df.columns:
+                if pd.api.types.is_categorical_dtype(df[col]):
+                    df[col] = df[col].astype(str)
+
+            # Crear la columna con valor predeterminado
             df[req_col] = "Sin especificar"
 
             # Caso especial para Grupo_Edad si tenemos Edad_Vacunacion
             if req_col == "Grupo_Edad" and "Edad_Vacunacion" in df.columns:
-                # Primero convertir Edad_Vacunacion a numérico, manejando errores
+                # Primero asegurarse de que Edad_Vacunacion no sea categórica
+                if pd.api.types.is_categorical_dtype(df["Edad_Vacunacion"]):
+                    df["Edad_Vacunacion"] = df["Edad_Vacunacion"].astype(str)
+
                 try:
-                    # Crear una copia temporal para conversión
+                    # Convertir a valores numéricos, forzando NaN en caso de error
                     edad_numerica = pd.to_numeric(
                         df["Edad_Vacunacion"], errors="coerce"
                     )
 
-                    # Ahora aplicar la lógica con valores numéricos
+                    # Crear grupos de edad basados en valores numéricos
                     df[req_col] = edad_numerica.apply(
                         lambda x: (
                             "0-4"
@@ -671,8 +681,8 @@ def normalize_dataframe(df):
                         )
                     )
                 except Exception as e:
-                    print(f"Error al convertir Edad_Vacunacion: {e}")
-                    # En caso de error, usar valores predeterminados
+                    print(f"Error al procesar Edad_Vacunacion: {e}")
+                    # En caso de error, mantener el valor predeterminado
                     df[req_col] = "Sin especificar"
 
     return df

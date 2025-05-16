@@ -21,8 +21,17 @@ def normalize_municipality_names(df, column_name):
     # Crear copia para no modificar el original
     df_clean = df.copy()
 
-    # Crear versión normalizada
-    df_clean[f"{column_name}_norm"] = df_clean[column_name].fillna("Sin especificar")
+    # Verificar si la columna original es categórica
+    is_categorical = pd.api.types.is_categorical_dtype(df_clean[column_name])
+
+    if is_categorical:
+        # Convertir a string para evitar problemas con categorías
+        df_clean[column_name] = df_clean[column_name].astype(str)
+
+    # Crear versión normalizada usando astype(str) para garantizar compatibilidad
+    df_clean[f"{column_name}_norm"] = (
+        df_clean[column_name].astype(str).fillna("Sin especificar")
+    )
 
     # Normalizar quitando acentos y convirtiendo a minúsculas
     df_clean[f"{column_name}_norm"] = df_clean[f"{column_name}_norm"].apply(
