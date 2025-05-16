@@ -30,7 +30,7 @@ def apply_filters(data, filters, fuente_poblacion="DANE"):
 
     # Filtrar vacunación
     vacunacion_df = filtered_data["vacunacion"]
-    
+
     # Convertir columnas categóricas a strings para evitar errores
     for col in vacunacion_df.columns:
         if pd.api.types.is_categorical_dtype(vacunacion_df[col]):
@@ -93,11 +93,14 @@ def apply_filters(data, filters, fuente_poblacion="DANE"):
             # Convertir a string si es categórica
             if pd.api.types.is_categorical_dtype(vacunacion_df[column_name]):
                 vacunacion_df[column_name] = vacunacion_df[column_name].astype(str)
-                
+
             # Normalizar los valores para comparación insensible a mayúsculas/minúsculas
             # Usar astype(str) para garantizar que funcione con cualquier tipo de datos
-            vacunacion_df[f"{column_name}_lower"] = (
-                vacunacion_df[column_name].astype(str).fillna("Sin especificar").str.lower()
+            vacunacion_df.loc[:, f"{column_name}_lower"] = (
+                vacunacion_df[column_name]
+                .astype(str)
+                .fillna("Sin especificar")
+                .str.lower()
             )
             filter_value_lower = filters[filter_key].lower()
 

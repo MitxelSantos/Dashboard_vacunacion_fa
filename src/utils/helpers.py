@@ -17,31 +17,46 @@ def configure_page(page_title, page_icon, layout="wide"):
         page_title=page_title,
         page_icon=page_icon,
         layout=layout,
-        initial_sidebar_state="expanded",
     )
 
-    # CSS básico en línea
+    # Cargar CSS personalizado
+    css_main = Path(__file__).parent.parent.parent / "assets" / "styles" / "main.css"
+    css_responsive = (
+        Path(__file__).parent.parent.parent / "assets" / "styles" / "responsive.css"
+    )
+
+    css = ""
+    if css_main.exists():
+        with open(css_main) as f:
+            css += f.read()
+
+    if css_responsive.exists():
+        with open(css_responsive) as f:
+            css += f.read()
+
+    # Aplicar CSS
     st.markdown(
-        """
+        f"""
     <style>
+        {css}
         /* Colores institucionales */
-        :root {
+        :root {{
             --primary-color: #7D0F2B;
             --secondary-color: #CFB53B;
             --accent-color: #215E8F;
             --background-color: #F5F5F5;
-        }
+        }}
         
         /* Estilos para títulos */
-        h1, h2, h3 {
+        h1, h2, h3 {{
             color: var(--primary-color);
-        }
+        }}
         
         /* Botones primarios */
-        .stButton>button {
+        .stButton>button {{
             background-color: var(--primary-color);
             color: white;
-        }
+        }}
     </style>
     """,
         unsafe_allow_html=True,
@@ -78,17 +93,17 @@ def display_pdf(file_path):
 def format_number(number, responsive=False):
     """
     Formatea un número para mostrar en la interfaz.
-    
+
     Args:
         number (float): Número a formatear
         responsive (bool): Si debe usar formato responsivo para pantallas pequeñas
-        
+
     Returns:
         str: Número formateado
     """
     # Detectar tamaño de pantalla (aproximado)
-    is_small_screen = responsive and st.session_state.get('_is_small_screen', False)
-    
+    is_small_screen = responsive and st.session_state.get("_is_small_screen", False)
+
     if is_small_screen:
         # Formato más compacto para pantallas pequeñas
         if number >= 1_000_000:
@@ -126,56 +141,59 @@ def create_download_link(df, filename, text):
     href = f'<a href="data:file/csv;base64,{b64}" download="{filename}">{text}</a>'
     return href
 
+
 def format_dataframe_for_display(df, responsive=True):
     """
     Formatea un DataFrame para mostrar en pantallas de diferentes tamaños.
-    
+
     Args:
         df (pd.DataFrame): DataFrame a formatear
         responsive (bool): Si debe adaptar el formato a pantallas pequeñas
-        
+
     Returns:
         pd.DataFrame: DataFrame con formato mejorado
     """
     # Detectar si estamos en pantalla pequeña
-    is_small = st.session_state.get('_is_small_screen', False) and responsive
-    
+    is_small = st.session_state.get("_is_small_screen", False) and responsive
+
     # Crear copia para no modificar el original
     formatted_df = df.copy()
-    
+
     # Aplicar formato a columnas numéricas
     for col in df.columns:
         if pd.api.types.is_numeric_dtype(df[col]):
-            if 'Cobertura' in col:
+            if "Cobertura" in col:
                 # Para coberturas (porcentajes)
                 formato = "{:.1f}%" if is_small else "{:.2f}%"
                 formatted_df[col] = df[col].apply(lambda x: formato.format(x))
             elif df[col].max() > 1000:
                 # Para números grandes
                 formatted_df[col] = df[col].apply(
-                    lambda x: f"{x/1000:.0f}k" if is_small else f"{x:,.0f}".replace(",", ".")
+                    lambda x: (
+                        f"{x/1000:.0f}k" if is_small else f"{x:,.0f}".replace(",", ".")
+                    )
                 )
             else:
                 # Para números pequeños
                 formatted_df[col] = df[col].apply(
                     lambda x: f"{x:.0f}" if is_small else f"{x:,.1f}".replace(",", ".")
                 )
-    
+
     # Si es pantalla muy pequeña y hay muchas columnas, seleccionar solo las principales
     if is_small and len(formatted_df.columns) > 4:
         # Identificar columnas importantes (mantener siempre la primera)
         main_cols = [formatted_df.columns[0]]
-        
+
         # Añadir columnas con "Cobertura" si existen
-        cob_cols = [col for col in formatted_df.columns if 'Cobertura' in col]
+        cob_cols = [col for col in formatted_df.columns if "Cobertura" in col]
         if cob_cols:
             main_cols.extend(cob_cols[:1])  # Solo la primera columna de cobertura
-            
+
         # Añadir "Vacunados" si existe
-        if 'Vacunados' in formatted_df.columns:
-            main_cols.append('Vacunados')
-            
+        if "Vacunados" in formatted_df.columns:
+            main_cols.append("Vacunados")
+
         # Limitar a máximo 4 columnas
         return formatted_df[main_cols[:4]]
-    
+
     return formatted_df
