@@ -53,6 +53,29 @@ def clean_list(lista):
 
 def main():
     """Aplicación principal del dashboard."""
+    
+    # Detectar tamaño de pantalla con JavaScript
+    st.markdown("""
+    <script>
+        // Detectar tamaño de pantalla
+        var updateScreenSize = function() {
+            var width = window.innerWidth;
+            var isSmall = width < 1200;
+            
+            // Almacenar en sessionStorage para que Streamlit pueda acceder
+            sessionStorage.setItem('_screen_width', width);
+            sessionStorage.setItem('_is_small_screen', isSmall);
+        };
+        
+        // Actualizar inmediatamente y al cambiar tamaño
+        updateScreenSize();
+        window.addEventListener('resize', updateScreenSize);
+    </script>
+    """, unsafe_allow_html=True)
+    
+    # Intentar recuperar el tamaño de pantalla
+    screen_width = st.session_state.get('_screen_width', 1200)
+    st.session_state['_is_small_screen'] = screen_width < 1200
 
     # Cargar datos
     try:

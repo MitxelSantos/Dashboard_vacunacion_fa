@@ -1,0 +1,81 @@
+/* Estilos responsivos para el Dashboard de Vacunación */
+
+/* Base - aplicado a todos los tamaños */
+.stApp {
+    max-width: 100%;
+    overflow-x: hidden;
+}
+
+/* Ajustes para textos numéricos */
+.metric-value,
+.st-emotion-cache-10trblm {
+    word-break: normal;
+    font-size: clamp(0.8rem, 1.5vw, 1.2rem);
+    white-space: normal !important;
+}
+
+/* Tarjetas de métricas responsivas */
+.metric-card {
+    min-width: 100px;
+    min-height: 80px;
+    padding: clamp(0.5rem, 1vw, 1.5rem);
+}
+
+/* Ajustes para pantallas medianas (portátiles) */
+@media (max-width: 1200px) {
+    .st-emotion-cache-1r6slb0 {
+        /* Selector para contenedores de Streamlit */
+        padding-left: 1rem !important;
+        padding-right: 1rem !important;
+    }
+
+    /* Hacer los gráficos más pequeños en altura */
+    .plot-container {
+        height: auto !important;
+        max-height: 400px;
+    }
+
+    /* Reducir padding en elementos */
+    .st-emotion-cache-1wmy9hl {
+        padding: 0.5rem !important;
+    }
+
+    /* Ajustes para la barra lateral */
+    .st-emotion-cache-16txtl3 {
+        padding: 1rem !important;
+    }
+
+    /* Reducir espacio entre elementos */
+    .st-emotion-cache-16idsys p {
+        margin-bottom: 0.5rem;
+    }
+}
+
+/* Ajustes para pantallas pequeñas (dispositivos móviles) */
+@media (max-width: 768px) {
+
+    /* Reducir aún más los espacios */
+    .st-emotion-cache-1wmy9hl {
+        padding: 0.25rem !important;
+    }
+
+    /* Ajustes para gráficos en móviles */
+    .plot-container {
+        max-height: 300px;
+    }
+
+    /* Hacer que las columnas se apilen */
+    .st-emotion-cache-ocqkz7 {
+        flex-direction: column;
+    }
+
+    /* Ajustar tamaño de texto */
+    h1 {
+        font-size: 1.5rem !important;
+    }
+
+    h2,
+    h3 {
+        font-size: 1.2rem !important;
+    }
+}

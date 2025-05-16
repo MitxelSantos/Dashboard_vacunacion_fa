@@ -9,11 +9,15 @@ from scipy import stats
 
 
 def create_bar_chart(
-    data, x, y, title, color, height=400, horizontal=False, formatter=None, filters=None
+    data, x, y, title, color, height=None, horizontal=False, formatter=None, filters=None
 ):
     """
     Crea un gráfico de barras estándar usando Plotly.
     """
+    # Determinar altura adaptativa basada en la pantalla
+    if height is None:
+        height = 350 if st.session_state.get('_is_small_screen', False) else 400
+    
     # Usar solo el título original sin añadir los filtros
     full_title = title
     
@@ -38,7 +42,11 @@ def create_bar_chart(
         )
         # Mejorar la rotación de etiquetas para barras verticales
         fig.update_layout(
-            xaxis=dict(tickangle=-45)  # Rotar etiquetas para mejor lectura
+            xaxis=dict(
+                tickangle=-45,
+                automargin=True,  # Importante para adaptabilidad
+                title=None if st.session_state.get('_is_small_screen', False) else x
+            )
         )
 
     # Forzar colores en cada barra individualmente
@@ -48,17 +56,37 @@ def create_bar_chart(
     fig.update_layout(
         plot_bgcolor="white",
         paper_bgcolor="white",
-        margin=dict(l=10, r=10, t=40, b=10),
+        margin=dict(
+            l=10, 
+            r=10, 
+            t=40, 
+            b=10 if st.session_state.get('_is_small_screen', False) else 20
+        ),
         title={"y": 0.98, "x": 0.5, "xanchor": "center", "yanchor": "top"},
-        title_font=dict(size=16),
+        title_font=dict(size=14 if st.session_state.get('_is_small_screen', False) else 16),
+        autosize=True,  # Importante para responsividad
     )
 
     # Aplicar formateador si se proporciona
     if formatter:
+        position = "inside" if st.session_state.get('_is_small_screen', False) else "outside"
         if horizontal:
-            fig.update_traces(texttemplate=formatter, textposition="inside")
+            fig.update_traces(texttemplate=formatter, textposition=position)
         else:
-            fig.update_traces(texttemplate=formatter, textposition="outside")
+            fig.update_traces(texttemplate=formatter, textposition=position)
+            
+    # Para pantallas pequeñas, simplificar etiquetas
+    if st.session_state.get('_is_small_screen', False):
+        # Simplificar etiquetas en eje X
+        if not horizontal and len(data) > 5:
+            # Si hay muchas categorías, reducir etiquetas
+            fig.update_layout(xaxis=dict(showticklabels=False))
+            
+        # Simplificar etiquetas en eje Y
+        fig.update_layout(yaxis=dict(
+            tickformat=".1s",  # Formato científico simplificado
+            automargin=True
+        ))
 
     return fig
 
