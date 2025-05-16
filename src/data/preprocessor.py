@@ -81,7 +81,7 @@ def apply_filters(data, filters, fuente_poblacion="DANE"):
     # Normalizar columnas para filtros
     column_mapping = {
         "grupo_edad": "Grupo_Edad",
-        "sexo": "Sexo",
+        "sexo": "Genero" if "Genero" in vacunacion_df.columns else "Sexo",
         "grupo_etnico": "GrupoEtnico",
         "regimen": "RegimenAfiliacion",
         "aseguradora": "NombreAseguradora",

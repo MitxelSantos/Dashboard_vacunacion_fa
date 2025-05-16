@@ -296,11 +296,16 @@ def main():
         )
 
         # Obtener valores únicos para el resto de filtros y limpiarlos
-        sexos = clean_list(data["vacunacion"]["Sexo"].unique().tolist())
-        sexo = st.selectbox(
-            "Sexo",
-            options=["Todos"] + sorted(sexos),
-            key="sexo_filter",
+        # Preferir la columna Genero si existe
+        if "Genero" in data["vacunacion"].columns:
+            generos = clean_list(data["vacunacion"]["Genero"].unique().tolist())
+        else:
+            generos = clean_list(data["vacunacion"]["Sexo"].unique().tolist())
+
+        genero = st.selectbox(
+            "Género",
+            options=["Todos"] + sorted(generos),
+            key="sexo_filter",  # Mantener misma key para compatibilidad
             on_change=on_filter_change,
         )
 
