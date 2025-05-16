@@ -459,21 +459,27 @@ def normalize_dataframe(df):
         # Crear columna Genero basada en Sexo
         df["Genero"] = df["Sexo"].copy()
 
-        # Normalizar categorías de género/sexo
-        df["Genero"] = df["Genero"].astype(str).str.strip()
+        # Normalizar categorías a MASCULINO, FEMENINO, NO BINARIO
+        # Primero asegurarse de que no es una columna categórica
+        if pd.api.types.is_categorical_dtype(df["Genero"]):
+            df["Genero"] = df["Genero"].astype(str)
+
+        # Luego aplicar la normalización
+        df["Genero"] = df["Genero"].str.strip()
         df["Genero"] = df["Genero"].apply(
             lambda x: (
                 "MASCULINO"
-                if str(x).lower() in ["masculino", "m", "masc"]
+                if str(x).lower() in ["masculino", "m", "masc", "hombre", "h", "male"]
                 else (
                     "FEMENINO"
-                    if str(x).lower() in ["femenino", "f", "fem"]
+                    if str(x).lower() in ["femenino", "f", "fem", "mujer", "female"]
                     else (
                         "NO BINARIO"
-                        if str(x).lower() in ["no binario", "nb"]
+                        if str(x).lower()
+                        in ["no binario", "nb", "otro", "other", "non-binary"]
                         else (
                             "Sin especificar"
-                            if pd.isna(x) or x.lower() in ["nan", "", "none"]
+                            if pd.isna(x) or str(x).lower() in ["nan", "", "none"]
                             else x
                         )
                     )
@@ -481,12 +487,14 @@ def normalize_dataframe(df):
             )
         )
 
+    # El resto del código original de la función...
+
     # Buscar columnas similares a las que necesitamos
     column_map = {}
     required_columns = [
         "Grupo_Edad",
         "Sexo",
-        "Genero",  # Agregamos Genero a columnas requeridas
+        "Genero",  # Añadir Genero como columna requerida
         "GrupoEtnico",
         "RegimenAfiliacion",
         "NombreAseguradora",

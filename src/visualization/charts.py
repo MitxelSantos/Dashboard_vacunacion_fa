@@ -126,7 +126,7 @@ def create_pie_chart(data, names, values, title, color_map, height=400, filters=
         fig: Figura de Plotly
     """
     # Ajustar altura para dispositivos móviles
-    if st.session_state.get('_is_small_screen', False):
+    if st.session_state.get("_is_small_screen", False):
         height = max(300, height - 50)
 
     # Añadir información de filtros al título si existe
@@ -159,68 +159,54 @@ def create_pie_chart(data, names, values, title, color_map, height=400, filters=
         "#BF8040",  # Bronce
     ]
 
-    # Mapeo de colores por categoría para mantener consistencia
-    category_color_maps = {
-        # Genero/Sexo
-        "masculino": "#7D0F2B",  # Vinotinto para masculino
-        "femenino": "#F2A900",   # Amarillo para femenino
-        "no binario": "#5A4214", # Marrón para no binario
-        # Las mismas reglas para mayúsculas
-        "MASCULINO": "#7D0F2B",
-        "FEMENINO": "#F2A900",
-        "NO BINARIO": "#5A4214",
-        # Abreviaturas
-        "m": "#7D0F2B",
-        "f": "#F2A900",
-        "nb": "#5A4214",
-        
-        # Otros valores comunes
-        "si": "#7D0F2B",
-        "no": "#F2A900",
-        "sí": "#7D0F2B",
-        "sin especificar": "#A83C50",  # Color coherente para valores no especificados
-        "Sin especificar": "#A83C50"
-    }
-    
-    # Determinar colores para las categorías presentes
-    colors = []
-    
-    # Primero revisar si es un gráfico de género/sexo
-    is_gender_chart = "genero" in title.lower() or "sexo" in title.lower()
-    
-    for cat in categories:
-        cat_str = str(cat).lower()
-        assigned_color = None
-        
-        # Buscar en nuestro mapa de categorías
-        for key, color in category_color_maps.items():
-            if cat_str == key.lower() or key.lower() in cat_str:
-                assigned_color = color
-                break
-                
-        # Si no se encontró un color específico
-        if assigned_color is None:
-            # Usar un color del mapa suministrado (si existe)
-            if color_map and cat in color_map:
-                assigned_color = color_map[cat]
-            # Si es un gráfico de género, usar colores por defecto bien definidos
-            elif is_gender_chart:
-                if "masc" in cat_str or cat_str == "m":
-                    assigned_color = "#7D0F2B"  # Vinotinto
-                elif "fem" in cat_str or cat_str == "f":
-                    assigned_color = "#F2A900"  # Amarillo
-                elif "bin" in cat_str or "nb" in cat_str:
-                    assigned_color = "#5A4214"  # Marrón
-                else:
-                    # Color por índice para otros casos
-                    idx = len(colors) % len(institutional_colors)
-                    assigned_color = institutional_colors[idx]
+    # Importante: verificar si es un gráfico de género
+    is_gender_chart = (
+        "genero" in title.lower()
+        or "sexo" in title.lower()
+        or names.lower() == "genero"
+        or "genero" in names.lower()
+    )
+
+    # Si es un gráfico de género, forzar colores específicos
+    if is_gender_chart:
+        # Inicializar el mapa de colores
+        gender_colors = {}
+
+        # Asignar colores específicos para cada categoría de género
+        for cat in categories:
+            cat_str = str(cat).lower()
+            if (
+                "masc" in cat_str
+                or cat_str == "m"
+                or cat_str == "masculino"
+                or cat_str == "hombre"
+            ):
+                gender_colors[cat] = "#7D0F2B"  # Vinotinto para masculino
+            elif (
+                "fem" in cat_str
+                or cat_str == "f"
+                or cat_str == "femenino"
+                or cat_str == "mujer"
+            ):
+                gender_colors[cat] = "#F2A900"  # Amarillo para femenino
+            elif "bin" in cat_str or cat_str == "nb" or "no binario" in cat_str:
+                gender_colors[cat] = "#5A4214"  # Marrón para no binario
             else:
-                # Color por índice para categorías no reconocidas
-                idx = len(colors) % len(institutional_colors)
-                assigned_color = institutional_colors[idx]
-                
-        colors.append(assigned_color)
+                gender_colors[cat] = "#A83C50"  # Vinotinto claro para otros
+
+        # Crear una lista de colores en el mismo orden que las categorías
+        colors = [gender_colors[cat] for cat in categories]
+    else:
+        # Para otros gráficos, usar el enfoque original
+        # Caso especial para gráficos con solo dos categorías
+        if len(categories) == 2:
+            # Siempre usar vinotinto y amarillo para las dos primeras categorías
+            colors = ["#7D0F2B", "#F2A900"]
+        else:
+            # Para más de dos categorías, usar la paleta completa
+            colors = []
+            for i, cat in enumerate(categories):
+                colors.append(institutional_colors[i % len(institutional_colors)])
 
     # Crear el gráfico
     fig = px.pie(
@@ -238,22 +224,22 @@ def create_pie_chart(data, names, values, title, color_map, height=400, filters=
         paper_bgcolor="white",
         margin=dict(l=10, r=10, t=40, b=10),
         title={"y": 0.98, "x": 0.5, "xanchor": "center", "yanchor": "top"},
-        title_font=dict(size=16 if not st.session_state.get('_is_small_screen', False) else 14),
+        title_font=dict(
+            size=16 if not st.session_state.get("_is_small_screen", False) else 14
+        ),
         autosize=True,  # Importante para responsividad
     )
 
     # Configuración responsiva para dispositivos móviles
-    if st.session_state.get('_is_small_screen', False):
+    if st.session_state.get("_is_small_screen", False):
         # Etiquetas más simplificadas para pantallas pequeñas
         fig.update_traces(textposition="inside", textinfo="percent")
         # Leyenda más compacta
-        fig.update_layout(legend=dict(
-            font=dict(size=10),
-            yanchor="top",
-            y=0.99,
-            xanchor="left",
-            x=0.01
-        ))
+        fig.update_layout(
+            legend=dict(
+                font=dict(size=10), yanchor="top", y=0.99, xanchor="left", x=0.01
+            )
+        )
     else:
         fig.update_traces(textposition="inside", textinfo="percent+label")
 

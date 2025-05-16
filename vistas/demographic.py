@@ -117,43 +117,41 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
             genero_col = "Genero"
         elif "Sexo" in filtered_data["vacunacion"].columns:
             genero_col = "Sexo"
-            # Informar que estamos usando Sexo como Genero
-            st.info("Usando la columna 'Sexo' para mostrar información de género.")
+            # Normalizar los valores de sexo a las categorías de género
+            filtered_data["vacunacion"]["Genero_Normalizado"] = filtered_data[
+                "vacunacion"
+            ][genero_col].apply(
+                lambda x: (
+                    "MASCULINO"
+                    if str(x).lower()
+                    in ["masculino", "m", "masc", "hombre", "h", "male"]
+                    else (
+                        "FEMENINO"
+                        if str(x).lower() in ["femenino", "f", "fem", "mujer", "female"]
+                        else (
+                            "NO BINARIO"
+                            if str(x).lower()
+                            in ["no binario", "nb", "otro", "other", "non-binary"]
+                            else "Sin especificar"
+                        )
+                    )
+                )
+            )
+            genero_col = "Genero_Normalizado"
         else:
             st.error("No se encontró columna de Género o Sexo en los datos.")
             genero_col = None
 
         if genero_col:
             try:
-                # Normalizar los valores de Género
+                # Asegurarse de que no hay valores nulos
                 filtered_data["vacunacion"][genero_col] = filtered_data["vacunacion"][
                     genero_col
                 ].fillna("Sin especificar")
 
-                # Normalizar categorías a MASCULINO, FEMENINO, NO BINARIO
-                filtered_data["vacunacion"]["Genero_Normalizado"] = filtered_data[
-                    "vacunacion"
-                ][genero_col].apply(
-                    lambda x: (
-                        "MASCULINO"
-                        if str(x).lower() in ["masculino", "m", "masc"]
-                        else (
-                            "FEMENINO"
-                            if str(x).lower() in ["femenino", "f", "fem"]
-                            else (
-                                "NO BINARIO"
-                                if str(x).lower() in ["no binario", "nb"]
-                                else "Sin especificar"
-                            )
-                        )
-                    )
-                )
-
-                # Agrupar por género normalizado
+                # Agrupar por género
                 genero_counts = (
-                    filtered_data["vacunacion"]["Genero_Normalizado"]
-                    .value_counts()
-                    .reset_index()
+                    filtered_data["vacunacion"][genero_col].value_counts().reset_index()
                 )
                 genero_counts.columns = ["Genero", "Vacunados"]
 
@@ -296,26 +294,33 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
     # Tabla de datos demográficos
     st.subheader("Datos demográficos detallados")
 
-    # Verificar que Grupo_Edad y Sexo existan
-    if (
-        "Grupo_Edad" in filtered_data["vacunacion"].columns
-        and "Sexo" in filtered_data["vacunacion"].columns
-    ):
-        # Agrupar por grupo de edad y sexo
-        if st.checkbox("Mostrar tabla cruzada por grupo de edad y sexo"):
+    # Verificar que exista la columna de grupo de edad
+    if "Grupo_Edad" in filtered_data["vacunacion"].columns:
+        # Verificar si existe Genero o usar Sexo como fallback
+        if "Genero" in filtered_data["vacunacion"].columns:
+            demo_genero_col = "Genero"
+        elif "Sexo" in filtered_data["vacunacion"].columns:
+            demo_genero_col = "Sexo"
+        else:
+            demo_genero_col = None
+
+        # Agrupar por grupo de edad y género/sexo
+        if demo_genero_col and st.checkbox(
+            "Mostrar tabla cruzada por grupo de edad y género"
+        ):
             try:
                 # Normalizar los valores
                 filtered_data["vacunacion"]["Grupo_Edad"] = filtered_data["vacunacion"][
                     "Grupo_Edad"
                 ].fillna("Sin especificar")
-                filtered_data["vacunacion"]["Sexo"] = filtered_data["vacunacion"][
-                    "Sexo"
-                ].fillna("Sin especificar")
+                filtered_data["vacunacion"][demo_genero_col] = filtered_data[
+                    "vacunacion"
+                ][demo_genero_col].fillna("Sin especificar")
 
                 # Crear tabla cruzada
                 tabla_cruzada = pd.crosstab(
                     filtered_data["vacunacion"]["Grupo_Edad"],
-                    filtered_data["vacunacion"]["Sexo"],
+                    filtered_data["vacunacion"][demo_genero_col],
                     margins=True,
                     margins_name="Total",
                 )
@@ -342,7 +347,4 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
             except Exception as e:
                 st.error(f"Error al crear tabla cruzada: {str(e)}")
     else:
-        if "Grupo_Edad" not in filtered_data["vacunacion"].columns:
-            st.error("Columna 'Grupo_Edad' no encontrada en los datos.")
-        if "Sexo" not in filtered_data["vacunacion"].columns:
-            st.error("Columna 'Sexo' no encontrada en los datos.")
+        st.error("Columna 'Grupo_Edad' no encontrada en los datos.")

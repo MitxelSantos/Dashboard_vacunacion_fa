@@ -336,48 +336,48 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
     st.subheader("Distribución demográfica de vacunados")
     col1, col2, col3 = st.columns(3)
 
-    # Gráfico de distribución por género
+    # Gráfico de distribución por género (antes sexo)
     with col1:
         # Verificar si existe Genero o usar Sexo como fallback
         if "Genero" in filtered_data["vacunacion"].columns:
             genero_col = "Genero"
         elif "Sexo" in filtered_data["vacunacion"].columns:
             genero_col = "Sexo"
+            # Normalizar los valores de sexo a las categorías de género
+            filtered_data["vacunacion"]["Genero_Normalizado"] = filtered_data[
+                "vacunacion"
+            ][genero_col].apply(
+                lambda x: (
+                    "MASCULINO"
+                    if str(x).lower()
+                    in ["masculino", "m", "masc", "hombre", "h", "male"]
+                    else (
+                        "FEMENINO"
+                        if str(x).lower() in ["femenino", "f", "fem", "mujer", "female"]
+                        else (
+                            "NO BINARIO"
+                            if str(x).lower()
+                            in ["no binario", "nb", "otro", "other", "non-binary"]
+                            else "Sin especificar"
+                        )
+                    )
+                )
+            )
+            genero_col = "Genero_Normalizado"
         else:
             st.error("No se encontró columna de Género o Sexo en los datos.")
             genero_col = None
 
         if genero_col:
             try:
-                # Normalizar los valores de Género
+                # Asegurarse de que no hay valores nulos
                 filtered_data["vacunacion"][genero_col] = filtered_data["vacunacion"][
                     genero_col
                 ].fillna("Sin especificar")
 
-                # Normalizar categorías a MASCULINO, FEMENINO, NO BINARIO
-                filtered_data["vacunacion"]["Genero_Normalizado"] = filtered_data[
-                    "vacunacion"
-                ][genero_col].apply(
-                    lambda x: (
-                        "MASCULINO"
-                        if str(x).lower() in ["masculino", "m", "masc"]
-                        else (
-                            "FEMENINO"
-                            if str(x).lower() in ["femenino", "f", "fem"]
-                            else (
-                                "NO BINARIO"
-                                if str(x).lower() in ["no binario", "nb"]
-                                else "Sin especificar"
-                            )
-                        )
-                    )
-                )
-
-                # Agrupar por género normalizado
+                # Agrupar por género
                 genero_counts = (
-                    filtered_data["vacunacion"]["Genero_Normalizado"]
-                    .value_counts()
-                    .reset_index()
+                    filtered_data["vacunacion"][genero_col].value_counts().reset_index()
                 )
                 genero_counts.columns = ["Genero", "Vacunados"]
 
