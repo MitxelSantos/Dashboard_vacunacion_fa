@@ -34,6 +34,52 @@ configure_page(
     layout="wide",
 )
 
+# Panel de diagnóstico visible
+st.sidebar.markdown("## Diagnóstico")
+show_debug = st.sidebar.checkbox("Mostrar diagnóstico", value=True)
+
+if show_debug:
+    debug_container = st.expander("Información de diagnóstico", expanded=True)
+    with debug_container:
+        st.write("### Verificación de directorios")
+        st.write(f"Directorio raíz: {ROOT_DIR} (Existe: {ROOT_DIR.exists()})")
+        st.write(f"Directorio de datos: {DATA_DIR} (Existe: {DATA_DIR.exists()})")
+        st.write(f"Directorio de assets: {ASSETS_DIR} (Existe: {ASSETS_DIR.exists()})")
+        st.write(
+            f"Directorio de imágenes: {IMAGES_DIR} (Existe: {IMAGES_DIR.exists()})"
+        )
+
+        st.write("### Secretos configurados")
+        if "google_drive" in st.secrets:
+            st.write("✅ Configuración de Google Drive encontrada")
+            st.json(st.secrets["google_drive"])
+        else:
+            st.error("❌ Configuración de Google Drive NO encontrada")
+
+        if "gcp_service_account" in st.secrets:
+            st.write("✅ Cuenta de servicio GCP encontrada")
+            # Mostrar parte de la info sin exponer datos sensibles
+            safe_info = {
+                "type": st.secrets["gcp_service_account"].get("type"),
+                "project_id": st.secrets["gcp_service_account"].get("project_id"),
+                "client_email": st.secrets["gcp_service_account"].get("client_email"),
+            }
+            st.json(safe_info)
+        else:
+            st.error("❌ Cuenta de servicio GCP NO encontrada")
+
+        # Información sobre archivos de datos
+        st.write("### Archivos en el directorio de datos")
+        if DATA_DIR.exists():
+            files = list(DATA_DIR.glob("*"))
+            if files:
+                for file in files:
+                    st.write(f"- {file.name} ({file.stat().st_size} bytes)")
+            else:
+                st.warning("⚠️ No hay archivos en el directorio de datos")
+        else:
+            st.error("❌ El directorio de datos no existe")
+
 # Colores institucionales según la Secretaría de Salud del Tolima
 COLORS = {
     "primary": "#7D0F2B",  # Vinotinto
