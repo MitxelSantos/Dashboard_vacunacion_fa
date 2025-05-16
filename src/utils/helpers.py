@@ -1,6 +1,6 @@
-import streamlit as st  # Añadir esta importación al inicio del archivo
+import streamlit as st
 from pathlib import Path
-import base64  # Para la función get_image_as_base64
+import base64
 
 def configure_page(page_title, page_icon, layout="wide"):
     """
@@ -19,31 +19,29 @@ def configure_page(page_title, page_icon, layout="wide"):
         initial_sidebar_state="expanded"
     )
     
-    # Cargar CSS personalizado
-    css_path = Path(__file__).parent.parent.parent / "assets" / "styles" / "main.css"
-    
-    if css_path.exists():
-        with open(css_path, "r", encoding="utf-8") as f:
-            css = f.read()
-        st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
-    else:
-        # CSS básico en línea si no se encuentra el archivo
-        st.markdown("""
-        <style>
-            /* Colores institucionales */
-            :root {
-                --primary-color: #7D0F2B;
-                --secondary-color: #CFB53B;
-                --accent-color: #215E8F;
-                --background-color: #F5F5F5;
-            }
-            
-            /* Estilos para títulos */
-            h1, h2, h3 {
-                color: var(--primary-color);
-            }
-        </style>
-        """, unsafe_allow_html=True)
+    # CSS básico en línea
+    st.markdown("""
+    <style>
+        /* Colores institucionales */
+        :root {
+            --primary-color: #7D0F2B;
+            --secondary-color: #CFB53B;
+            --accent-color: #215E8F;
+            --background-color: #F5F5F5;
+        }
+        
+        /* Estilos para títulos */
+        h1, h2, h3 {
+            color: var(--primary-color);
+        }
+        
+        /* Botones primarios */
+        .stButton>button {
+            background-color: var(--primary-color);
+            color: white;
+        }
+    </style>
+    """, unsafe_allow_html=True)
 
 def get_image_as_base64(file_path):
     """
@@ -99,7 +97,7 @@ def create_download_link(df, filename, text):
     Returns:
         str: Enlace HTML para descargar
     """
-    import base64
+    import pandas as pd
     csv = df.to_csv(index=False)
     b64 = base64.b64encode(csv.encode()).decode()
     href = f'<a href="data:file/csv;base64,{b64}" download="{filename}">{text}</a>'

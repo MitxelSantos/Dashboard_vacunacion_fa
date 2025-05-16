@@ -8,8 +8,7 @@ from .helpers import (
     get_image_as_base64, 
     display_pdf, 
     format_number, 
-    create_download_link, 
-    create_download_links
+    create_download_link
 )
 
 __all__ = [
@@ -17,6 +16,5 @@ __all__ = [
     'get_image_as_base64', 
     'display_pdf', 
     'format_number', 
-    'create_download_link',
-    'create_download_links'
+    'create_download_link'
 ]
