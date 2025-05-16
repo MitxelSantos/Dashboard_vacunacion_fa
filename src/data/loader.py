@@ -310,7 +310,7 @@ def load_datasets():
             ]
 
             # Primero leer solo las columnas necesarias y usar dtype optimization
-            st.write("🔄 Leyendo CSV grande con optimizaciones...")
+            # Elimino mensaje de diagnóstico: st.write("🔄 Leyendo CSV grande con optimizaciones...")
 
             # Determinar qué columnas existen en el archivo
             # Leer solo unas pocas líneas para ver la estructura
@@ -345,13 +345,12 @@ def load_datasets():
                 on_bad_lines="skip",  # Ignorar líneas problemáticas
             )
 
-            st.success(f"✅ CSV cargado exitosamente: {len(vacunacion_df)} registros")
+            # Elimino mensaje de diagnóstico: st.success(f"✅ CSV cargado exitosamente: {len(vacunacion_df)} registros")
 
         except UnicodeDecodeError:
             # Intentar con otras codificaciones
             for encoding in ["latin-1", "cp1252", "iso-8859-1"]:
                 try:
-                    st.write(f"Intentando con codificación {encoding}...")
                     vacunacion_df = pd.read_csv(
                         vacunacion_file, low_memory=False, encoding=encoding
                     )
