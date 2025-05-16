@@ -9,18 +9,26 @@ from scipy import stats
 
 
 def create_bar_chart(
-    data, x, y, title, color, height=None, horizontal=False, formatter=None, filters=None
+    data,
+    x,
+    y,
+    title,
+    color,
+    height=None,
+    horizontal=False,
+    formatter=None,
+    filters=None,
 ):
     """
     Crea un gráfico de barras estándar usando Plotly.
     """
     # Determinar altura adaptativa basada en la pantalla
     if height is None:
-        height = 350 if st.session_state.get('_is_small_screen', False) else 400
-    
+        height = 300 if st.session_state.get("_is_small_screen", False) else 400
+
     # Usar solo el título original sin añadir los filtros
     full_title = title
-    
+
     if horizontal:
         fig = px.bar(
             data,
@@ -45,48 +53,58 @@ def create_bar_chart(
             xaxis=dict(
                 tickangle=-45,
                 automargin=True,  # Importante para adaptabilidad
-                title=None if st.session_state.get('_is_small_screen', False) else x
+                title=None if st.session_state.get("_is_small_screen", False) else x,
             )
         )
 
     # Forzar colores en cada barra individualmente
     fig.update_traces(marker_color=color)
 
-    # Personalizar el diseño
+    # Personalizar el diseño con ajustes responsivos
     fig.update_layout(
         plot_bgcolor="white",
         paper_bgcolor="white",
         margin=dict(
-            l=10, 
-            r=10, 
-            t=40, 
-            b=10 if st.session_state.get('_is_small_screen', False) else 20
+            l=10,
+            r=10,
+            t=40,
+            b=10 if st.session_state.get("_is_small_screen", False) else 20,
         ),
         title={"y": 0.98, "x": 0.5, "xanchor": "center", "yanchor": "top"},
-        title_font=dict(size=14 if st.session_state.get('_is_small_screen', False) else 16),
+        title_font=dict(
+            size=14 if st.session_state.get("_is_small_screen", False) else 16
+        ),
         autosize=True,  # Importante para responsividad
     )
 
     # Aplicar formateador si se proporciona
     if formatter:
-        position = "inside" if st.session_state.get('_is_small_screen', False) else "outside"
-        if horizontal:
-            fig.update_traces(texttemplate=formatter, textposition=position)
-        else:
-            fig.update_traces(texttemplate=formatter, textposition=position)
-            
+        position = (
+            "inside" if st.session_state.get("_is_small_screen", False) else "outside"
+        )
+        fig.update_traces(texttemplate=formatter, textposition=position)
+
     # Para pantallas pequeñas, simplificar etiquetas
-    if st.session_state.get('_is_small_screen', False):
-        # Simplificar etiquetas en eje X
-        if not horizontal and len(data) > 5:
-            # Si hay muchas categorías, reducir etiquetas
-            fig.update_layout(xaxis=dict(showticklabels=False))
-            
-        # Simplificar etiquetas en eje Y
-        fig.update_layout(yaxis=dict(
-            tickformat=".1s",  # Formato científico simplificado
-            automargin=True
-        ))
+    if st.session_state.get("_is_small_screen", False):
+        # Reducir el número de barras visibles si hay muchas
+        if not horizontal and len(data) > 8:
+            # Mostrar solo cada segunda o tercera etiqueta
+            step = 2 if len(data) < 15 else 3
+            tickvals = list(range(0, len(data), step))
+            ticktext = [data[x].iloc[i] if i < len(data) else "" for i in tickvals]
+            fig.update_layout(
+                xaxis=dict(tickmode="array", tickvals=tickvals, ticktext=ticktext)
+            )
+
+        # Simplificar etiquetas en eje Y para mejor visualización
+        fig.update_layout(
+            yaxis=dict(
+                tickformat=".1s", automargin=True  # Formato científico simplificado
+            )
+        )
+
+        # Reducir el tamaño de las barras para que quepan más
+        fig.update_traces(width=0.6)
 
     return fig
 
@@ -107,6 +125,10 @@ def create_pie_chart(data, names, values, title, color_map, height=400, filters=
     Returns:
         fig: Figura de Plotly
     """
+    # Ajustar altura para dispositivos móviles
+    if st.session_state.get("_is_small_screen", False):
+        height = max(300, height - 50)
+
     # Añadir información de filtros al título si existe
     full_title = title
     if filters:
@@ -137,36 +159,66 @@ def create_pie_chart(data, names, values, title, color_map, height=400, filters=
         "#BF8040",  # Bronce
     ]
 
-    # Caso especial para gráficos con solo dos categorías
-    if len(categories) == 2:
-        # Siempre usar vinotinto y amarillo para las dos primeras categorías
-        colors = ["#7D0F2B", "#F2A900"]
+    # Mapas de colores por categoría para mantener consistencia
+    category_color_maps = {
+        # Genero/Sexo
+        "masculino": "#7D0F2B",  # Vinotinto para masculino
+        "femenino": "#F2A900",  # Amarillo para femenino
+        "no binario": "#5A4214",  # Marrón para no binario
+        # Las mismas reglas para mayúsculas
+        "MASCULINO": "#7D0F2B",
+        "FEMENINO": "#F2A900",
+        "NO BINARIO": "#5A4214",
+        # Abreviaturas
+        "M": "#7D0F2B",
+        "F": "#F2A900",
+        "NB": "#5A4214",
+        # Otros valores comunes
+        "si": "#7D0F2B",
+        "no": "#F2A900",
+        "sí": "#7D0F2B",
+        "Sin especificar": "#A83C50",  # Color coherente para valores no especificados
+    }
 
-        # Forzar diferentes colores para sexo
-        if "sexo" in title.lower():
-            # Intentar detectar sexo por nombre de categoría
-            cat_list = [str(cat).lower() for cat in categories]
+    # Determinar colores para las categorías presentes
+    colors = []
 
-            # Si encontramos indicadores de masculino/femenino, asignar colores específicos
-            for i, cat in enumerate(cat_list):
-                if "masc" in cat or "m" in cat and len(cat) < 3:
-                    # Primero encontramos masculino - ordenar correctamente
-                    if i == 0:
-                        colors = [
-                            "#7D0F2B",
-                            "#F2A900",
-                        ]  # Vinotinto para masculino, amarillo para femenino
-                    else:
-                        colors = [
-                            "#F2A900",
-                            "#7D0F2B",
-                        ]  # Amarillo para femenino, vinotinto para masculino
-                    break
-    else:
-        # Para más de dos categorías, usar la paleta completa
-        colors = []
-        for i, cat in enumerate(categories):
-            colors.append(institutional_colors[i % len(institutional_colors)])
+    # Primero revisar si es un gráfico de género/sexo
+    is_gender_chart = "genero" in title.lower() or "sexo" in title.lower()
+
+    for cat in categories:
+        cat_str = str(cat).lower()
+        assigned_color = None
+
+        # Buscar en nuestro mapa de categorías
+        for key, color in category_color_maps.items():
+            if cat_str == key.lower() or key.lower() in cat_str:
+                assigned_color = color
+                break
+
+        # Si no se encontró un color específico
+        if assigned_color is None:
+            # Usar un color del mapa suministrado (si existe)
+            if color_map and cat in color_map:
+                assigned_color = color_map[cat]
+            # Si es un gráfico de género, usar colores por defecto bien definidos
+            elif is_gender_chart:
+                if "masc" in cat_str or cat_str == "m":
+                    assigned_color = "#7D0F2B"  # Vinotinto
+                elif "fem" in cat_str or cat_str == "f":
+                    assigned_color = "#F2A900"  # Amarillo
+                elif "bin" in cat_str or "nb" in cat_str:
+                    assigned_color = "#5A4214"  # Marrón
+                else:
+                    # Color por índice para otros casos
+                    idx = len(colors) % len(institutional_colors)
+                    assigned_color = institutional_colors[idx]
+            else:
+                # Color por índice para categorías no reconocidas
+                idx = len(colors) % len(institutional_colors)
+                assigned_color = institutional_colors[idx]
+
+        colors.append(assigned_color)
 
     # Crear el gráfico
     fig = px.pie(
@@ -184,10 +236,24 @@ def create_pie_chart(data, names, values, title, color_map, height=400, filters=
         paper_bgcolor="white",
         margin=dict(l=10, r=10, t=40, b=10),
         title={"y": 0.98, "x": 0.5, "xanchor": "center", "yanchor": "top"},
-        title_font=dict(size=16),
+        title_font=dict(
+            size=16 if not st.session_state.get("_is_small_screen", False) else 14
+        ),
+        autosize=True,  # Importante para responsividad
     )
 
-    fig.update_traces(textposition="inside", textinfo="percent+label")
+    # Configuración responsiva para dispositivos móviles
+    if st.session_state.get("_is_small_screen", False):
+        # Etiquetas más simplificadas para pantallas pequeñas
+        fig.update_traces(textposition="inside", textinfo="percent")
+        # Leyenda más compacta
+        fig.update_layout(
+            legend=dict(
+                font=dict(size=10), yanchor="top", y=0.99, xanchor="left", x=0.01
+            )
+        )
+    else:
+        fig.update_traces(textposition="inside", textinfo="percent+label")
 
     return fig
 

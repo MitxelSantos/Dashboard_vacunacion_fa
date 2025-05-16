@@ -454,11 +454,39 @@ def normalize_dataframe(df):
     # Limpiar nombres de columnas (quitar espacios y caracteres invisibles)
     df.columns = [col.strip() for col in df.columns]
 
+    # Si existe Sexo pero no Genero, crear columna Genero
+    if "Sexo" in df.columns and "Genero" not in df.columns:
+        # Crear columna Genero basada en Sexo
+        df["Genero"] = df["Sexo"].copy()
+
+        # Normalizar categorías de género/sexo
+        df["Genero"] = df["Genero"].astype(str).str.strip()
+        df["Genero"] = df["Genero"].apply(
+            lambda x: (
+                "MASCULINO"
+                if str(x).lower() in ["masculino", "m", "masc"]
+                else (
+                    "FEMENINO"
+                    if str(x).lower() in ["femenino", "f", "fem"]
+                    else (
+                        "NO BINARIO"
+                        if str(x).lower() in ["no binario", "nb"]
+                        else (
+                            "Sin especificar"
+                            if pd.isna(x) or x.lower() in ["nan", "", "none"]
+                            else x
+                        )
+                    )
+                )
+            )
+        )
+
     # Buscar columnas similares a las que necesitamos
     column_map = {}
     required_columns = [
         "Grupo_Edad",
         "Sexo",
+        "Genero",  # Agregamos Genero a columnas requeridas
         "GrupoEtnico",
         "RegimenAfiliacion",
         "NombreAseguradora",

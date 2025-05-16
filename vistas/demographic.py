@@ -110,47 +110,66 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
                     f"Error al crear gráfico de distribución por grupos de edad: {str(e)}"
                 )
 
-    # Gráfico de distribución por sexo
+    # Gráfico de distribución por género (antes sexo)
     with col2:
-        # Verificar que Sexo exista
-        if "Sexo" not in filtered_data["vacunacion"].columns:
-            st.error("Columna 'Sexo' no encontrada en los datos.")
+        # Verificar si existe Genero o usar Sexo como fallback
+        if "Genero" in filtered_data["vacunacion"].columns:
+            genero_col = "Genero"
+        elif "Sexo" in filtered_data["vacunacion"].columns:
+            genero_col = "Sexo"
+            # Informar que estamos usando Sexo como Genero
+            st.info("Usando la columna 'Sexo' para mostrar información de género.")
         else:
+            st.error("No se encontró columna de Género o Sexo en los datos.")
+            genero_col = None
+
+        if genero_col:
             try:
-                # Normalizar los valores de Sexo
-                filtered_data["vacunacion"]["Sexo"] = filtered_data["vacunacion"][
-                    "Sexo"
+                # Normalizar los valores de Género
+                filtered_data["vacunacion"][genero_col] = filtered_data["vacunacion"][
+                    genero_col
                 ].fillna("Sin especificar")
 
-                # Agrupar por sexo
-                sexo_counts = (
-                    filtered_data["vacunacion"]["Sexo"].value_counts().reset_index()
+                # Normalizar categorías a MASCULINO, FEMENINO, NO BINARIO
+                filtered_data["vacunacion"]["Genero_Normalizado"] = filtered_data[
+                    "vacunacion"
+                ][genero_col].apply(
+                    lambda x: (
+                        "MASCULINO"
+                        if str(x).lower() in ["masculino", "m", "masc"]
+                        else (
+                            "FEMENINO"
+                            if str(x).lower() in ["femenino", "f", "fem"]
+                            else (
+                                "NO BINARIO"
+                                if str(x).lower() in ["no binario", "nb"]
+                                else "Sin especificar"
+                            )
+                        )
+                    )
                 )
-                sexo_counts.columns = ["Sexo", "Vacunados"]
 
-                # Mapa de colores para sexo
-                color_map_sexo = {
-                    "Masculino": colors["primary"],
-                    "Femenino": colors["secondary"],
-                    "MASCULINO": colors["primary"],
-                    "FEMENINO": colors["secondary"],
-                    "masculino": colors["primary"],
-                    "femenino": colors["secondary"],
-                }
+                # Agrupar por género normalizado
+                genero_counts = (
+                    filtered_data["vacunacion"]["Genero_Normalizado"]
+                    .value_counts()
+                    .reset_index()
+                )
+                genero_counts.columns = ["Genero", "Vacunados"]
 
                 # Crear gráfico
-                fig_sexo = create_pie_chart(
-                    data=sexo_counts,
-                    names="Sexo",
+                fig_genero = create_pie_chart(
+                    data=genero_counts,
+                    names="Genero",
                     values="Vacunados",
-                    title="Distribución por sexo",
-                    color_map=color_map_sexo,
+                    title="Distribución por género",
+                    color_map={},
                     height=400,
                 )
 
-                st.plotly_chart(fig_sexo, use_container_width=True)
+                st.plotly_chart(fig_genero, use_container_width=True)
             except Exception as e:
-                st.error(f"Error al crear gráfico de distribución por sexo: {str(e)}")
+                st.error(f"Error al crear gráfico de distribución por género: {str(e)}")
 
     # Gráfico de distribución por grupo étnico
     st.subheader("Distribución por grupo étnico")

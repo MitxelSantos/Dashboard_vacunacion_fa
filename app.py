@@ -32,6 +32,30 @@ configure_page(
     page_title="Dashboard Vacunación Fiebre Amarilla - Tolima",
     page_icon="💉",
     layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# Cargar CSS personalizado
+css_main = Path(__file__).parent.parent / "assets" / "styles" / "main.css"
+css_responsive = Path(__file__).parent.parent / "assets" / "styles" / "responsive.css"
+
+css = ""
+if css_main.exists():
+    with open(css_main) as f:
+        css += f.read()
+
+if css_responsive.exists():
+    with open(css_responsive) as f:
+        css += f.read()
+
+# Aplicar CSS
+st.markdown(
+    f"""
+<style>
+    {css}
+</style>
+""",
+    unsafe_allow_html=True,
 )
 
 # Colores institucionales según la Secretaría de Salud del Tolima
@@ -53,9 +77,10 @@ def clean_list(lista):
 
 def main():
     """Aplicación principal del dashboard."""
-    
+
     # Detectar tamaño de pantalla con JavaScript
-    st.markdown("""
+    st.markdown(
+        """
     <script>
         // Detectar tamaño de pantalla
         var updateScreenSize = function() {
@@ -71,11 +96,13 @@ def main():
         updateScreenSize();
         window.addEventListener('resize', updateScreenSize);
     </script>
-    """, unsafe_allow_html=True)
-    
+    """,
+        unsafe_allow_html=True,
+    )
+
     # Intentar recuperar el tamaño de pantalla
-    screen_width = st.session_state.get('_screen_width', 1200)
-    st.session_state['_is_small_screen'] = screen_width < 1200
+    screen_width = st.session_state.get("_screen_width", 1200)
+    st.session_state["_is_small_screen"] = screen_width < 1200
 
     # Cargar datos
     try:
