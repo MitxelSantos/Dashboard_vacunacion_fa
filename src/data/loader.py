@@ -1,44 +1,78 @@
 import pandas as pd
-import os
+import numpy as np
 from pathlib import Path
 import streamlit as st
+import os
+import requests
+from io import BytesIO
 
-# Constante global para el directorio de datos
+# Directorio de datos
 DATA_DIR = Path(__file__).parent.parent.parent / "data"
 
-@st.cache_data(ttl=3600)  # Caché por 1 hora
+@st.cache_data(ttl=3600)
 def load_datasets():
     """
-    Carga todos los datasets necesarios para la aplicación.
+    Carga los datasets desde Google Drive o localmente si están disponibles.
     
     Returns:
         dict: Diccionario con todos los dataframes necesarios.
     """
-    # Rutas absolutas a los archivos
-    poblacion_file = DATA_DIR / "POBLACION.xlsx"
-    vacunacion_file = DATA_DIR / "vacunacion_fa.csv"
+    # Verificar si estamos en Streamlit Cloud o en desarrollo local
+    is_local = os.path.exists(DATA_DIR / "POBLACION.xlsx")
     
-    # Verificar que los archivos existan
-    if not poblacion_file.exists():
-        raise FileNotFoundError(f"El archivo {poblacion_file} no existe")
+    if is_local:
+        # Si estamos en desarrollo local, cargar archivos directamente
+        st.success("Cargando datos desde archivos locales")
+        
+        # Cargar datos de población
+        poblacion_file = DATA_DIR / "POBLACION.xlsx"
+        municipios_df = pd.read_excel(poblacion_file, sheet_name="Poblacion")
+        
+        # Cargar datos de vacunación
+        vacunacion_file = DATA_DIR / "vacunacion_fa.csv"
+        if vacunacion_file.exists():
+            vacunacion_df = pd.read_csv(vacunacion_file)
+        else:
+            st.error(f"El archivo {vacunacion_file} no existe")
+            return None
+    else:
+        # Si estamos en Streamlit Cloud, cargar archivos desde Google Drive
+        st.info("Cargando datos desde Google Drive")
+        
+        # Obtener IDs de Google Drive desde los secretos
+        try:
+            # Acceder a secretos de Streamlit
+            google_drive_secrets = st.secrets["google_drive"]
+            poblacion_file_id = google_drive_secrets["poblacion_file_id"]
+            vacunacion_file_id = google_drive_secrets["vacunacion_file_id"]
+        except Exception as e:
+            st.error(f"Error al obtener secretos: {str(e)}")
+            st.error("Por favor, configure los secretos en Streamlit Cloud")
+            return None
+        
+        # Descargar archivos de Google Drive
+        try:
+            # Función para descargar un archivo de Google Drive
+            def download_file_from_google_drive(file_id):
+                URL = f"https://drive.google.com/uc?export=download&id={file_id}"
+                session = requests.Session()
+                response = session.get(URL)
+                return BytesIO(response.content)
+            
+            # Descargar y cargar datos de población
+            poblacion_bytes = download_file_from_google_drive(poblacion_file_id)
+            municipios_df = pd.read_excel(poblacion_bytes, sheet_name="Poblacion")
+            
+            # Descargar y cargar datos de vacunación
+            vacunacion_bytes = download_file_from_google_drive(vacunacion_file_id)
+            vacunacion_df = pd.read_csv(vacunacion_bytes)
+            
+            st.success("Datos cargados correctamente desde Google Drive")
+        except Exception as e:
+            st.error(f"Error al descargar archivos: {str(e)}")
+            return None
     
-    if not vacunacion_file.exists():
-        raise FileNotFoundError(f"El archivo {vacunacion_file} no existe")
-    
-    # Cargar datos de población
-    municipios_df = pd.read_excel(
-        poblacion_file,
-        sheet_name="Poblacion"
-    )
-    
-    # Cargar datos de vacunación
-    vacunacion_df = pd.read_csv(vacunacion_file)
-    
-    # Calcular métricas agregadas para ambas fuentes
-    metricas_dane_df = calculate_metrics(municipios_df, vacunacion_df, "DANE")
-    metricas_sisben_df = calculate_metrics(municipios_df, vacunacion_df, "SISBEN")
-    
-    # Crear un diccionario único de métricas que incluya ambas fuentes
+    # Calcular métricas
     metricas_df = municipios_df.copy()
     
     # Contar vacunados por municipio
@@ -57,7 +91,7 @@ def load_datasets():
     # Rellenar valores NaN
     metricas_df['Vacunados'].fillna(0, inplace=True)
     
-    # Calcular cobertura para ambas fuentes
+    # Calcular cobertura y pendientes para ambas fuentes
     metricas_df['Cobertura_DANE'] = (metricas_df['Vacunados'] / metricas_df['DANE'] * 100).round(2)
     metricas_df['Pendientes_DANE'] = metricas_df['DANE'] - metricas_df['Vacunados']
     
@@ -69,37 +103,3 @@ def load_datasets():
         "vacunacion": vacunacion_df,
         "metricas": metricas_df
     }
-
-def calculate_metrics(municipios_df, vacunacion_df, fuente="DANE"):
-    """
-    Calcula métricas agregadas para el dashboard basado en la fuente de población elegida.
-    
-    Args:
-        municipios_df (pd.DataFrame): DataFrame con datos de municipios
-        vacunacion_df (pd.DataFrame): DataFrame con datos de vacunación
-        fuente (str): Fuente de datos de población ("DANE" o "SISBEN")
-        
-    Returns:
-        pd.DataFrame: DataFrame con métricas calculadas
-    """
-    # Contar vacunados por municipio
-    vacunados_por_municipio = vacunacion_df['NombreMunicipioResidencia'].value_counts().reset_index()
-    vacunados_por_municipio.columns = ['Municipio', 'Vacunados']
-    
-    # Fusionar con datos de población
-    metricas_df = pd.merge(
-        municipios_df,
-        vacunados_por_municipio,
-        left_on='DPMP',
-        right_on='Municipio',
-        how='left'
-    )
-    
-    # Rellenar valores NaN
-    metricas_df['Vacunados'].fillna(0, inplace=True)
-    
-    # Calcular cobertura y pendientes según la fuente seleccionada
-    metricas_df[f'Cobertura_{fuente}'] = (metricas_df['Vacunados'] / metricas_df[fuente] * 100).round(2)
-    metricas_df[f'Pendientes_{fuente}'] = metricas_df[fuente] - metricas_df['Vacunados']
-    
-    return metricas_df
