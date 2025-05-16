@@ -37,67 +37,154 @@ IMAGES_DIR.mkdir(exist_ok=True, parents=True)
 
 
 def download_file_with_timeout(
-    drive_service, file_id, destination_path, timeout=300
-):  # Aumentar timeout
+    drive_service, file_id, destination_path, timeout=1800
+):  # 30 minutos de timeout
     """
-    Descarga un archivo de Google Drive con tiempo de espera máximo.
+    Descarga un archivo de Google Drive con manejo avanzado para archivos muy grandes.
     """
     try:
         start_time = time.time()
 
         # Obtener información del archivo
         file_info = (
-            drive_service.files().get(fileId=file_id, fields="size,name").execute()
+            drive_service.files()
+            .get(fileId=file_id, fields="size,name,mimeType")
+            .execute()
         )
         file_size = int(file_info.get("size", 0))
         file_name = file_info.get("name", "Desconocido")
+        mime_type = file_info.get("mimeType", "Desconocido")
 
-        st.write(f"Descargando {file_name} ({file_size/1024/1024:.2f} MB)...")
-
-        # Para archivos muy grandes, descargar en chunks
-        if file_size > 100 * 1024 * 1024:  # Más de 100MB
-            st.warning(
-                f"⚠️ El archivo {file_name} es muy grande ({file_size/1024/1024:.2f} MB)"
-            )
-
-        request = drive_service.files().get_media(fileId=file_id)
+        st.write(
+            f"📥 Descargando archivo grande: {file_name} ({file_size/1024/1024:.2f} MB, tipo: {mime_type})"
+        )
 
         # Asegurar que el directorio existe
         destination_path.parent.mkdir(exist_ok=True, parents=True)
 
-        with open(destination_path, "wb") as f:
-            downloader = MediaIoBaseDownload(
-                f, request, chunksize=10 * 1024 * 1024
-            )  # 10MB chunks
-            done = False
-            while not done:
-                # Verificar tiempo de espera
-                if time.time() - start_time > timeout:
-                    st.error(f"⏱️ Tiempo de espera excedido al descargar {file_name}")
-                    return False
+        # Para archivos extremadamente grandes, usar un enfoque por bloques
+        if file_size > 200 * 1024 * 1024:  # > 200MB
+            st.warning(
+                f"⚠️ Archivo extremadamente grande: {file_name} ({file_size/1024/1024:.2f} MB)"
+            )
+            st.write("Utilizando descarga por bloques optimizada...")
 
-                status, done = downloader.next_chunk()
-                st.write(f"Progreso: {int(status.progress() * 100)}%")
+            # Usar bloques más grandes para acelerar la descarga
+            chunk_size = 50 * 1024 * 1024  # 50MB por chunk
 
-        # Verificar que el archivo se descargó completo
+            # Crear request para descargar en chunks para usar menos memoria
+            request = drive_service.files().get_media(fileId=file_id)
+
+            # Monitorear el progreso
+            progress_bar = st.progress(0)
+            progress_text = st.empty()
+
+            with open(destination_path, "wb") as f:
+                downloader = MediaIoBaseDownload(f, request, chunksize=chunk_size)
+                done = False
+                total_downloaded = 0
+
+                while not done:
+                    # Verificar tiempo de espera máximo
+                    if time.time() - start_time > timeout:
+                        st.error(
+                            f"⏱️ Tiempo de espera excedido ({timeout/60:.1f} minutos) al descargar {file_name}"
+                        )
+                        # Si hay un archivo parcial, eliminarlo para no confundir
+                        if destination_path.exists():
+                            destination_path.unlink()
+                        return False
+
+                    # Descargar siguiente chunk
+                    try:
+                        status, done = downloader.next_chunk()
+
+                        # Actualizar progreso
+                        progress = int(status.progress() * 100)
+                        progress_bar.progress(progress / 100)
+                        progress_text.write(
+                            f"⏳ Descarga en progreso: {progress}% ({total_downloaded/1024/1024:.1f}MB de {file_size/1024/1024:.1f}MB)"
+                        )
+
+                        # Estimar tiempo restante
+                        elapsed_time = time.time() - start_time
+                        if progress > 0:
+                            estimated_total_time = elapsed_time / (progress / 100)
+                            remaining_time = estimated_total_time - elapsed_time
+                            if remaining_time > 60:
+                                st.write(
+                                    f"Tiempo restante estimado: {remaining_time/60:.1f} minutos"
+                                )
+
+                        # Cada 25% completado, mostrar mensaje de progreso
+                        if progress % 25 == 0 and progress > 0:
+                            st.success(f"Progreso: {progress}% completado")
+
+                    except Exception as chunk_error:
+                        st.error(
+                            f"❌ Error descargando parte del archivo: {str(chunk_error)}"
+                        )
+                        # Intentar continuar con el siguiente chunk en lugar de abortar
+                        st.write("Intentando continuar con la descarga...")
+                        continue
+        else:
+            # Para archivos medianos, usar el método estándar con chunks más grandes
+            request = drive_service.files().get_media(fileId=file_id)
+
+            with open(destination_path, "wb") as f:
+                downloader = MediaIoBaseDownload(
+                    f, request, chunksize=20 * 1024 * 1024
+                )  # 20MB chunks
+                done = False
+
+                # Crear barra de progreso
+                progress_bar = st.progress(0)
+
+                while not done:
+                    if time.time() - start_time > timeout:
+                        st.error(
+                            f"⏱️ Tiempo de espera excedido al descargar {file_name}"
+                        )
+                        return False
+
+                    status, done = downloader.next_chunk()
+                    progress = int(status.progress() * 100)
+                    progress_bar.progress(progress / 100)
+
+        # Verificar resultado
         if destination_path.exists():
             downloaded_size = destination_path.stat().st_size
-            st.success(f"✅ Archivo descargado: {downloaded_size/1024/1024:.2f} MB")
 
             # Verificar integridad
-            if (
-                downloaded_size < file_size * 0.9
-            ):  # Si es menos del 90% del tamaño esperado
-                st.warning(
-                    f"⚠️ El archivo descargado parece incompleto: {downloaded_size} bytes vs {file_size} bytes esperados"
+            if downloaded_size >= file_size * 0.99:  # Permitir 1% de diferencia
+                st.success(
+                    f"✅ Archivo descargado exitosamente: {file_name} ({downloaded_size/1024/1024:.1f} MB)"
                 )
+                return True
+            else:
+                st.warning(
+                    f"⚠️ El archivo parece incompleto: {downloaded_size/1024/1024:.1f}MB vs {file_size/1024/1024:.1f}MB esperados"
+                )
+                size_difference = abs(file_size - downloaded_size)
+                percent_difference = (size_difference / file_size) * 100
 
-        return destination_path.exists()
+                # Si la diferencia es pequeña, aceptar el archivo
+                if percent_difference < 5:  # Menos del 5% de diferencia
+                    st.info(
+                        f"La diferencia es solo {percent_difference:.2f}%, utilizando el archivo de todos modos"
+                    )
+                    return True
+                else:
+                    return False
+        else:
+            st.error(f"❌ Error: El archivo no se descargó correctamente")
+            return False
+
     except Exception as e:
-        st.error(f"❌ Error al descargar {file_id}: {str(e)}")
+        st.error(f"❌ Error general descargando archivo: {str(e)}")
         import traceback
 
-        st.text(traceback.format_exc())
+        st.error(traceback.format_exc())
         return False
 
 
@@ -295,54 +382,102 @@ def load_datasets():
     """
     Carga los datasets necesarios para la aplicación.
     """
-    # Ocultar mensajes de progreso con un spinner silencioso
     with st.spinner("Cargando datos..."):
         # Verificar archivos
         poblacion_file = DATA_DIR / "POBLACION.xlsx"
         vacunacion_file = DATA_DIR / "vacunacion_fa.csv"
 
-        # Verificar que los archivos existan
-        if not poblacion_file.exists() or not vacunacion_file.exists():
-            # Solo mostrar error si los archivos no existen
-            missing_files = []
-            if not poblacion_file.exists():
-                missing_files.append(f"POBLACION.xlsx")
-            if not vacunacion_file.exists():
-                missing_files.append(f"vacunacion_fa.csv")
+        # Si ya tenemos ambos archivos, no es necesario descargar de Drive
+        if not (poblacion_file.exists() and vacunacion_file.exists()):
+            # Intentar cargar desde Google Drive
+            from src.data.drive_loader import load_from_drive
 
-            st.error(
-                f"Error: No se encontraron los archivos: {', '.join(missing_files)}"
-            )
+            load_from_drive()
+
+        # Verificar si existen los archivos después de intentar cargarlos
+        missing_files = []
+        if not poblacion_file.exists():
+            missing_files.append("POBLACION.xlsx")
+        if not vacunacion_file.exists():
+            missing_files.append("vacunacion_fa.csv")
+
+        if missing_files:
             raise FileNotFoundError(
                 f"Archivos no encontrados: {', '.join(missing_files)}"
             )
 
-        # Cargar datos de población
+        # Cargar archivo de población
         municipios_df = pd.read_excel(poblacion_file, sheet_name="Poblacion")
 
-        # Cargar datos de vacunación con múltiples encodings
+        # Para archivos CSV grandes, usar estas optimizaciones
         try:
-            # Intento 1: UTF-8 (estándar)
+            # Para CSV extremadamente grandes, primero determinar las columnas que realmente necesitamos
+            required_columns = [
+                "IdPaciente",
+                "TipoIdentificacion",
+                "Documento",
+                "Sexo",
+                "FechaNacimiento",
+                "NombreMunicipioResidencia",
+                "GrupoEtnico",
+                "RegimenAfiliacion",
+                "NombreAseguradora",
+                "FA UNICA",
+                "Edad_Vacunacion",
+            ]
+
+            # Primero leer solo las columnas necesarias y usar dtype optimization
+            st.write("🔄 Leyendo CSV grande con optimizaciones...")
+
+            # Determinar qué columnas existen en el archivo
+            # Leer solo unas pocas líneas para ver la estructura
+            temp_df = pd.read_csv(vacunacion_file, nrows=5)
+            available_columns = temp_df.columns.tolist()
+
+            # Crear lista de columnas que efectivamente existen
+            use_columns = [col for col in required_columns if col in available_columns]
+
+            # Preparar diccionario de dtypes optimizados
+            dtypes = {
+                "IdPaciente": "str",
+                "TipoIdentificacion": "category",
+                "Documento": "str",
+                "Sexo": "category",
+                "GrupoEtnico": "category",
+                "RegimenAfiliacion": "category",
+                "NombreAseguradora": "category",
+                "NombreMunicipioResidencia": "category",
+            }
+
+            # Usar dtypes solo para columnas que realmente existen
+            use_dtypes = {k: v for k, v in dtypes.items() if k in use_columns}
+
+            # Leer el CSV con optimizaciones
             vacunacion_df = pd.read_csv(
-                vacunacion_file, low_memory=False, encoding="utf-8"
+                vacunacion_file,
+                usecols=use_columns,
+                dtype=use_dtypes,
+                low_memory=False,
+                encoding="utf-8",
+                on_bad_lines="skip",  # Ignorar líneas problemáticas
             )
+
+            st.success(f"✅ CSV cargado exitosamente: {len(vacunacion_df)} registros")
+
         except UnicodeDecodeError:
-            try:
-                # Intento 2: Latin-1 (común en español)
-                vacunacion_df = pd.read_csv(
-                    vacunacion_file, low_memory=False, encoding="latin-1"
-                )
-            except UnicodeDecodeError:
+            # Intentar con otras codificaciones
+            for encoding in ["latin-1", "cp1252", "iso-8859-1"]:
                 try:
-                    # Intento 3: Windows CP1252 (muy común en Excel de Windows)
+                    st.write(f"Intentando con codificación {encoding}...")
                     vacunacion_df = pd.read_csv(
-                        vacunacion_file, low_memory=False, encoding="cp1252"
+                        vacunacion_file, low_memory=False, encoding=encoding
                     )
+                    break
                 except UnicodeDecodeError:
-                    # Intento 4: ISO-8859-1 (otra codificación común)
-                    vacunacion_df = pd.read_csv(
-                        vacunacion_file, low_memory=False, encoding="iso-8859-1"
-                    )
+                    continue
+            else:
+                st.error("❌ No se pudo determinar la codificación del archivo CSV")
+                raise
 
         # Normalizar DataFrame
         vacunacion_df = normalize_dataframe(vacunacion_df)

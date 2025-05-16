@@ -1,7 +1,6 @@
 [server]
 enableCORS = false
 enableXsrfProtection = false
-enablePagesRunOnSave = false
 
 [theme]
 primaryColor = "#AB0520"
