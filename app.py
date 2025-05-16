@@ -58,6 +58,77 @@ def main():
     try:
         with st.spinner("Cargando datos..."):
             data = load_datasets()
+
+            # Mostrar nombres reales de columnas para diagnóstico
+            st.write("Columnas disponibles en vacunación:")
+            st.write(data["vacunacion"].columns.tolist())
+
+            # Intentar encontrar la columna más parecida a "Grupo_Edad"
+            grupo_edad_col = None
+            for col in data["vacunacion"].columns:
+                if "grupo" in col.lower() and "edad" in col.lower():
+                    grupo_edad_col = col
+                    st.success(f"Encontrada columna similar: '{col}'")
+                    break
+
+            # Si no se encuentra ninguna columna similar, crear una
+            if grupo_edad_col is None:
+                st.warning(
+                    "No se encontró columna de grupo de edad. Creando una temporal."
+                )
+                if "Edad_Vacunacion" in data["vacunacion"].columns:
+                    # Crear grupo de edad a partir de edad
+                    data["vacunacion"]["Grupo_Edad"] = data["vacunacion"][
+                        "Edad_Vacunacion"
+                    ].apply(
+                        lambda x: (
+                            "0-4"
+                            if pd.notna(x) and x < 5
+                            else (
+                                "5-14"
+                                if pd.notna(x) and x < 15
+                                else (
+                                    "15-19"
+                                    if pd.notna(x) and x < 20
+                                    else (
+                                        "20-29"
+                                        if pd.notna(x) and x < 30
+                                        else (
+                                            "30-39"
+                                            if pd.notna(x) and x < 40
+                                            else (
+                                                "40-49"
+                                                if pd.notna(x) and x < 50
+                                                else (
+                                                    "50-59"
+                                                    if pd.notna(x) and x < 60
+                                                    else (
+                                                        "60-69"
+                                                        if pd.notna(x) and x < 70
+                                                        else (
+                                                            "70-79"
+                                                            if pd.notna(x) and x < 80
+                                                            else (
+                                                                "80+"
+                                                                if pd.notna(x)
+                                                                and x >= 80
+                                                                else "Sin especificar"
+                                                            )
+                                                        )
+                                                    )
+                                                )
+                                            )
+                                        )
+                                    )
+                                )
+                            )
+                        )
+                    )
+                    grupo_edad_col = "Grupo_Edad"
+                else:
+                    # Si no hay campo de edad, crear una columna con valor único
+                    data["vacunacion"]["Grupo_Edad"] = "Sin especificar"
+                    grupo_edad_col = "Grupo_Edad"
     except FileNotFoundError as e:
         st.error(f"Error al cargar datos: {str(e)}")
         st.info(
@@ -123,7 +194,15 @@ def main():
         )
 
         # Obtener valores únicos de la columna Grupo_Edad y limpiarlos
-        grupos_edad = clean_list(data["vacunacion"]["Grupo_Edad"].unique().tolist())
+        try:
+            grupos_edad = clean_list(data["vacunacion"]["Grupo_Edad"].unique().tolist())
+        except KeyError:
+            # Mostrar las columnas disponibles para diagnóstico
+            st.error(
+                f"Error: La columna 'Grupo_Edad' no existe. Columnas disponibles: {data['vacunacion'].columns.tolist()}"
+            )
+            # Usar un valor predeterminado
+            grupos_edad = ["Sin especificar"]
         grupo_edad = st.selectbox(
             "Grupo de Edad",
             options=["Todos"] + sorted(grupos_edad),
