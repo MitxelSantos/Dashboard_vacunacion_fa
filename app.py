@@ -3,6 +3,9 @@ import pandas as pd
 import os
 from pathlib import Path
 
+# Deshabilitar detección automática de páginas de Streamlit
+os.environ["STREAMLIT_PAGES_ENABLED"] = "false"
+
 # Definir rutas
 ROOT_DIR = Path(__file__).resolve().parent
 DATA_DIR = ROOT_DIR / "data"
