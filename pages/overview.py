@@ -84,7 +84,7 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
         # Mostrar la tabla
         st.dataframe(
             comparativa_df.style.format({
-                "Población Total": "{:,.0f}".replace(",", "."),
+                "Población Total": "{:,.0f}",
                 "Cobertura (%)": "{:.2f}%"
             }),
             use_container_width=True

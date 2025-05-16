@@ -2,10 +2,11 @@ import streamlit as st
 from pathlib import Path
 import base64
 
+
 def configure_page(page_title, page_icon, layout="wide"):
     """
     Configura el estilo y el tema de la página.
-    
+
     Args:
         page_title (str): Título de la página
         page_icon (str): Icono de la página
@@ -16,11 +17,12 @@ def configure_page(page_title, page_icon, layout="wide"):
         page_title=page_title,
         page_icon=page_icon,
         layout=layout,
-        initial_sidebar_state="expanded"
+        initial_sidebar_state="expanded",
     )
-    
+
     # CSS básico en línea
-    st.markdown("""
+    st.markdown(
+        """
     <style>
         /* Colores institucionales */
         :root {
@@ -41,40 +43,45 @@ def configure_page(page_title, page_icon, layout="wide"):
             color: white;
         }
     </style>
-    """, unsafe_allow_html=True)
+    """,
+        unsafe_allow_html=True,
+    )
+
 
 def get_image_as_base64(file_path):
     """
     Convierte una imagen a base64 para incrustarla en HTML.
-    
+
     Args:
         file_path (str): Ruta del archivo de imagen
-        
+
     Returns:
         str: Cadena base64 de la imagen
     """
     with open(file_path, "rb") as img_file:
         return base64.b64encode(img_file.read()).decode()
 
+
 def display_pdf(file_path):
     """
     Muestra un PDF en la aplicación.
-    
+
     Args:
         file_path (str): Ruta del archivo PDF
     """
     with open(file_path, "rb") as f:
-        base64_pdf = base64.b64encode(f.read()).decode('utf-8')
+        base64_pdf = base64.b64encode(f.read()).decode("utf-8")
         pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf"></iframe>'
         st.markdown(pdf_display, unsafe_allow_html=True)
+
 
 def format_number(number):
     """
     Formatea un número para mostrar en la interfaz.
-    
+
     Args:
         number (float): Número a formatear
-        
+
     Returns:
         str: Número formateado
     """
@@ -85,19 +92,21 @@ def format_number(number):
     else:
         return f"{number:.0f}"
 
+
 def create_download_link(df, filename, text):
     """
     Crea un enlace para descargar un DataFrame como CSV.
-    
+
     Args:
         df (pd.DataFrame): DataFrame a descargar
         filename (str): Nombre del archivo
         text (str): Texto del enlace
-        
+
     Returns:
         str: Enlace HTML para descargar
     """
     import pandas as pd
+
     csv = df.to_csv(index=False)
     b64 = base64.b64encode(csv.encode()).decode()
     href = f'<a href="data:file/csv;base64,{b64}" download="{filename}">{text}</a>'
