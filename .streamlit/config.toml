@@ -1,6 +1,3 @@
-mkdir -p .streamlit
-cat > .streamlit/config.toml << EOF
-
 [server]
 enableCORS = false
 enableXsrfProtection = false
@@ -10,4 +7,3 @@ enablePagesRunOnSave = false
 primaryColor = "#AB0520"
 secondaryBackgroundColor = "#F5F5F5"
 textColor = "#2C2C2C"
-EOF

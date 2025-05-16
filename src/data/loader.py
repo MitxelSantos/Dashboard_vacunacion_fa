@@ -36,42 +36,68 @@ ASSETS_DIR.mkdir(exist_ok=True, parents=True)
 IMAGES_DIR.mkdir(exist_ok=True, parents=True)
 
 
-def download_file_with_timeout(drive_service, file_id, destination_path, timeout=60):
+def download_file_with_timeout(
+    drive_service, file_id, destination_path, timeout=300
+):  # Aumentar timeout
     """
     Descarga un archivo de Google Drive con tiempo de espera máximo.
-
-    Args:
-        drive_service: Servicio de Google Drive
-        file_id (str): ID del archivo en Google Drive
-        destination_path (Path): Ruta local donde guardar el archivo
-        timeout (int): Tiempo máximo de espera en segundos
-
-    Returns:
-        bool: True si la descarga fue exitosa, False en caso contrario
     """
     try:
         start_time = time.time()
+
+        # Obtener información del archivo
+        file_info = (
+            drive_service.files().get(fileId=file_id, fields="size,name").execute()
+        )
+        file_size = int(file_info.get("size", 0))
+        file_name = file_info.get("name", "Desconocido")
+
+        st.write(f"Descargando {file_name} ({file_size/1024/1024:.2f} MB)...")
+
+        # Para archivos muy grandes, descargar en chunks
+        if file_size > 100 * 1024 * 1024:  # Más de 100MB
+            st.warning(
+                f"⚠️ El archivo {file_name} es muy grande ({file_size/1024/1024:.2f} MB)"
+            )
+
         request = drive_service.files().get_media(fileId=file_id)
 
         # Asegurar que el directorio existe
         destination_path.parent.mkdir(exist_ok=True, parents=True)
 
         with open(destination_path, "wb") as f:
-            downloader = MediaIoBaseDownload(f, request)
+            downloader = MediaIoBaseDownload(
+                f, request, chunksize=10 * 1024 * 1024
+            )  # 10MB chunks
             done = False
             while not done:
                 # Verificar tiempo de espera
                 if time.time() - start_time > timeout:
-                    st.error(f"⏱️ Tiempo de espera excedido al descargar {file_id}")
+                    st.error(f"⏱️ Tiempo de espera excedido al descargar {file_name}")
                     return False
 
                 status, done = downloader.next_chunk()
-                st.write(f"Progreso de descarga: {int(status.progress() * 100)}%")
+                st.write(f"Progreso: {int(status.progress() * 100)}%")
 
-        st.success(f"✅ Archivo descargado exitosamente: {destination_path}")
-        return True
+        # Verificar que el archivo se descargó completo
+        if destination_path.exists():
+            downloaded_size = destination_path.stat().st_size
+            st.success(f"✅ Archivo descargado: {downloaded_size/1024/1024:.2f} MB")
+
+            # Verificar integridad
+            if (
+                downloaded_size < file_size * 0.9
+            ):  # Si es menos del 90% del tamaño esperado
+                st.warning(
+                    f"⚠️ El archivo descargado parece incompleto: {downloaded_size} bytes vs {file_size} bytes esperados"
+                )
+
+        return destination_path.exists()
     except Exception as e:
-        st.error(f"❌ Error al descargar archivo {file_id}: {str(e)}")
+        st.error(f"❌ Error al descargar {file_id}: {str(e)}")
+        import traceback
+
+        st.text(traceback.format_exc())
         return False
 
 
