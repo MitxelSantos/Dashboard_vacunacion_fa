@@ -618,38 +618,48 @@ def normalize_dataframe(df):
 
             # Caso especial para Grupo_Edad si tenemos Edad_Vacunacion
             if req_col == "Grupo_Edad" and "Edad_Vacunacion" in df.columns:
-                df[req_col] = df["Edad_Vacunacion"].apply(
-                    lambda x: (
-                        "0-4"
-                        if pd.notna(x) and x < 5
-                        else (
-                            "5-14"
-                            if pd.notna(x) and x < 15
+                # Primero convertir Edad_Vacunacion a numérico, manejando errores
+                try:
+                    # Crear una copia temporal para conversión
+                    edad_numerica = pd.to_numeric(
+                        df["Edad_Vacunacion"], errors="coerce"
+                    )
+
+                    # Ahora aplicar la lógica con valores numéricos
+                    df[req_col] = edad_numerica.apply(
+                        lambda x: (
+                            "0-4"
+                            if pd.notna(x) and x < 5
                             else (
-                                "15-19"
-                                if pd.notna(x) and x < 20
+                                "5-14"
+                                if pd.notna(x) and x < 15
                                 else (
-                                    "20-29"
-                                    if pd.notna(x) and x < 30
+                                    "15-19"
+                                    if pd.notna(x) and x < 20
                                     else (
-                                        "30-39"
-                                        if pd.notna(x) and x < 40
+                                        "20-29"
+                                        if pd.notna(x) and x < 30
                                         else (
-                                            "40-49"
-                                            if pd.notna(x) and x < 50
+                                            "30-39"
+                                            if pd.notna(x) and x < 40
                                             else (
-                                                "50-59"
-                                                if pd.notna(x) and x < 60
+                                                "40-49"
+                                                if pd.notna(x) and x < 50
                                                 else (
-                                                    "60-69"
-                                                    if pd.notna(x) and x < 70
+                                                    "50-59"
+                                                    if pd.notna(x) and x < 60
                                                     else (
-                                                        "70-79"
-                                                        if pd.notna(x) and x < 80
+                                                        "60-69"
+                                                        if pd.notna(x) and x < 70
                                                         else (
-                                                            "80+"
-                                                            if pd.notna(x) and x >= 80
-                                                            else "Sin especificar"
+                                                            "70-79"
+                                                            if pd.notna(x) and x < 80
+                                                            else (
+                                                                "80+"
+                                                                if pd.notna(x)
+                                                                and x >= 80
+                                                                else "Sin especificar"
+                                                            )
                                                         )
                                                     )
                                                 )
@@ -660,6 +670,9 @@ def normalize_dataframe(df):
                             )
                         )
                     )
-                )
+                except Exception as e:
+                    print(f"Error al convertir Edad_Vacunacion: {e}")
+                    # En caso de error, usar valores predeterminados
+                    df[req_col] = "Sin especificar"
 
     return df
