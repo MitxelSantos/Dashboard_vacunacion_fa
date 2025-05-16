@@ -7,6 +7,11 @@ import time
 import io
 import traceback
 
+# Google APIs
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseDownload
+
 # Intenta importar las bibliotecas de Google con manejo de errores
 try:
     from google.oauth2 import service_account
@@ -57,92 +62,204 @@ def download_file_with_timeout(drive_service, file_id, destination_path, timeout
             while not done:
                 # Verificar tiempo de espera
                 if time.time() - start_time > timeout:
-                    print(f"Tiempo de espera excedido al descargar {file_id}")
+                    st.error(f"⏱️ Tiempo de espera excedido al descargar {file_id}")
                     return False
 
                 status, done = downloader.next_chunk()
-                print(f"Descarga {int(status.progress() * 100)}%")
+                st.write(f"Progreso de descarga: {int(status.progress() * 100)}%")
 
-        print(f"Archivo descargado exitosamente: {destination_path}")
+        st.success(f"✅ Archivo descargado exitosamente: {destination_path}")
         return True
     except Exception as e:
-        print(f"Error al descargar archivo {file_id}: {str(e)}")
-        traceback.print_exc()  # Imprimir stack trace completo
+        st.error(f"❌ Error al descargar archivo {file_id}: {str(e)}")
         return False
 
 
 def load_from_drive():
     """
     Descarga archivos de Google Drive usando la cuenta de servicio.
+    Proporciona información detallada sobre el proceso de descarga para facilitar depuración.
     """
-    if not GOOGLE_APIS_AVAILABLE:
-        return False
+    # Asegurar que las carpetas existan
+    DATA_DIR.mkdir(exist_ok=True, parents=True)
+    ASSETS_DIR.mkdir(exist_ok=True, parents=True)
+    IMAGES_DIR.mkdir(exist_ok=True, parents=True)
 
     # Verificar si tenemos secretos configurados
-    if "google_drive" not in st.secrets or "gcp_service_account" not in st.secrets:
-        print("No se encontraron secretos de Google Drive configurados")
+    if "google_drive" not in st.secrets:
+        st.error("❌ No se encontró la configuración de Google Drive en los secretos")
+        return False
+
+    if "gcp_service_account" not in st.secrets:
+        st.error(
+            "❌ No se encontró la configuración de GCP Service Account en los secretos"
+        )
         return False
 
     try:
-        # Crear credenciales
-        credentials = service_account.Credentials.from_service_account_info(
-            st.secrets["gcp_service_account"],
-            scopes=["https://www.googleapis.com/auth/drive.readonly"],
-        )
+        st.info("📥 Iniciando descarga de archivos desde Google Drive...")
 
-        # Construir servicio de Drive
-        drive_service = build("drive", "v3", credentials=credentials)
+        # Verificar que los IDs de archivos estén configurados
+        required_files = ["poblacion_xlsx", "vacunacion_csv", "logo_gobernacion"]
+        missing_files = [
+            f for f in required_files if f not in st.secrets["google_drive"]
+        ]
 
-        # Verificar conexión - intentar listar archivos
-        response = drive_service.files().list(pageSize=1).execute()
-        if "files" not in response:
-            st.error("Error al conectar con Google Drive. Verificar permisos.")
+        if missing_files:
+            st.error(
+                f"❌ Faltan IDs de archivos en la configuración: {', '.join(missing_files)}"
+            )
             return False
 
-        # Descargar archivos con timeout
-        success = True
+        # Crear credenciales
+        try:
+            credentials = service_account.Credentials.from_service_account_info(
+                st.secrets["gcp_service_account"],
+                scopes=["https://www.googleapis.com/auth/drive.readonly"],
+            )
+            st.success("✅ Credenciales de servicio creadas correctamente")
+        except Exception as e:
+            st.error(f"❌ Error al crear credenciales de servicio: {str(e)}")
+            st.write(
+                "Detalles:",
+                st.secrets["gcp_service_account"].get("client_email", "N/A"),
+            )
+            return False
+
+        # Construir servicio de Drive
+        try:
+            drive_service = build("drive", "v3", credentials=credentials)
+
+            # Verificar conexión - intentar listar archivos
+            response = drive_service.files().list(pageSize=1).execute()
+            if "files" in response:
+                st.success("✅ Conexión exitosa con Google Drive API")
+            else:
+                st.error("❌ Error al conectar con Google Drive: Respuesta inválida")
+                return False
+
+        except Exception as e:
+            st.error(f"❌ Error al construir servicio de Drive: {str(e)}")
+            return False
 
         # Descargar archivo de población
         if "poblacion_xlsx" in st.secrets["google_drive"]:
             poblacion_path = DATA_DIR / "POBLACION.xlsx"
-            if not download_file_with_timeout(
-                drive_service,
-                st.secrets["google_drive"]["poblacion_xlsx"],
-                poblacion_path,
-            ):
-                success = False
+            file_id = st.secrets["google_drive"]["poblacion_xlsx"]
+
+            st.write(f"📄 Descargando archivo de población... (ID: {file_id})")
+            try:
+                request = (
+                    drive_service.files()
+                    .get(fileId=file_id, fields="name,size,mimeType")
+                    .execute()
+                )
+                st.write(
+                    f"Información del archivo: {request.get('name')} ({request.get('mimeType')})"
+                )
+
+                result = download_file_with_timeout(
+                    drive_service,
+                    file_id,
+                    poblacion_path,
+                )
+
+                if result and poblacion_path.exists():
+                    st.success(
+                        f"✅ Archivo de población descargado correctamente ({poblacion_path.stat().st_size} bytes)"
+                    )
+                else:
+                    st.error(f"❌ No se pudo descargar el archivo de población")
+            except Exception as e:
+                st.error(f"❌ Error al descargar archivo de población: {str(e)}")
 
         # Descargar archivo de vacunación
         if "vacunacion_csv" in st.secrets["google_drive"]:
             vacunacion_path = DATA_DIR / "vacunacion_fa.csv"
-            if not download_file_with_timeout(
-                drive_service,
-                st.secrets["google_drive"]["vacunacion_csv"],
-                vacunacion_path,
-            ):
-                success = False
+            file_id = st.secrets["google_drive"]["vacunacion_csv"]
+
+            st.write(f"📄 Descargando archivo de vacunación... (ID: {file_id})")
+            try:
+                request = (
+                    drive_service.files()
+                    .get(fileId=file_id, fields="name,size,mimeType")
+                    .execute()
+                )
+                st.write(
+                    f"Información del archivo: {request.get('name')} ({request.get('mimeType')})"
+                )
+
+                result = download_file_with_timeout(
+                    drive_service,
+                    file_id,
+                    vacunacion_path,
+                )
+
+                if result and vacunacion_path.exists():
+                    st.success(
+                        f"✅ Archivo de vacunación descargado correctamente ({vacunacion_path.stat().st_size} bytes)"
+                    )
+                else:
+                    st.error(f"❌ No se pudo descargar el archivo de vacunación")
+            except Exception as e:
+                st.error(f"❌ Error al descargar archivo de vacunación: {str(e)}")
 
         # Descargar logo
         if "logo_gobernacion" in st.secrets["google_drive"]:
             logo_path = IMAGES_DIR / "logo_gobernacion.png"
-            if not download_file_with_timeout(
-                drive_service, st.secrets["google_drive"]["logo_gobernacion"], logo_path
-            ):
-                success = False
+            file_id = st.secrets["google_drive"]["logo_gobernacion"]
 
-        # Descargar imagen del mosquito
-        if "mosquito_png" in st.secrets["google_drive"]:
-            mosquito_path = IMAGES_DIR / "mosquito.png"
-            if not download_file_with_timeout(
-                drive_service, st.secrets["google_drive"]["mosquito_png"], mosquito_path
-            ):
-                success = False
+            st.write(f"🖼️ Descargando logo... (ID: {file_id})")
+            try:
+                request = (
+                    drive_service.files()
+                    .get(fileId=file_id, fields="name,size,mimeType")
+                    .execute()
+                )
+                st.write(
+                    f"Información del archivo: {request.get('name')} ({request.get('mimeType')})"
+                )
 
-        return success
+                result = download_file_with_timeout(
+                    drive_service,
+                    file_id,
+                    logo_path,
+                )
+
+                if result and logo_path.exists():
+                    st.success(
+                        f"✅ Logo descargado correctamente ({logo_path.stat().st_size} bytes)"
+                    )
+                else:
+                    st.error(f"❌ No se pudo descargar el logo")
+            except Exception as e:
+                st.error(f"❌ Error al descargar logo: {str(e)}")
+
+        # Verificación final
+        required_files_paths = [
+            DATA_DIR / "POBLACION.xlsx",
+            DATA_DIR / "vacunacion_fa.csv",
+            IMAGES_DIR / "logo_gobernacion.png",
+        ]
+
+        missing_files = [
+            str(path) for path in required_files_paths if not path.exists()
+        ]
+
+        if missing_files:
+            st.error(
+                f"❌ Faltan archivos después de la descarga: {', '.join(missing_files)}"
+            )
+            return False
+
+        st.success("✅ Todos los archivos fueron descargados exitosamente")
+        return True
 
     except Exception as e:
-        st.error(f"Error al cargar desde Google Drive: {str(e)}")
-        traceback.print_exc()  # Imprimir stack trace completo
+        import traceback
+
+        st.error(f"❌ Error general al cargar desde Google Drive: {str(e)}")
+        st.error(traceback.format_exc())
         return False
 
 
