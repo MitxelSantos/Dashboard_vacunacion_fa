@@ -36,9 +36,9 @@ configure_page(
 
 # Colores institucionales según la Secretaría de Salud del Tolima
 COLORS = {
-    "primary": "#AB0520",  # Rojo institucional
+    "primary": "#7D0F2B",  # Vinotinto
     "secondary": "#F2A900",  # Amarillo dorado
-    "accent": "#0C234B",  # Azul oscuro
+    "accent": "#5A4214",  # Marrón dorado oscuro
     "background": "#F5F5F5",  # Fondo gris claro
     "success": "#509E2F",  # Verde
     "warning": "#F7941D",  # Naranja
@@ -59,16 +59,11 @@ def main():
         with st.spinner("Cargando datos..."):
             data = load_datasets()
 
-            # Mostrar nombres reales de columnas para diagnóstico
-            st.write("Columnas disponibles en vacunación:")
-            st.write(data["vacunacion"].columns.tolist())
-
             # Intentar encontrar la columna más parecida a "Grupo_Edad"
             grupo_edad_col = None
             for col in data["vacunacion"].columns:
                 if "grupo" in col.lower() and "edad" in col.lower():
                     grupo_edad_col = col
-                    st.success(f"Encontrada columna similar: '{col}'")
                     break
 
             # Si no se encuentra ninguna columna similar, crear una
@@ -247,8 +242,9 @@ def main():
             on_change=on_filter_change,
         )
 
-        # Botón para resetear filtros
-        if st.button("Restablecer Filtros"):
+        # Función para resetear todos los filtros
+        def reset_filters():
+            # Usar las claves para reiniciar todos los filtros
             for key in [
                 "municipio_filter",
                 "grupo_edad_filter",
@@ -257,8 +253,15 @@ def main():
                 "regimen_filter",
                 "aseguradora_filter",
             ]:
-                st.session_state[key] = "Todos"
+                # Esta es la forma correcta de resetear, usando .update()
+                st.session_state.update({key: "Todos"})
+
+            # Actualizar filtros después del reset
             on_filter_change()
+
+        # Botón para resetear filtros
+        if st.button("Restablecer Filtros", on_click=reset_filters):
+            pass  # La lógica está en reset_filters
 
         # Información del desarrollador
         st.sidebar.markdown("---")
@@ -283,10 +286,21 @@ def main():
         st.title("Dashboard Vacunación Fiebre Amarilla - Tolima")
         st.write("Secretaría de Salud del Tolima - Vigilancia Epidemiológica")
 
-    # Agregar banner que muestra la fuente de datos seleccionada
-    st.info(
-        f"Análisis basado en datos de población {st.session_state.fuente_poblacion}"
-    )
+    # Mostrar filtros activos en un banner con fondo vinotinto (banner global)
+    active_filters = [
+        f"{k.capitalize()}: {v}"
+        for k, v in st.session_state.filters.items()
+        if v != "Todos"
+    ]
+    if active_filters:
+        st.markdown(
+            f"""
+            <div style="background-color: {COLORS['primary']}; color: white; padding: 10px; border-radius: 5px; margin-bottom: 15px;">
+                <strong>Filtros aplicados:</strong> {', '.join(active_filters)}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
     # Pestañas de navegación
     tab1, tab2, tab3, tab4, tab5 = st.tabs(

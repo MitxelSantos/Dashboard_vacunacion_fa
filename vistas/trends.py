@@ -26,7 +26,6 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
     # Usar directamente FA UNICA como fecha de vacunación
     if "FA UNICA" in filtered_data["vacunacion"].columns:
         try:
-            st.info("Usando columna 'FA UNICA' para análisis de tendencias")
 
             # Convertir a datetime
             filtered_data["vacunacion"]["FechaVacunacion"] = pd.to_datetime(

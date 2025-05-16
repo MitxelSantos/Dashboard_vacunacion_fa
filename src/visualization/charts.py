@@ -13,32 +13,10 @@ def create_bar_chart(
 ):
     """
     Crea un gráfico de barras estándar usando Plotly.
-
-    Args:
-        data (pd.DataFrame): Datos para el gráfico
-        x (str): Columna para el eje X
-        y (str): Columna para el eje Y
-        title (str): Título del gráfico
-        color (str): Color principal de las barras
-        height (int): Altura del gráfico
-        horizontal (bool): Si es True, crea un gráfico horizontal
-        formatter (func): Función para formatear los valores (ej: formato de porcentaje)
-        filters (dict): Filtros aplicados para mostrar en el título
-
-    Returns:
-        fig: Figura de Plotly
     """
-    # Añadir información de filtros al título si existe
+    # Usar solo el título original sin añadir los filtros
     full_title = title
-    if filters:
-        filter_info = []
-        for key, value in filters.items():
-            if value != "Todos":
-                filter_info.append(f"{key}: {value}")
-
-        if filter_info:
-            full_title = f"{title} - {' | '.join(filter_info)}"
-
+    
     if horizontal:
         fig = px.bar(
             data,
@@ -115,45 +93,60 @@ def create_pie_chart(data, names, values, title, color_map, height=400, filters=
     # Verificar si hay un mapa de colores para todas las categorías
     categories = data[names].unique()
 
-    # Si no hay suficientes colores en color_map, usar los colores institucionales
-    if not color_map or len(color_map) < len(categories):
-        from random import shuffle
+    # Crear una copia de la paleta de colores institucional
+    institutional_colors = [
+        "#7D0F2B",  # Vinotinto institucional
+        "#F2A900",  # Amarillo dorado
+        "#5A4214",  # Marrón dorado oscuro
+        "#A83C50",  # Vinotinto claro
+        "#FFB82E",  # Amarillo dorado claro
+        "#8C5A30",  # Marrón medio
+        "#640D22",  # Vinotinto oscuro
+        "#D99000",  # Ocre
+        "#3F2D0F",  # Marrón oscuro
+        "#B5485E",  # Rosa vinotinto
+        "#FFCD65",  # Amarillo pálido
+        "#BF8040",  # Bronce
+    ]
 
-        institutional_colors = [
-            "#AB0520",
-            "#F2A900",
-            "#0C234B",
-            "#509E2F",
-            "#F7941D",
-            "#E51937",
-            "#8A1538",
-            "#D0661C",
-            "#122F5E",
-            "#3F7D25",
-            "#C5761C",
-            "#B5142D",
-        ]
-        shuffle(institutional_colors)  # Mezclar para variedad
+    # Caso especial para gráficos con solo dos categorías
+    if len(categories) == 2:
+        # Siempre usar vinotinto y amarillo para las dos primeras categorías
+        colors = ["#7D0F2B", "#F2A900"]
 
-        # Crear mapa de colores si no existe o está incompleto
-        if not color_map:
-            color_map = {}
+        # Forzar diferentes colores para sexo
+        if "sexo" in title.lower():
+            # Intentar detectar sexo por nombre de categoría
+            cat_list = [str(cat).lower() for cat in categories]
 
-        # Asignar colores institucionales a categorías sin color
+            # Si encontramos indicadores de masculino/femenino, asignar colores específicos
+            for i, cat in enumerate(cat_list):
+                if "masc" in cat or "m" in cat and len(cat) < 3:
+                    # Primero encontramos masculino - ordenar correctamente
+                    if i == 0:
+                        colors = [
+                            "#7D0F2B",
+                            "#F2A900",
+                        ]  # Vinotinto para masculino, amarillo para femenino
+                    else:
+                        colors = [
+                            "#F2A900",
+                            "#7D0F2B",
+                        ]  # Amarillo para femenino, vinotinto para masculino
+                    break
+    else:
+        # Para más de dos categorías, usar la paleta completa
+        colors = []
         for i, cat in enumerate(categories):
-            if cat not in color_map:
-                color_map[cat] = institutional_colors[i % len(institutional_colors)]
+            colors.append(institutional_colors[i % len(institutional_colors)])
 
-    # Extraer colores en el orden de las categorías
-    colors = [color_map.get(cat, "#AB0520") for cat in categories]
-
+    # Crear el gráfico
     fig = px.pie(
         data,
         names=names,
         values=values,
         title=full_title,
-        color=names,
-        color_discrete_sequence=colors,  # Usar los colores institucionales
+        color_discrete_sequence=colors,
         height=height,
     )
 

@@ -152,69 +152,66 @@ def load_datasets():
     """
     Carga los datasets necesarios para la aplicación.
     """
-    st.write("Inicio de carga de datos...")
+    # Ocultar mensajes de progreso con un spinner silencioso
+    with st.spinner("Cargando datos..."):
+        # Verificar archivos
+        poblacion_file = DATA_DIR / "POBLACION.xlsx"
+        vacunacion_file = DATA_DIR / "vacunacion_fa.csv"
 
-    # Verificar archivos
-    poblacion_file = DATA_DIR / "POBLACION.xlsx"
-    vacunacion_file = DATA_DIR / "vacunacion_fa.csv"
+        # Verificar que los archivos existan
+        if not poblacion_file.exists() or not vacunacion_file.exists():
+            # Solo mostrar error si los archivos no existen
+            missing_files = []
+            if not poblacion_file.exists():
+                missing_files.append(f"POBLACION.xlsx")
+            if not vacunacion_file.exists():
+                missing_files.append(f"vacunacion_fa.csv")
 
-    st.write(
-        f"Verificando archivo {poblacion_file}... Existe: {poblacion_file.exists()}"
-    )
-    st.write(
-        f"Verificando archivo {vacunacion_file}... Existe: {vacunacion_file.exists()}"
-    )
+            st.error(
+                f"Error: No se encontraron los archivos: {', '.join(missing_files)}"
+            )
+            raise FileNotFoundError(
+                f"Archivos no encontrados: {', '.join(missing_files)}"
+            )
 
-    # Ahora intenta cargar
-    st.write("Intentando cargar población...")
-    municipios_df = pd.read_excel(poblacion_file, sheet_name="Poblacion")
-    st.write(f"Población cargada: {len(municipios_df)} municipios")
+        # Cargar datos de población
+        municipios_df = pd.read_excel(poblacion_file, sheet_name="Poblacion")
 
-    # Modificar esta parte para usar diferentes codificaciones
-    st.write("Intentando cargar vacunación...")
-    try:
-        # Intento 1: UTF-8 (estándar)
-        vacunacion_df = pd.read_csv(vacunacion_file, low_memory=False, encoding="utf-8")
-    except UnicodeDecodeError:
+        # Cargar datos de vacunación con múltiples encodings
         try:
-            # Intento 2: Latin-1 (común en español)
-            st.write("UTF-8 falló, intentando con Latin-1...")
+            # Intento 1: UTF-8 (estándar)
             vacunacion_df = pd.read_csv(
-                vacunacion_file, low_memory=False, encoding="latin-1"
+                vacunacion_file, low_memory=False, encoding="utf-8"
             )
         except UnicodeDecodeError:
             try:
-                # Intento 3: Windows CP1252 (muy común en Excel de Windows)
-                st.write("Latin-1 falló, intentando con Windows CP1252...")
+                # Intento 2: Latin-1 (común en español)
                 vacunacion_df = pd.read_csv(
-                    vacunacion_file, low_memory=False, encoding="cp1252"
+                    vacunacion_file, low_memory=False, encoding="latin-1"
                 )
             except UnicodeDecodeError:
-                # Intento 4: ISO-8859-1 (otra codificación común)
-                st.write("CP1252 falló, intentando con ISO-8859-1...")
-                vacunacion_df = pd.read_csv(
-                    vacunacion_file, low_memory=False, encoding="iso-8859-1"
-                )
+                try:
+                    # Intento 3: Windows CP1252 (muy común en Excel de Windows)
+                    vacunacion_df = pd.read_csv(
+                        vacunacion_file, low_memory=False, encoding="cp1252"
+                    )
+                except UnicodeDecodeError:
+                    # Intento 4: ISO-8859-1 (otra codificación común)
+                    vacunacion_df = pd.read_csv(
+                        vacunacion_file, low_memory=False, encoding="iso-8859-1"
+                    )
 
-    st.write(f"Vacunación cargada: {len(vacunacion_df)} registros")
+        # Normalizar DataFrame
+        vacunacion_df = normalize_dataframe(vacunacion_df)
 
-    # Después de cargar vacunacion_df, añade:
-    print("Columnas originales:", vacunacion_df.columns.tolist())
+        # Calcular métricas
+        metricas_df = calculate_metrics(municipios_df, vacunacion_df)
 
-    # Normalizar DataFrame
-    vacunacion_df = normalize_dataframe(vacunacion_df)
-
-    print("Columnas normalizadas:", vacunacion_df.columns.tolist())
-
-    st.write("Calculando métricas...")
-    metricas_df = calculate_metrics(municipios_df, vacunacion_df)
-    st.write("Carga completada exitosamente")
-
-    return {
-        "municipios": municipios_df,
-        "vacunacion": vacunacion_df,
-        "metricas": metricas_df,
-    }
+        return {
+            "municipios": municipios_df,
+            "vacunacion": vacunacion_df,
+            "metricas": metricas_df,
+        }
 
 
 def calculate_metrics(municipios_df, vacunacion_df):
@@ -228,83 +225,24 @@ def calculate_metrics(municipios_df, vacunacion_df):
     Returns:
         pd.DataFrame: DataFrame con métricas calculadas
     """
+    # Importar la función de normalización
+    from src.data.normalize import normalize_municipality_names
+
     # Crear copia para no modificar el original
     metricas_df = municipios_df.copy()
 
     # Verificar que exista la columna NombreMunicipioResidencia
     if "NombreMunicipioResidencia" not in vacunacion_df.columns:
-        print(
-            "Error: La columna 'NombreMunicipioResidencia' no existe en los datos de vacunación"
-        )
         # Crear columna de vacunados con ceros
         metricas_df["Vacunados"] = 0
     else:
-        # Contar vacunados por municipio
-        # Limpiar y normalizar nombres a minúsculas para la comparación
-        vacunacion_df_clean = vacunacion_df.copy()
-
-        # Rellenar valores NaN y convertir a minúsculas
-        vacunacion_df_clean["NombreMunicipioResidencia"] = vacunacion_df_clean[
-            "NombreMunicipioResidencia"
-        ].fillna("Sin especificar")
-
-        # Normalizar quitando acentos y convirtiendo a minúsculas
-        def normalize_text(text):
-            import unicodedata
-
-            # Normaliza quitando acentos
-            text = (
-                unicodedata.normalize("NFKD", text)
-                .encode("ASCII", "ignore")
-                .decode("ASCII")
-            )
-            # Convierte a minúsculas y quita espacios extra
-            return text.lower().strip()
-
-        # Aplicar normalización a los nombres de municipios
-        vacunacion_df_clean["NombreMunicipioResidencia_norm"] = vacunacion_df_clean[
-            "NombreMunicipioResidencia"
-        ].apply(normalize_text)
+        # Normalizar nombres de municipios en datos de vacunación
+        vacunacion_df_clean = normalize_municipality_names(
+            vacunacion_df, "NombreMunicipioResidencia"
+        )
 
         # Normalizar nombre de municipios en datos de población
-        metricas_df["DPMP_norm"] = metricas_df["DPMP"].apply(normalize_text)
-
-        # Imprimir nombres normalizados para diagnóstico
-        print("Nombres de municipios normalizados en POBLACION.xlsx (primeros 10):")
-        print(metricas_df["DPMP_norm"].head(10).tolist())
-
-        print(
-            "Nombres de municipios normalizados en vacunacion_fa.csv (muestra única):"
-        )
-        print(
-            vacunacion_df_clean["NombreMunicipioResidencia_norm"].unique()[:10].tolist()
-        )
-
-        # CORREGIR NOMBRES ESPECÍFICOS DIRECTAMENTE
-        # Mapeo de nombres alternativos
-        name_mapping = {
-            "san sebastian de mariquita": "mariquita",
-            "armero guayabal": "armero",
-        }
-
-        # Aplicar mapeo a los nombres normalizados
-        for alt_name, std_name in name_mapping.items():
-            mask = vacunacion_df_clean["NombreMunicipioResidencia_norm"] == alt_name
-            if mask.any():
-                print(f"Encontrado '{alt_name}', reemplazando por '{std_name}'")
-                vacunacion_df_clean.loc[mask, "NombreMunicipioResidencia_norm"] = (
-                    std_name
-                )
-
-        # VERIFICACIÓN ADICIONAL - Buscar por coincidencia parcial
-        print("BUSCAR POR COINCIDENCIA PARCIAL:")
-        for name in vacunacion_df_clean["NombreMunicipioResidencia_norm"].unique():
-            if "sebastian" in name or "mariquita" in name:
-                print(f"En vacunación: '{name}'")
-
-        for name in metricas_df["DPMP_norm"].unique():
-            if "mariquita" in name:
-                print(f"En población: '{name}'")
+        metricas_df = normalize_municipality_names(metricas_df, "DPMP")
 
         # Contar vacunados por municipio (con nombres normalizados)
         vacunados_por_municipio = (
@@ -313,24 +251,6 @@ def calculate_metrics(municipios_df, vacunacion_df):
             .reset_index()
         )
         vacunados_por_municipio.columns = ["Municipio", "Vacunados"]
-
-        # Diagnóstico de la fusión
-        municipios_vacunacion = set(vacunados_por_municipio["Municipio"])
-        municipios_poblacion = set(metricas_df["DPMP_norm"])
-        comunes = municipios_vacunacion.intersection(municipios_poblacion)
-
-        print(f"Municipios en vacunación: {len(municipios_vacunacion)}")
-        print(f"Municipios en población: {len(municipios_poblacion)}")
-        print(f"Municipios coincidentes: {len(comunes)}")
-
-        # Imprimir municipios sin coincidencias
-        municipios_solo_vacunacion = municipios_vacunacion - municipios_poblacion
-        municipios_solo_poblacion = municipios_poblacion - municipios_vacunacion
-
-        print(
-            "Municipios solo en vacunación:", sorted(list(municipios_solo_vacunacion))
-        )
-        print("Municipios solo en población:", sorted(list(municipios_solo_poblacion)))
 
         # Fusionar con municipios normalizados
         metricas_df = pd.merge(
@@ -341,13 +261,6 @@ def calculate_metrics(municipios_df, vacunacion_df):
             how="left",
         )
 
-        # Imprimir municipios sin coincidencias para diagnóstico
-        print("Municipios sin coincidencias:")
-        sin_coincidencias = metricas_df[metricas_df["Municipio"].isna()][
-            "DPMP"
-        ].tolist()
-        print(sin_coincidencias)
-
         # Eliminar columna auxiliar
         metricas_df = metricas_df.drop(
             ["DPMP_norm", "Municipio"], axis=1, errors="ignore"
@@ -355,7 +268,6 @@ def calculate_metrics(municipios_df, vacunacion_df):
 
         # Verificar si la fusión funcionó
         if "Vacunados" not in metricas_df.columns:
-            print("Error en la fusión: la columna 'Vacunados' no se creó")
             metricas_df["Vacunados"] = 0
 
     # Rellenar valores NaN con 0
@@ -371,12 +283,6 @@ def calculate_metrics(municipios_df, vacunacion_df):
         metricas_df["Vacunados"] / metricas_df["SISBEN"] * 100
     ).round(2)
     metricas_df["Pendientes_SISBEN"] = metricas_df["SISBEN"] - metricas_df["Vacunados"]
-
-    # Información de diagnóstico
-    print(f"Total de vacunados calculados: {metricas_df['Vacunados'].sum()}")
-    print(
-        f"Municipios sin vacunados: {(metricas_df['Vacunados'] == 0).sum()} de {len(metricas_df)}"
-    )
 
     return metricas_df
 

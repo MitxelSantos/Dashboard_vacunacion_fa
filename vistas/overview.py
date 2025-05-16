@@ -49,9 +49,45 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
     with col1:
         st.markdown(f"### Métricas basadas en población {fuente_poblacion}")
 
-        # Calcular métricas seleccionadas
-        total_poblacion = filtered_data["metricas"][fuente_poblacion].sum()
-        total_vacunados = filtered_data["metricas"]["Vacunados"].sum()
+        # Calcular métricas para todos los tipos de filtros
+        # Para todos los filtros, usar directamente el conteo de registros en los datos filtrados
+        if any(filters[k] != "Todos" for k in filters):
+            # Si hay algún filtro aplicado
+            total_vacunados = len(filtered_data["vacunacion"])
+
+            # Para la población total y pendientes, debemos hacer cálculos específicos
+            if filters["municipio"] != "Todos":
+                # Si hay filtro de municipio, buscar la población de ese municipio
+                municipio_data = filtered_data["metricas"][
+                    filtered_data["metricas"]["DPMP"].str.lower()
+                    == filters["municipio"].lower()
+                ]
+
+                # Caso especial para Mariquita y Armero
+                if filters["municipio"] == "Mariquita" and len(municipio_data) == 0:
+                    municipio_data = filtered_data["metricas"][
+                        filtered_data["metricas"]["DPMP"].str.lower()
+                        == "san sebastian de mariquita"
+                    ]
+                elif filters["municipio"] == "Armero" and len(municipio_data) == 0:
+                    municipio_data = filtered_data["metricas"][
+                        filtered_data["metricas"]["DPMP"].str.lower()
+                        == "armero guayabal"
+                    ]
+
+                if len(municipio_data) > 0:
+                    total_poblacion = municipio_data[fuente_poblacion].sum()
+                else:
+                    total_poblacion = filtered_data["metricas"][fuente_poblacion].sum()
+            else:
+                # Para otros filtros, usar la población total
+                total_poblacion = filtered_data["metricas"][fuente_poblacion].sum()
+        else:
+            # Sin filtros, usar las métricas calculadas
+            total_poblacion = filtered_data["metricas"][fuente_poblacion].sum()
+            total_vacunados = filtered_data["metricas"]["Vacunados"].sum()
+
+        # Calcular cobertura y pendientes
         cobertura = (
             (total_vacunados / total_poblacion * 100) if total_poblacion > 0 else 0
         )
@@ -85,32 +121,52 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
         ):
             st.error("Faltan columnas necesarias para la comparativa DANE vs SISBEN")
         else:
-            # Preparar datos para la comparativa
+            # Preparar datos para la comparativa, considerando los filtros
+            if any(filters[k] != "Todos" for k in filters):
+                if filters["municipio"] != "Todos":
+                    # Si hay filtro de municipio, buscar los datos específicos
+                    municipio_data = filtered_data["metricas"][
+                        filtered_data["metricas"]["DPMP"].str.lower()
+                        == filters["municipio"].lower()
+                    ]
+
+                    # Caso especial para Mariquita y Armero
+                    if filters["municipio"] == "Mariquita" and len(municipio_data) == 0:
+                        municipio_data = filtered_data["metricas"][
+                            filtered_data["metricas"]["DPMP"].str.lower()
+                            == "san sebastian de mariquita"
+                        ]
+                    elif filters["municipio"] == "Armero" and len(municipio_data) == 0:
+                        municipio_data = filtered_data["metricas"][
+                            filtered_data["metricas"]["DPMP"].str.lower()
+                            == "armero guayabal"
+                        ]
+
+                    if len(municipio_data) > 0:
+                        dane_total = municipio_data["DANE"].sum()
+                        sisben_total = municipio_data["SISBEN"].sum()
+                    else:
+                        dane_total = filtered_data["metricas"]["DANE"].sum()
+                        sisben_total = filtered_data["metricas"]["SISBEN"].sum()
+                else:
+                    # Para otros filtros, usar todas las poblaciones
+                    dane_total = filtered_data["metricas"]["DANE"].sum()
+                    sisben_total = filtered_data["metricas"]["SISBEN"].sum()
+
+                # Usar el conteo de registros para todos los filtros
+                vacunados_total = len(filtered_data["vacunacion"])
+            else:
+                # Sin filtros, usar los totales
+                dane_total = filtered_data["metricas"]["DANE"].sum()
+                sisben_total = filtered_data["metricas"]["SISBEN"].sum()
+                vacunados_total = filtered_data["metricas"]["Vacunados"].sum()
+
             comparativa = {
                 "Fuente": ["DANE", "SISBEN"],
-                "Población Total": [
-                    filtered_data["metricas"]["DANE"].sum(),
-                    filtered_data["metricas"]["SISBEN"].sum(),
-                ],
+                "Población Total": [dane_total, sisben_total],
                 "Cobertura (%)": [
-                    (
-                        (
-                            filtered_data["metricas"]["Vacunados"].sum()
-                            / filtered_data["metricas"]["DANE"].sum()
-                            * 100
-                        )
-                        if filtered_data["metricas"]["DANE"].sum() > 0
-                        else 0
-                    ),
-                    (
-                        (
-                            filtered_data["metricas"]["Vacunados"].sum()
-                            / filtered_data["metricas"]["SISBEN"].sum()
-                            * 100
-                        )
-                        if filtered_data["metricas"]["SISBEN"].sum() > 0
-                        else 0
-                    ),
+                    (vacunados_total / dane_total * 100) if dane_total > 0 else 0,
+                    (vacunados_total / sisben_total * 100) if sisben_total > 0 else 0,
                 ],
             }
 
@@ -132,7 +188,7 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
                 title="Cobertura según fuente de población",
                 color=colors["primary"],
                 height=250,
-                filters=filters,  # Pasar los filtros a la función
+                filters=None,  # No pasar filtros a la gráfica para que no se muestren en el título
             )
 
             st.plotly_chart(fig, use_container_width=True)
@@ -167,7 +223,7 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
                 color=colors["primary"],
                 height=400,
                 formatter="%{y:.1f}%",
-                filters=filters,  # Pasar los filtros a la función
+                filters=None,  # No pasar filtros
             )
 
             st.plotly_chart(fig_mun, use_container_width=True)
@@ -239,7 +295,7 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
                     title="Distribución por grupos de edad",
                     color=colors["secondary"],
                     height=400,
-                    filters=filters,  # Pasar los filtros a la función
+                    filters=None,  # No pasar filtros
                 )
 
                 st.plotly_chart(fig_edad, use_container_width=True)
@@ -264,7 +320,7 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
             color=colors["accent"],
             hover_data=["DPMP", "Vacunados", "Cobertura_DANE", "Cobertura_SISBEN"],
             height=500,
-            filters=filters,  # Pasar los filtros a la función
+            filters=None,  # No pasar filtros
         )
 
         st.plotly_chart(fig_scatter, use_container_width=True)
@@ -307,7 +363,7 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
                 title="Distribución por sexo",
                 color_map=color_map_sexo,
                 height=350,
-                filters=filters,  # Pasar los filtros a la función
+                filters=None,  # No pasar filtros
             )
 
             st.plotly_chart(fig_sexo, use_container_width=True)
@@ -331,7 +387,7 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
                 title="Distribución por grupo étnico",
                 color_map={},  # Colores automáticos
                 height=350,
-                filters=filters,  # Pasar los filtros a la función
+                filters=None,  # No pasar filtros
             )
 
             st.plotly_chart(fig_etnia, use_container_width=True)
@@ -357,7 +413,7 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
                 title="Distribución por régimen",
                 color_map={},  # Colores automáticos
                 height=350,
-                filters=filters,  # Pasar los filtros a la función
+                filters=None,  # No pasar filtros
             )
 
             st.plotly_chart(fig_regimen, use_container_width=True)

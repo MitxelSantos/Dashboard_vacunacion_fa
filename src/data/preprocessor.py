@@ -14,6 +14,9 @@ def apply_filters(data, filters, fuente_poblacion="DANE"):
     Returns:
         dict: Diccionario con los dataframes filtrados
     """
+    # Importar la función de normalización
+    from src.data.normalize import normalize_municipality_names
+
     # Crear copias para no modificar los originales
     filtered_data = {
         "municipios": data["municipios"].copy(),
@@ -24,9 +27,50 @@ def apply_filters(data, filters, fuente_poblacion="DANE"):
     # Filtrar vacunación
     vacunacion_df = filtered_data["vacunacion"]
 
+    # Aplicar cada filtro en secuencia
+    # Primero manejar el filtro de municipio (caso especial)
+    if (
+        filters["municipio"] != "Todos"
+        and "NombreMunicipioResidencia" in vacunacion_df.columns
+    ):
+        # Mapeo de nombres alternativos para filtrado
+        municipality_map = {
+            "Mariquita": [
+                "San Sebastian De Mariquita",
+                "San Sebastián De Mariquita",
+                "San Sebastian de Mariquita",
+                "San Sebastián de Mariquita",
+            ],
+            "Armero": ["Armero Guayabal", "ARMERO GUAYABAL"],
+        }
+
+        # Verificar si el municipio seleccionado tiene nombres alternativos
+        alt_names = municipality_map.get(filters["municipio"], [])
+
+        if alt_names:
+            # Crear máscara para incluir tanto el nombre normal como los alternativos
+            mask = (
+                vacunacion_df["NombreMunicipioResidencia"].str.lower()
+                == filters["municipio"].lower()
+            )
+            for alt in alt_names:
+                mask = mask | (
+                    vacunacion_df["NombreMunicipioResidencia"].str.lower()
+                    == alt.lower()
+                )
+
+            # Aplicar filtro con la máscara expandida
+            vacunacion_df = vacunacion_df[mask]
+        else:
+            # Filtro normal para otros municipios
+            vacunacion_df = vacunacion_df[
+                vacunacion_df["NombreMunicipioResidencia"].str.lower()
+                == filters["municipio"].lower()
+            ]
+
+    # Aplicar el resto de los filtros
     # Normalizar columnas para filtros
     column_mapping = {
-        "municipio": "NombreMunicipioResidencia",
         "grupo_edad": "Grupo_Edad",
         "sexo": "Sexo",
         "grupo_etnico": "GrupoEtnico",
@@ -38,59 +82,52 @@ def apply_filters(data, filters, fuente_poblacion="DANE"):
     for filter_key, column_name in column_mapping.items():
         if column_name in vacunacion_df.columns and filters[filter_key] != "Todos":
             # Normalizar los valores para comparación insensible a mayúsculas/minúsculas
-            if filters[filter_key] != "Todos":
-                # Crear versión temporaria para comparación
-                vacunacion_df[f"{column_name}_lower"] = (
-                    vacunacion_df[column_name].fillna("Sin especificar").str.lower()
-                )
-                filter_value_lower = filters[filter_key].lower()
+            vacunacion_df[f"{column_name}_lower"] = (
+                vacunacion_df[column_name].fillna("Sin especificar").str.lower()
+            )
+            filter_value_lower = filters[filter_key].lower()
 
-                # Filtrar usando la versión normalizada
-                vacunacion_df = vacunacion_df[
-                    vacunacion_df[f"{column_name}_lower"] == filter_value_lower
-                ]
+            # Filtrar usando la versión normalizada
+            vacunacion_df = vacunacion_df[
+                vacunacion_df[f"{column_name}_lower"] == filter_value_lower
+            ]
 
-                # Eliminar columna temporal
-                vacunacion_df = vacunacion_df.drop(f"{column_name}_lower", axis=1)
+            # Eliminar columna temporal
+            vacunacion_df = vacunacion_df.drop(f"{column_name}_lower", axis=1)
 
     # Actualizar el dataframe de vacunación filtrado
     filtered_data["vacunacion"] = vacunacion_df
 
     # Recalcular métricas para datos filtrados
-    # Contar vacunados por municipio
     if "NombreMunicipioResidencia" in vacunacion_df.columns:
-        # Usar nombres normalizados para contar
-        vacunacion_df_clean = vacunacion_df.copy()
-        vacunacion_df_clean["NombreMunicipioResidencia_lower"] = (
-            vacunacion_df_clean["NombreMunicipioResidencia"]
-            .fillna("Sin especificar")
-            .str.lower()
+        # Usar nombres normalizados
+        vacunacion_df_clean = normalize_municipality_names(
+            vacunacion_df, "NombreMunicipioResidencia"
         )
+
+        # Normalizar nombres en metricas
+        metricas_df = normalize_municipality_names(filtered_data["metricas"], "DPMP")
 
         # Contar vacunados por municipio (versión normalizada)
         vacunados_por_municipio = (
-            vacunacion_df_clean["NombreMunicipioResidencia_lower"]
-            .value_counts()
+            vacunacion_df_clean.groupby("NombreMunicipioResidencia_norm")
+            .size()
             .reset_index()
         )
-        vacunados_por_municipio.columns = ["Municipio_lower", "Vacunados"]
-
-        # Normalizar también los municipios en métricas
-        metricas_df = filtered_data["metricas"].copy()
-        metricas_df["DPMP_lower"] = metricas_df["DPMP"].str.lower()
+        vacunados_por_municipio.columns = ["Municipio_norm", "Vacunados"]
 
         # Fusionar por nombre normalizado
         metricas_df = pd.merge(
             metricas_df,
             vacunados_por_municipio,
-            left_on="DPMP_lower",
-            right_on="Municipio_lower",
+            left_on="DPMP_norm",
+            right_on="Municipio_norm",
             how="left",
         )
 
         # Eliminar columnas auxiliares
         metricas_df = metricas_df.drop(
-            ["DPMP_lower", "Municipio_lower"], axis=1, errors="ignore"
+            ["DPMP_norm", "Municipio_norm"], axis=1, errors="ignore"
         )
 
         # Si ya hay una columna Vacunados, actualizar en lugar de duplicar
