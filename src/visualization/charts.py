@@ -7,10 +7,13 @@ import seaborn as sns
 import streamlit as st
 from scipy import stats
 
-def create_bar_chart(data, x, y, title, color, height=400, horizontal=False, formatter=None):
+
+def create_bar_chart(
+    data, x, y, title, color, height=400, horizontal=False, formatter=None, filters=None
+):
     """
     Crea un gráfico de barras estándar usando Plotly.
-    
+
     Args:
         data (pd.DataFrame): Datos para el gráfico
         x (str): Columna para el eje X
@@ -20,57 +23,72 @@ def create_bar_chart(data, x, y, title, color, height=400, horizontal=False, for
         height (int): Altura del gráfico
         horizontal (bool): Si es True, crea un gráfico horizontal
         formatter (func): Función para formatear los valores (ej: formato de porcentaje)
-        
+        filters (dict): Filtros aplicados para mostrar en el título
+
     Returns:
         fig: Figura de Plotly
     """
+    # Añadir información de filtros al título si existe
+    full_title = title
+    if filters:
+        filter_info = []
+        for key, value in filters.items():
+            if value != "Todos":
+                filter_info.append(f"{key}: {value}")
+
+        if filter_info:
+            full_title = f"{title} - {' | '.join(filter_info)}"
+
     if horizontal:
         fig = px.bar(
-            data, 
-            y=x, 
+            data,
+            y=x,
             x=y,
-            title=title,
+            title=full_title,
             color_discrete_sequence=[color],
             height=height,
-            orientation='h'
+            orientation="h",
         )
     else:
         fig = px.bar(
-            data, 
-            x=x, 
+            data,
+            x=x,
             y=y,
-            title=title,
+            title=full_title,
             color_discrete_sequence=[color],
-            height=height
+            height=height,
         )
-    
+        # Mejorar la rotación de etiquetas para barras verticales
+        fig.update_layout(
+            xaxis=dict(tickangle=-45)  # Rotar etiquetas para mejor lectura
+        )
+
+    # Forzar colores en cada barra individualmente
+    fig.update_traces(marker_color=color)
+
     # Personalizar el diseño
     fig.update_layout(
         plot_bgcolor="white",
         paper_bgcolor="white",
         margin=dict(l=10, r=10, t=40, b=10),
-        title={
-            'y':0.98,
-            'x':0.5,
-            'xanchor': 'center',
-            'yanchor': 'top'
-        },
-        title_font=dict(size=16)
+        title={"y": 0.98, "x": 0.5, "xanchor": "center", "yanchor": "top"},
+        title_font=dict(size=16),
     )
-    
+
     # Aplicar formateador si se proporciona
     if formatter:
         if horizontal:
-            fig.update_traces(texttemplate=formatter, textposition='inside')
+            fig.update_traces(texttemplate=formatter, textposition="inside")
         else:
-            fig.update_traces(texttemplate=formatter, textposition='outside')
-    
+            fig.update_traces(texttemplate=formatter, textposition="outside")
+
     return fig
 
-def create_pie_chart(data, names, values, title, color_map, height=400):
+
+def create_pie_chart(data, names, values, title, color_map, height=400, filters=None):
     """
     Crea un gráfico circular usando Plotly.
-    
+
     Args:
         data (pd.DataFrame): Datos para el gráfico
         names (str): Columna para las categorías
@@ -78,46 +96,97 @@ def create_pie_chart(data, names, values, title, color_map, height=400):
         title (str): Título del gráfico
         color_map (dict): Mapa de colores para las categorías
         height (int): Altura del gráfico
-        
+        filters (dict): Filtros aplicados para mostrar en el título
+
     Returns:
         fig: Figura de Plotly
     """
+    # Añadir información de filtros al título si existe
+    full_title = title
+    if filters:
+        filter_info = []
+        for key, value in filters.items():
+            if value != "Todos":
+                filter_info.append(f"{key}: {value}")
+
+        if filter_info:
+            full_title = f"{title} - {' | '.join(filter_info)}"
+
     # Verificar si hay un mapa de colores para todas las categorías
     categories = data[names].unique()
-    colors = [color_map.get(cat, '#CCCCCC') for cat in categories]
-    
+
+    # Si no hay suficientes colores en color_map, usar los colores institucionales
+    if not color_map or len(color_map) < len(categories):
+        from random import shuffle
+
+        institutional_colors = [
+            "#AB0520",
+            "#F2A900",
+            "#0C234B",
+            "#509E2F",
+            "#F7941D",
+            "#E51937",
+            "#8A1538",
+            "#D0661C",
+            "#122F5E",
+            "#3F7D25",
+            "#C5761C",
+            "#B5142D",
+        ]
+        shuffle(institutional_colors)  # Mezclar para variedad
+
+        # Crear mapa de colores si no existe o está incompleto
+        if not color_map:
+            color_map = {}
+
+        # Asignar colores institucionales a categorías sin color
+        for i, cat in enumerate(categories):
+            if cat not in color_map:
+                color_map[cat] = institutional_colors[i % len(institutional_colors)]
+
+    # Extraer colores en el orden de las categorías
+    colors = [color_map.get(cat, "#AB0520") for cat in categories]
+
     fig = px.pie(
-        data, 
-        names=names, 
+        data,
+        names=names,
         values=values,
-        title=title,
+        title=full_title,
         color=names,
-        color_discrete_sequence=colors,
-        height=height
+        color_discrete_sequence=colors,  # Usar los colores institucionales
+        height=height,
     )
-    
+
     # Personalizar el diseño
     fig.update_layout(
         plot_bgcolor="white",
         paper_bgcolor="white",
         margin=dict(l=10, r=10, t=40, b=10),
-        title={
-            'y':0.98,
-            'x':0.5,
-            'xanchor': 'center',
-            'yanchor': 'top'
-        },
-        title_font=dict(size=16)
+        title={"y": 0.98, "x": 0.5, "xanchor": "center", "yanchor": "top"},
+        title_font=dict(size=16),
     )
-    
-    fig.update_traces(textposition='inside', textinfo='percent+label')
-    
+
+    fig.update_traces(textposition="inside", textinfo="percent+label")
+
     return fig
 
-def create_scatter_plot(data, x, y, title, color, size=None, hover_data=None, height=400, log_x=False, log_y=False):
+
+def create_scatter_plot(
+    data,
+    x,
+    y,
+    title,
+    color,
+    size=None,
+    hover_data=None,
+    height=400,
+    log_x=False,
+    log_y=False,
+    filters=None,
+):
     """
     Crea un gráfico de dispersión usando Plotly.
-    
+
     Args:
         data (pd.DataFrame): Datos para el gráfico
         x (str): Columna para el eje X
@@ -129,59 +198,70 @@ def create_scatter_plot(data, x, y, title, color, size=None, hover_data=None, he
         height (int): Altura del gráfico
         log_x (bool): Si es True, utiliza escala logarítmica en X
         log_y (bool): Si es True, utiliza escala logarítmica en Y
-        
+        filters (dict): Filtros aplicados para mostrar en el título
+
     Returns:
         fig: Figura de Plotly
     """
+    # Añadir información de filtros al título si existe
+    full_title = title
+    if filters:
+        filter_info = []
+        for key, value in filters.items():
+            if value != "Todos":
+                filter_info.append(f"{key}: {value}")
+
+        if filter_info:
+            full_title = f"{title} - {' | '.join(filter_info)}"
+
     fig = px.scatter(
         data,
         x=x,
         y=y,
-        title=title,
+        title=full_title,
         color_discrete_sequence=[color],
         size=size,
         hover_data=hover_data,
         height=height,
         log_x=log_x,
-        log_y=log_y
+        log_y=log_y,
     )
-    
+
+    # Forzar color en los puntos
+    fig.update_traces(marker=dict(color=color))
+
     # Personalizar el diseño
     fig.update_layout(
         plot_bgcolor="white",
         paper_bgcolor="white",
         margin=dict(l=10, r=10, t=40, b=10),
-        title={
-            'y':0.98,
-            'x':0.5,
-            'xanchor': 'center',
-            'yanchor': 'top'
-        },
-        title_font=dict(size=16)
+        title={"y": 0.98, "x": 0.5, "xanchor": "center", "yanchor": "top"},
+        title_font=dict(size=16),
     )
-    
+
     # Línea de referencia para comparación
     if x in data.columns and y in data.columns:
         min_val = min(data[x].min(), data[y].min())
         max_val = max(data[x].max(), data[y].max())
-        
+
         fig.add_trace(
             go.Scatter(
                 x=[min_val, max_val],
                 y=[min_val, max_val],
-                mode='lines',
-                line=dict(color='gray', dash='dash', width=1),
-                name='Referencia',
-                hoverinfo='skip'
+                mode="lines",
+                line=dict(color="gray", dash="dash", width=1),
+                name="Referencia",
+                hoverinfo="skip",
             )
         )
-    
+
     return fig
 
-def create_line_chart(data, x, y, title, color, height=400):
+
+def create_line_chart(data, x, y, title, color, height=400, filters=None):
     """
     Crea un gráfico de líneas usando Plotly.
-    
+
     Args:
         data (pd.DataFrame): Datos para el gráfico
         x (str): Columna para el eje X
@@ -189,50 +269,72 @@ def create_line_chart(data, x, y, title, color, height=400):
         title (str): Título del gráfico
         color (str o list): Color principal de la línea o lista de colores
         height (int): Altura del gráfico
-        
+        filters (dict): Filtros aplicados para mostrar en el título
+
     Returns:
         fig: Figura de Plotly
     """
+    # Añadir información de filtros al título si existe
+    full_title = title
+    if filters:
+        filter_info = []
+        for key, value in filters.items():
+            if value != "Todos":
+                filter_info.append(f"{key}: {value}")
+
+        if filter_info:
+            full_title = f"{title} - {' | '.join(filter_info)}"
+
     if isinstance(y, list):
-        # Múltiples líneas
+        # Múltiples líneas - usar colores institucionales
         fig = go.Figure()
-        
-        colors = color if isinstance(color, list) else [color] * len(y)
-        
+
+        institutional_colors = [
+            "#AB0520",
+            "#F2A900",
+            "#0C234B",
+            "#509E2F",
+            "#F7941D",
+            "#E51937",
+        ]
+
+        colors = color if isinstance(color, list) else institutional_colors
+
         for i, col in enumerate(y):
             fig.add_trace(
                 go.Scatter(
                     x=data[x],
                     y=data[col],
-                    mode='lines+markers',
+                    mode="lines+markers",
                     name=col,
-                    line=dict(color=colors[i % len(colors)])
+                    line=dict(color=colors[i % len(colors)], width=3),
                 )
             )
+
+        # Añadir título con filtros
+        fig.update_layout(title=full_title)
     else:
         # Una sola línea
         fig = px.line(
-            data, 
-            x=x, 
+            data,
+            x=x,
             y=y,
-            title=title,
+            title=full_title,
             color_discrete_sequence=[color],
             height=height,
-            markers=True
+            markers=True,
         )
-    
+
+        # Forzar el color de la línea
+        fig.update_traces(line=dict(color=color, width=3))
+
     # Personalizar el diseño
     fig.update_layout(
         plot_bgcolor="white",
         paper_bgcolor="white",
         margin=dict(l=10, r=10, t=40, b=10),
-        title={
-            'y':0.98,
-            'x':0.5,
-            'xanchor': 'center',
-            'yanchor': 'top'
-        },
-        title_font=dict(size=16)
+        title={"y": 0.98, "x": 0.5, "xanchor": "center", "yanchor": "top"},
+        title_font=dict(size=16),
     )
-    
+
     return fig

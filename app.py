@@ -1,10 +1,11 @@
-import streamlit as st
-import pandas as pd
 import os
-from pathlib import Path
 
 # Deshabilitar detección automática de páginas de Streamlit
 os.environ["STREAMLIT_PAGES_ENABLED"] = "false"
+
+import streamlit as st
+import pandas as pd
+from pathlib import Path
 
 # Definir rutas
 ROOT_DIR = Path(__file__).resolve().parent
@@ -22,9 +23,9 @@ import sys
 
 sys.path.insert(0, str(ROOT_DIR))
 
+from vistas import overview, geographic, demographic, insurance, trends
 from src.data.loader import load_datasets
 from src.utils.helpers import configure_page
-from pages import overview, geographic, demographic, insurance, trends
 
 # Configuración de la página
 configure_page(
@@ -33,12 +34,15 @@ configure_page(
     layout="wide",
 )
 
-# Colores institucionales
+# Colores institucionales según la Secretaría de Salud del Tolima
 COLORS = {
-    "primary": "#7D0F2B",  # Vinotinto
-    "secondary": "#CFB53B",  # Dorado/Oro
-    "accent": "#215E8F",  # Azul complementario
+    "primary": "#AB0520",  # Rojo institucional
+    "secondary": "#F2A900",  # Amarillo dorado
+    "accent": "#0C234B",  # Azul oscuro
     "background": "#F5F5F5",  # Fondo gris claro
+    "success": "#509E2F",  # Verde
+    "warning": "#F7941D",  # Naranja
+    "danger": "#E51937",  # Rojo brillante
 }
 
 
@@ -79,75 +83,103 @@ def main():
 
         # Selector de fuente de datos de población
         st.subheader("Fuente de datos")
+
+        def on_fuente_change():
+            st.session_state.fuente_poblacion = st.session_state.fuente_radio
+
         fuente_poblacion = st.radio(
             "Seleccione la fuente de datos de población:",
             options=["DANE", "SISBEN"],
+            key="fuente_radio",
+            on_change=on_fuente_change,
             help="DANE: Población según censo oficial | SISBEN: Población registrada en el SISBEN",
         )
 
-        # Guardar la fuente seleccionada en el estado de la sesión
-        if (
-            "fuente_poblacion" not in st.session_state
-            or st.session_state.fuente_poblacion != fuente_poblacion
-        ):
+        # Inicializar la fuente seleccionada si no existe
+        if "fuente_poblacion" not in st.session_state:
             st.session_state.fuente_poblacion = fuente_poblacion
 
         # Filtros globales
         st.subheader("Filtros")
 
+        # Función para aplicar filtros automáticamente
+        def on_filter_change():
+            st.session_state.filters = {
+                "municipio": st.session_state.municipio_filter,
+                "grupo_edad": st.session_state.grupo_edad_filter,
+                "sexo": st.session_state.sexo_filter,
+                "grupo_etnico": st.session_state.grupo_etnico_filter,
+                "regimen": st.session_state.regimen_filter,
+                "aseguradora": st.session_state.aseguradora_filter,
+            }
+
         # Limpiar municipios antes de ordenarlos
         municipios = clean_list(data["municipios"]["DPMP"].unique().tolist())
-        municipio = st.selectbox("Municipio", options=["Todos"] + sorted(municipios))
+        municipio = st.selectbox(
+            "Municipio",
+            options=["Todos"] + sorted(municipios),
+            key="municipio_filter",
+            on_change=on_filter_change,
+        )
 
         # Obtener valores únicos de la columna Grupo_Edad y limpiarlos
         grupos_edad = clean_list(data["vacunacion"]["Grupo_Edad"].unique().tolist())
         grupo_edad = st.selectbox(
-            "Grupo de Edad", options=["Todos"] + sorted(grupos_edad)
+            "Grupo de Edad",
+            options=["Todos"] + sorted(grupos_edad),
+            key="grupo_edad_filter",
+            on_change=on_filter_change,
         )
 
         # Obtener valores únicos para el resto de filtros y limpiarlos
         sexos = clean_list(data["vacunacion"]["Sexo"].unique().tolist())
+        sexo = st.selectbox(
+            "Sexo",
+            options=["Todos"] + sorted(sexos),
+            key="sexo_filter",
+            on_change=on_filter_change,
+        )
+
         grupos_etnicos = clean_list(data["vacunacion"]["GrupoEtnico"].unique().tolist())
+        grupo_etnico = st.selectbox(
+            "Grupo Étnico",
+            options=["Todos"] + sorted(grupos_etnicos),
+            key="grupo_etnico_filter",
+            on_change=on_filter_change,
+        )
+
         regimenes = clean_list(
             data["vacunacion"]["RegimenAfiliacion"].unique().tolist()
         )
+        regimen = st.selectbox(
+            "Régimen",
+            options=["Todos"] + sorted(regimenes),
+            key="regimen_filter",
+            on_change=on_filter_change,
+        )
+
         aseguradoras = clean_list(
             data["vacunacion"]["NombreAseguradora"].unique().tolist()
         )
-
-        sexo = st.selectbox("Sexo", options=["Todos"] + sorted(sexos))
-
-        grupo_etnico = st.selectbox(
-            "Grupo Étnico", options=["Todos"] + sorted(grupos_etnicos)
-        )
-
-        regimen = st.selectbox("Régimen", options=["Todos"] + sorted(regimenes))
-
         aseguradora = st.selectbox(
-            "Aseguradora", options=["Todos"] + sorted(aseguradoras)
+            "Aseguradora",
+            options=["Todos"] + sorted(aseguradoras),
+            key="aseguradora_filter",
+            on_change=on_filter_change,
         )
-
-        # Botón para aplicar filtros
-        if st.button("Aplicar Filtros", type="primary"):
-            st.session_state.filters = {
-                "municipio": municipio,
-                "grupo_edad": grupo_edad,
-                "sexo": sexo,
-                "grupo_etnico": grupo_etnico,
-                "regimen": regimen,
-                "aseguradora": aseguradora,
-            }
 
         # Botón para resetear filtros
         if st.button("Restablecer Filtros"):
-            st.session_state.filters = {
-                "municipio": "Todos",
-                "grupo_edad": "Todos",
-                "sexo": "Todos",
-                "grupo_etnico": "Todos",
-                "regimen": "Todos",
-                "aseguradora": "Todos",
-            }
+            for key in [
+                "municipio_filter",
+                "grupo_edad_filter",
+                "sexo_filter",
+                "grupo_etnico_filter",
+                "regimen_filter",
+                "aseguradora_filter",
+            ]:
+                st.session_state[key] = "Todos"
+            on_filter_change()
 
         # Información del desarrollador
         st.sidebar.markdown("---")
@@ -165,9 +197,12 @@ def main():
             "aseguradora": "Todos",
         }
 
-    # Inicializar fuente de población si no existe
-    if "fuente_poblacion" not in st.session_state:
-        st.session_state.fuente_poblacion = "DANE"
+    # Banner principal y logos
+    col1, col2 = st.columns([3, 1])
+
+    with col1:
+        st.title("Dashboard Vacunación Fiebre Amarilla - Tolima")
+        st.write("Secretaría de Salud del Tolima - Vigilancia Epidemiológica")
 
     # Agregar banner que muestra la fuente de datos seleccionada
     st.info(

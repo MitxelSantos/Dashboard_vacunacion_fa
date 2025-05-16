@@ -3,18 +3,28 @@
 
 /* Colores institucionales */
 :root {
-    --primary-color: #7D0F2B;    /* Vinotinto */
-    --secondary-color: #CFB53B;  /* Dorado/Oro */
-    --accent-color: #215E8F;     /* Azul complementario */
-    --light-color: #F9F6E9;      /* Crema claro */
-    --dark-color: #2C2C2C;       /* Gris oscuro */
-    --success-color: #45A163;    /* Verde */
-    --warning-color: #EDAA25;    /* Amarillo */
-    --danger-color: #CF4520;     /* Rojo anaranjado */
+    --primary-color: #AB0520;
+    /* Rojo institucional */
+    --secondary-color: #F2A900;
+    /* Amarillo dorado */
+    --accent-color: #0C234B;
+    /* Azul oscuro */
+    --light-color: #F9F6E9;
+    /* Crema claro */
+    --dark-color: #2C2C2C;
+    /* Gris oscuro */
+    --success-color: #509E2F;
+    /* Verde */
+    --warning-color: #F7941D;
+    /* Naranja */
+    --danger-color: #E51937;
+    /* Rojo brillante */
 }
 
 /* Estilos para el encabezado */
-h1, h2, h3 {
+h1,
+h2,
+h3 {
     color: var(--primary-color);
     font-weight: 600;
 }
@@ -30,14 +40,14 @@ h1 {
     background-color: white;
     border-radius: 8px;
     padding: 1.5rem;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     text-align: center;
     transition: transform 0.3s ease;
 }
 
 .metric-card:hover {
     transform: translateY(-5px);
-    box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
 }
 
 .metric-value {
@@ -87,7 +97,7 @@ h1 {
 }
 
 .stButton>button[data-baseweb="button"]:first-child:hover {
-    background-color: #6a0b24;
+    background-color: #920415;
 }
 
 .stButton>button[data-baseweb="button"]:not(:first-child) {
@@ -101,7 +111,8 @@ h1 {
 }
 
 /* Personalización de selectores */
-.stSelectbox label, .stMultiselect label {
+.stSelectbox label,
+.stMultiselect label {
     color: var(--primary-color);
     font-weight: 500;
 }
@@ -110,7 +121,7 @@ h1 {
 .plot-container {
     background-color: white;
     border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
     padding: 1rem;
 }
 
@@ -157,16 +168,37 @@ footer {
     border-radius: 4px;
 }
 
+/* Nuevos estilos para imágenes y banners */
+.logo-container {
+    text-align: center;
+    margin-bottom: 1rem;
+}
+
+.info-banner {
+    background-color: var(--light-color);
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 1.5rem;
+    border-left: 4px solid var(--primary-color);
+}
+
+.image-caption {
+    text-align: center;
+    font-size: 0.8rem;
+    color: var(--dark-color);
+    margin-top: 0.5rem;
+}
+
 /* Personalización para dispositivos móviles */
 @media (max-width: 768px) {
     .metric-value {
         font-size: 1.5rem;
     }
-    
+
     h1 {
         font-size: 1.5rem;
     }
-    
+
     h2 {
         font-size: 1.25rem;
     }

@@ -132,6 +132,7 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
                 title="Cobertura según fuente de población",
                 color=colors["primary"],
                 height=250,
+                filters=filters,  # Pasar los filtros a la función
             )
 
             st.plotly_chart(fig, use_container_width=True)
@@ -160,13 +161,13 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
             # Crear gráfico
             fig_mun = create_bar_chart(
                 data=top_municipios,
-                x=cobertura_col,
-                y="DPMP",
+                x="DPMP",
+                y=cobertura_col,
                 title=f"Cobertura por municipio (Top 10) - {fuente_poblacion}",
                 color=colors["primary"],
                 height=400,
-                horizontal=True,
-                formatter="%{x:.1f}%",
+                formatter="%{y:.1f}%",
+                filters=filters,  # Pasar los filtros a la función
             )
 
             st.plotly_chart(fig_mun, use_container_width=True)
@@ -179,45 +180,73 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
                 "Columna 'Grupo_Edad' no encontrada en los datos. No se puede mostrar distribución por grupo de edad."
             )
         else:
-            # Agrupar por grupo de edad
-            edad_counts = (
-                filtered_data["vacunacion"]["Grupo_Edad"].value_counts().reset_index()
-            )
-            edad_counts.columns = ["Grupo_Edad", "Vacunados"]
-
-            # Ordenar por grupos de edad (para mantener el orden correcto)
             try:
-                orden_grupos = [
-                    "0-4",
-                    "5-14",
-                    "15-19",
-                    "20-29",
-                    "30-39",
-                    "40-49",
-                    "50-59",
-                    "60-69",
-                    "70-79",
-                    "80+",
-                ]
-                edad_counts["Grupo_Edad"] = pd.Categorical(
-                    edad_counts["Grupo_Edad"], categories=orden_grupos, ordered=True
+                # Asegurarse de que los datos estén en formato string y sin espacios
+                filtered_data["vacunacion"]["Grupo_Edad"] = filtered_data["vacunacion"][
+                    "Grupo_Edad"
+                ].astype(str)
+                filtered_data["vacunacion"]["Grupo_Edad"] = filtered_data["vacunacion"][
+                    "Grupo_Edad"
+                ].str.strip()
+                filtered_data["vacunacion"]["Grupo_Edad"] = filtered_data["vacunacion"][
+                    "Grupo_Edad"
+                ].replace("nan", "Sin especificar")
+
+                # Agrupar por grupo de edad
+                edad_counts = (
+                    filtered_data["vacunacion"]["Grupo_Edad"]
+                    .value_counts()
+                    .reset_index()
                 )
-                edad_counts = edad_counts.sort_values("Grupo_Edad")
-            except:
-                # Si falla la categorización (por ejemplo, si los grupos son diferentes), usar orden alfabético
-                edad_counts = edad_counts.sort_values("Grupo_Edad")
+                edad_counts.columns = ["Grupo_Edad", "Vacunados"]
 
-            # Crear gráfico
-            fig_edad = create_bar_chart(
-                data=edad_counts,
-                x="Grupo_Edad",
-                y="Vacunados",
-                title="Distribución por grupos de edad",
-                color=colors["secondary"],
-                height=400,
-            )
+                # Ordenar por grupos de edad
+                try:
+                    orden_grupos = [
+                        "0-4",
+                        "5-14",
+                        "15-19",
+                        "20-29",
+                        "30-39",
+                        "40-49",
+                        "50-59",
+                        "60-69",
+                        "70-79",
+                        "80+",
+                    ]
+                    # Verificar si tenemos estos grupos en nuestros datos
+                    grupos_presentes = set(edad_counts["Grupo_Edad"])
+                    grupos_orden = [g for g in orden_grupos if g in grupos_presentes]
 
-            st.plotly_chart(fig_edad, use_container_width=True)
+                    # Si hay grupos en el orden predefinido, usarlos
+                    if grupos_orden:
+                        edad_counts["Grupo_Edad"] = pd.Categorical(
+                            edad_counts["Grupo_Edad"],
+                            categories=grupos_orden
+                            + [g for g in grupos_presentes if g not in grupos_orden],
+                            ordered=True,
+                        )
+                        edad_counts = edad_counts.sort_values("Grupo_Edad")
+                except:
+                    # Si falla la categorización, usar orden alfabético
+                    edad_counts = edad_counts.sort_values("Grupo_Edad")
+
+                # Crear gráfico
+                fig_edad = create_bar_chart(
+                    data=edad_counts,
+                    x="Grupo_Edad",
+                    y="Vacunados",
+                    title="Distribución por grupos de edad",
+                    color=colors["secondary"],
+                    height=400,
+                    filters=filters,  # Pasar los filtros a la función
+                )
+
+                st.plotly_chart(fig_edad, use_container_width=True)
+            except Exception as e:
+                st.error(
+                    f"Error al crear gráfico de distribución por grupos de edad: {str(e)}"
+                )
 
     # Añadir gráfico de dispersión para comparar DANE vs SISBEN
     if (
@@ -235,6 +264,7 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
             color=colors["accent"],
             hover_data=["DPMP", "Vacunados", "Cobertura_DANE", "Cobertura_SISBEN"],
             height=500,
+            filters=filters,  # Pasar los filtros a la función
         )
 
         st.plotly_chart(fig_scatter, use_container_width=True)
@@ -277,6 +307,7 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
                 title="Distribución por sexo",
                 color_map=color_map_sexo,
                 height=350,
+                filters=filters,  # Pasar los filtros a la función
             )
 
             st.plotly_chart(fig_sexo, use_container_width=True)
@@ -300,6 +331,7 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
                 title="Distribución por grupo étnico",
                 color_map={},  # Colores automáticos
                 height=350,
+                filters=filters,  # Pasar los filtros a la función
             )
 
             st.plotly_chart(fig_etnia, use_container_width=True)
@@ -325,6 +357,7 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
                 title="Distribución por régimen",
                 color_map={},  # Colores automáticos
                 height=350,
+                filters=filters,  # Pasar los filtros a la función
             )
 
             st.plotly_chart(fig_regimen, use_container_width=True)

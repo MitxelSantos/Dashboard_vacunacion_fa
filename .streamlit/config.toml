@@ -1,0 +1,9 @@
+[server]
+enableCORS = false
+enableXsrfProtection = false
+enablePagesRunOnSave = false
+
+[theme]
+primaryColor = "#7D0F2B"
+secondaryBackgroundColor = "#F5F5F5"
+textColor = "#2C2C2C"

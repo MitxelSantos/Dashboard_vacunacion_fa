@@ -38,6 +38,17 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
             try:
                 # Verificar si hay datos de edad
                 if len(filtered_data["vacunacion"]) > 0:
+                    # Asegurarse de que los datos estén en formato string y sin espacios
+                    filtered_data["vacunacion"]["Grupo_Edad"] = filtered_data[
+                        "vacunacion"
+                    ]["Grupo_Edad"].astype(str)
+                    filtered_data["vacunacion"]["Grupo_Edad"] = filtered_data[
+                        "vacunacion"
+                    ]["Grupo_Edad"].str.strip()
+                    filtered_data["vacunacion"]["Grupo_Edad"] = filtered_data[
+                        "vacunacion"
+                    ]["Grupo_Edad"].replace("nan", "Sin especificar")
+
                     # Normalizar los valores de Grupo_Edad
                     filtered_data["vacunacion"]["Grupo_Edad"] = filtered_data[
                         "vacunacion"
@@ -97,10 +108,6 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
             except Exception as e:
                 st.error(
                     f"Error al crear gráfico de distribución por grupos de edad: {str(e)}"
-                )
-                st.write(
-                    "Datos disponibles:",
-                    filtered_data["vacunacion"]["Grupo_Edad"].unique(),
                 )
 
     # Gráfico de distribución por sexo

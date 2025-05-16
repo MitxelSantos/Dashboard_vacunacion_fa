@@ -23,123 +23,42 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
 
     filtered_data = apply_filters(data, filters, fuente_poblacion)
 
-    # Verificar si hay datos de fecha de vacunación
-    if "FechaVacunacion" in filtered_data["vacunacion"].columns:
-        # Convertir a datetime si no lo es
-        if not pd.api.types.is_datetime64_any_dtype(
-            filtered_data["vacunacion"]["FechaVacunacion"]
-        ):
-            try:
-                filtered_data["vacunacion"]["FechaVacunacion"] = pd.to_datetime(
-                    filtered_data["vacunacion"]["FechaVacunacion"]
-                )
-            except Exception as e:
-                st.error(
-                    f"No se pudieron convertir las fechas de vacunación a formato datetime: {str(e)}"
-                )
-                return
+    # Usar directamente FA UNICA como fecha de vacunación
+    if "FA UNICA" in filtered_data["vacunacion"].columns:
+        try:
+            st.info("Usando columna 'FA UNICA' para análisis de tendencias")
 
-        # Continuar con la lógica original
-        process_dates(filtered_data, colors, fuente_poblacion)
-    else:
-        # Intentar usar otra columna como fecha (FechaAplicacion, FechaRegistro, etc.)
-        fecha_alternativas = [
-            "FechaAplicacion",
-            "Fecha",
-            "FechaRegistro",
-            "fechaVacunacion",
-            "fecha_vacunacion",
-            "FA UNICA",
-        ]
-        columna_fecha = None
-
-        # Buscar columnas alternativas
-        for col in fecha_alternativas:
-            if col in filtered_data["vacunacion"].columns:
-                columna_fecha = col
-                break
-
-        if columna_fecha:
-            st.info(
-                f"Usando columna '{columna_fecha}' para análisis de tendencias en lugar de 'FechaVacunacion'"
+            # Convertir a datetime
+            filtered_data["vacunacion"]["FechaVacunacion"] = pd.to_datetime(
+                filtered_data["vacunacion"]["FA UNICA"], errors="coerce"
             )
 
-            # Convertir a datetime si no lo es
-            if not pd.api.types.is_datetime64_any_dtype(
-                filtered_data["vacunacion"][columna_fecha]
-            ):
-                try:
-                    filtered_data["vacunacion"]["FechaVacunacion"] = pd.to_datetime(
-                        filtered_data["vacunacion"][columna_fecha]
-                    )
-
-                    # Continuar con la lógica original usando la nueva columna FechaVacunacion
-                    process_dates(filtered_data, colors, fuente_poblacion)
-
-                except Exception as e:
-                    st.error(
-                        f"Error al convertir la columna {columna_fecha} a formato fecha: {str(e)}"
-                    )
-                    st.warning(
-                        "No se pudieron procesar los datos de fecha para análisis de tendencias"
-                    )
+            # Filtrar registros con fechas válidas
+            fechas_validas = ~filtered_data["vacunacion"]["FechaVacunacion"].isna()
+            if fechas_validas.sum() > 0:
+                filtered_data["vacunacion"] = filtered_data["vacunacion"][
+                    fechas_validas
+                ]
+                process_dates(filtered_data, colors, fuente_poblacion, filters)
             else:
-                # Si ya es datetime, simplemente copiar
-                filtered_data["vacunacion"]["FechaVacunacion"] = filtered_data[
-                    "vacunacion"
-                ][columna_fecha]
-
-                # Continuar con la lógica original
-                process_dates(filtered_data, colors, fuente_poblacion)
-        else:
-            # Si no hay fechas, verificar si podemos crear una a partir de otras columnas
-            if (
-                "FechaNacimiento" in filtered_data["vacunacion"].columns
-                and "Edad_Vacunacion" in filtered_data["vacunacion"].columns
-            ):
-                try:
-                    st.info(
-                        "Intentando estimar fecha de vacunación a partir de fecha de nacimiento y edad de vacunación"
-                    )
-
-                    # Convertir FechaNacimiento a datetime si no lo es
-                    if not pd.api.types.is_datetime64_any_dtype(
-                        filtered_data["vacunacion"]["FechaNacimiento"]
-                    ):
-                        filtered_data["vacunacion"]["FechaNacimiento"] = pd.to_datetime(
-                            filtered_data["vacunacion"]["FechaNacimiento"]
-                        )
-
-                    # Estimar fecha de vacunación (muy aproximado)
-                    filtered_data["vacunacion"]["FechaVacunacion"] = filtered_data[
-                        "vacunacion"
-                    ]["FechaNacimiento"] + pd.to_timedelta(
-                        filtered_data["vacunacion"]["Edad_Vacunacion"] * 365, unit="D"
-                    )
-
-                    # Continuar con la lógica original
-                    process_dates(filtered_data, colors, fuente_poblacion)
-
-                except Exception as e:
-                    st.error(f"Error al estimar fechas de vacunación: {str(e)}")
-                    st.warning(
-                        "No se pudieron procesar los datos de fecha para análisis de tendencias"
-                    )
-            else:
-                # Sin opción viable, mostrar advertencia
-                st.warning(
-                    "No se encontraron datos de fecha de vacunación para realizar análisis de tendencias"
+                st.error(
+                    "No se pudieron obtener fechas válidas de la columna 'FA UNICA'"
                 )
+        except Exception as e:
+            st.error(f"Error al procesar fechas de 'FA UNICA': {str(e)}")
+    else:
+        st.error("La columna 'FA UNICA' no se encuentra en los datos")
 
-                # Mostrar columnas disponibles para ayudar a diagnosticar
-                st.expander("Ver columnas disponibles en los datos").write(
-                    ", ".join(filtered_data["vacunacion"].columns.tolist())
-                )
 
-
-def process_dates(filtered_data, colors, fuente_poblacion):
+def process_dates(filtered_data, colors, fuente_poblacion, filters):
     """
     Procesa los datos de fechas y muestra los gráficos de tendencias.
+
+    Args:
+        filtered_data (dict): Datos filtrados para visualización
+        colors (dict): Colores institucionales
+        fuente_poblacion (str): Fuente de datos de población
+        filters (dict): Filtros aplicados a los datos
     """
     # Agrupar por fecha
     vacunacion_diaria = (
@@ -170,6 +89,7 @@ def process_dates(filtered_data, colors, fuente_poblacion):
         title="Vacunados por día",
         color=colors["primary"],
         height=400,
+        filters=filters,  # Pasar los filtros a la función
     )
 
     st.plotly_chart(fig_diaria, use_container_width=True)
@@ -184,6 +104,7 @@ def process_dates(filtered_data, colors, fuente_poblacion):
         title="Vacunados acumulados",
         color=colors["secondary"],
         height=400,
+        filters=filters,  # Pasar los filtros a la función
     )
 
     st.plotly_chart(fig_acumulada, use_container_width=True)
@@ -199,6 +120,7 @@ def process_dates(filtered_data, colors, fuente_poblacion):
             title=f"Cobertura acumulada (Población {fuente_poblacion})",
             color=colors["accent"],
             height=400,
+            filters=filters,  # Pasar los filtros a la función
         )
 
         st.plotly_chart(fig_cobertura, use_container_width=True)
@@ -228,6 +150,7 @@ def process_dates(filtered_data, colors, fuente_poblacion):
         title="Vacunados por mes",
         color=colors["primary"],
         height=400,
+        filters=filters,  # Pasar los filtros a la función
     )
 
     st.plotly_chart(fig_mensual, use_container_width=True)
