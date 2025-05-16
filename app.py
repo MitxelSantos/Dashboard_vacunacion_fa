@@ -23,7 +23,26 @@ import sys
 
 sys.path.insert(0, str(ROOT_DIR))
 
-from vistas import overview, geographic, demographic, insurance, trends
+import importlib.util
+import sys
+
+# Lista de vistas a importar
+vista_modules = ["overview", "geographic", "demographic", "insurance", "trends"]
+vistas = {}
+
+# Importar cada vista si existe
+for module_name in vista_modules:
+    module_path = ROOT_DIR / "vistas" / f"{module_name}.py"
+    if module_path.exists():
+        spec = importlib.util.spec_from_file_location(f"vistas.{module_name}", module_path)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[f"vistas.{module_name}"] = module
+        spec.loader.exec_module(module)
+        vistas[module_name] = module
+    else:
+        print(f"Advertencia: No se encontró el módulo vista/{module_name}.py")
+
+
 from src.data.loader import load_datasets
 from src.utils.helpers import configure_page
 
@@ -32,7 +51,6 @@ configure_page(
     page_title="Dashboard Vacunación Fiebre Amarilla - Tolima",
     page_icon="💉",
     layout="wide",
-    initial_sidebar_state="expanded",
 )
 
 # Cargar CSS personalizado

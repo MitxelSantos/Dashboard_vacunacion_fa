@@ -13,11 +13,7 @@ def configure_page(page_title, page_icon, layout="wide"):
         layout (str): Diseño de la página ('wide' o 'centered')
     """
     # Configuración básica
-    st.set_page_config(
-        page_title=page_title,
-        page_icon=page_icon,
-        layout=layout,
-    )
+    st.set_page_config(page_title=page_title, page_icon=page_icon, layout=layout)
 
     # Cargar CSS personalizado
     css_main = Path(__file__).parent.parent.parent / "assets" / "styles" / "main.css"
@@ -42,8 +38,8 @@ def configure_page(page_title, page_icon, layout="wide"):
         /* Colores institucionales */
         :root {{
             --primary-color: #7D0F2B;
-            --secondary-color: #CFB53B;
-            --accent-color: #215E8F;
+            --secondary-color: #F2A900;
+            --accent-color: #5A4214;
             --background-color: #F5F5F5;
         }}
         

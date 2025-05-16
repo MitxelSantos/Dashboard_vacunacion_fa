@@ -10,22 +10,20 @@ from .charts import (
     create_line_chart
 )
 
-# Usar un bloque try-except más robusto para maps
+# Manejo de importación segura para maps
 __maps_available__ = False
 try:
-    # Primero verificar si el módulo existe
-    import importlib.util
-    maps_spec = importlib.util.find_spec('.maps', package='src.visualization')
-    
-    if maps_spec is not None:
+    # Verificar si el archivo maps.py existe
+    import os
+    if os.path.exists(os.path.join(os.path.dirname(__file__), 'maps.py')):
         from .maps import (
             create_choropleth_map,
             create_bubble_map,
             load_tolima_geojson
         )
         __maps_available__ = True
-except (ImportError, ModuleNotFoundError):
-    # Si faltan dependencias para mapas, todavía se pueden usar otros gráficos
+except ImportError:
+    # Si no existe o hay error al importar, simplemente continuar
     pass
 
 __all__ = [
