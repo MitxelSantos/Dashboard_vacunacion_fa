@@ -192,10 +192,6 @@ def main():
         try:
             grupos_edad = clean_list(data["vacunacion"]["Grupo_Edad"].unique().tolist())
         except KeyError:
-            # Mostrar las columnas disponibles para diagnóstico
-            st.error(
-                f"Error: La columna 'Grupo_Edad' no existe. Columnas disponibles: {data['vacunacion'].columns.tolist()}"
-            )
             # Usar un valor predeterminado
             grupos_edad = ["Sin especificar"]
         grupo_edad = st.selectbox(

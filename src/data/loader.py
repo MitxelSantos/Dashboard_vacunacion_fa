@@ -198,17 +198,6 @@ def load_from_drive():
     ASSETS_DIR.mkdir(exist_ok=True, parents=True)
     IMAGES_DIR.mkdir(exist_ok=True, parents=True)
 
-    # Verificar si tenemos secretos configurados
-    if "google_drive" not in st.secrets:
-        st.error("❌ No se encontró la configuración de Google Drive en los secretos")
-        return False
-
-    if "gcp_service_account" not in st.secrets:
-        st.error(
-            "❌ No se encontró la configuración de GCP Service Account en los secretos"
-        )
-        return False
-
     try:
         st.info("📥 Iniciando descarga de archivos desde Google Drive...")
 
