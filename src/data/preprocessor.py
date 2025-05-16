@@ -2,6 +2,10 @@ import pandas as pd
 import numpy as np
 
 
+import pandas as pd
+import numpy as np
+
+
 def apply_filters(data, filters, fuente_poblacion="DANE"):
     """
     Aplica los filtros seleccionados a los datos.
@@ -26,6 +30,11 @@ def apply_filters(data, filters, fuente_poblacion="DANE"):
 
     # Filtrar vacunación
     vacunacion_df = filtered_data["vacunacion"]
+    
+    # Convertir columnas categóricas a strings para evitar errores
+    for col in vacunacion_df.columns:
+        if pd.api.types.is_categorical_dtype(vacunacion_df[col]):
+            vacunacion_df[col] = vacunacion_df[col].astype(str)
 
     # Aplicar cada filtro en secuencia
     # Primero manejar el filtro de municipio (caso especial)
@@ -81,9 +90,14 @@ def apply_filters(data, filters, fuente_poblacion="DANE"):
     # Aplicar cada filtro solo si la columna existe
     for filter_key, column_name in column_mapping.items():
         if column_name in vacunacion_df.columns and filters[filter_key] != "Todos":
+            # Convertir a string si es categórica
+            if pd.api.types.is_categorical_dtype(vacunacion_df[column_name]):
+                vacunacion_df[column_name] = vacunacion_df[column_name].astype(str)
+                
             # Normalizar los valores para comparación insensible a mayúsculas/minúsculas
+            # Usar astype(str) para garantizar que funcione con cualquier tipo de datos
             vacunacion_df[f"{column_name}_lower"] = (
-                vacunacion_df[column_name].fillna("Sin especificar").str.lower()
+                vacunacion_df[column_name].astype(str).fillna("Sin especificar").str.lower()
             )
             filter_value_lower = filters[filter_key].lower()
 

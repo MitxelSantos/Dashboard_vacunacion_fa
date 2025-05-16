@@ -572,9 +572,6 @@ def normalize_dataframe(df):
     # Limpiar nombres de columnas (quitar espacios y caracteres invisibles)
     df.columns = [col.strip() for col in df.columns]
 
-    # Imprimir columnas para diagnóstico
-    print("Columnas después de limpiar espacios:", df.columns.tolist())
-
     # Buscar columnas similares a las que necesitamos
     column_map = {}
     required_columns = [
@@ -607,14 +604,11 @@ def normalize_dataframe(df):
 
     # Renombrar columnas encontradas
     if column_map:
-        print(f"Renombrando columnas: {column_map}")
         df = df.rename(columns=column_map)
 
     # Crear columnas faltantes con valores predeterminados
     for req_col in required_columns:
         if req_col not in df.columns:
-            print(f"Creando columna faltante: {req_col}")
-
             # Asegurarse de que todas las columnas estén como tipo objeto para evitar problemas con categorical
             for col in df.columns:
                 if pd.api.types.is_categorical_dtype(df[col]):
@@ -681,7 +675,6 @@ def normalize_dataframe(df):
                         )
                     )
                 except Exception as e:
-                    print(f"Error al procesar Edad_Vacunacion: {e}")
                     # En caso de error, mantener el valor predeterminado
                     df[req_col] = "Sin especificar"
 
