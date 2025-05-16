@@ -17,6 +17,8 @@ build/
 # Archivos y carpetas de datos (para proteger información sensible)
 data/vacunacion_fa.csv
 data/processed/
+data/*.csv
+data/*.xlsx
 
 # Logs
 logs/
@@ -34,3 +36,7 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+
+
+*.pyc
+
