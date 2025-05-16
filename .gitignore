@@ -1,0 +1,36 @@
+# Entornos virtuales
+venv/
+env/
+.env/
+
+# Archivos de caché de Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Distribución / empaquetado
+dist/
+build/
+*.egg-info/
+
+# Archivos y carpetas de datos (para proteger información sensible)
+data/vacunacion_fa.csv
+data/processed/
+
+# Logs
+logs/
+*.log
+
+# Archivos de configuración local
+.streamlit/secrets.toml
+
+# Archivos de sistema operativo
+.DS_Store
+Thumbs.db
+
+# Archivos de IDE
+.idea/
+.vscode/
+*.swp
+*.swo
