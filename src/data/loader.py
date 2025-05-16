@@ -36,9 +36,7 @@ ASSETS_DIR.mkdir(exist_ok=True, parents=True)
 IMAGES_DIR.mkdir(exist_ok=True, parents=True)
 
 
-def download_file_with_timeout(
-    drive_service, file_id, destination_path, timeout=1800
-):  # 30 minutos de timeout
+def download_file_with_timeout(drive_service, file_id, destination_path, timeout=1800):
     """
     Descarga un archivo de Google Drive con manejo avanzado para archivos muy grandes.
     """
@@ -52,44 +50,25 @@ def download_file_with_timeout(
             .execute()
         )
         file_size = int(file_info.get("size", 0))
-        file_name = file_info.get("name", "Desconocido")
-        mime_type = file_info.get("mimeType", "Desconocido")
-
-        st.write(
-            f"📥 Descargando archivo grande: {file_name} ({file_size/1024/1024:.2f} MB, tipo: {mime_type})"
-        )
 
         # Asegurar que el directorio existe
         destination_path.parent.mkdir(exist_ok=True, parents=True)
 
         # Para archivos extremadamente grandes, usar un enfoque por bloques
         if file_size > 200 * 1024 * 1024:  # > 200MB
-            st.warning(
-                f"⚠️ Archivo extremadamente grande: {file_name} ({file_size/1024/1024:.2f} MB)"
-            )
-            st.write("Utilizando descarga por bloques optimizada...")
-
             # Usar bloques más grandes para acelerar la descarga
             chunk_size = 50 * 1024 * 1024  # 50MB por chunk
 
             # Crear request para descargar en chunks para usar menos memoria
             request = drive_service.files().get_media(fileId=file_id)
 
-            # Monitorear el progreso
-            progress_bar = st.progress(0)
-            progress_text = st.empty()
-
             with open(destination_path, "wb") as f:
                 downloader = MediaIoBaseDownload(f, request, chunksize=chunk_size)
                 done = False
-                total_downloaded = 0
 
                 while not done:
                     # Verificar tiempo de espera máximo
                     if time.time() - start_time > timeout:
-                        st.error(
-                            f"⏱️ Tiempo de espera excedido ({timeout/60:.1f} minutos) al descargar {file_name}"
-                        )
                         # Si hay un archivo parcial, eliminarlo para no confundir
                         if destination_path.exists():
                             destination_path.unlink()
@@ -98,34 +77,8 @@ def download_file_with_timeout(
                     # Descargar siguiente chunk
                     try:
                         status, done = downloader.next_chunk()
-
-                        # Actualizar progreso
-                        progress = int(status.progress() * 100)
-                        progress_bar.progress(progress / 100)
-                        progress_text.write(
-                            f"⏳ Descarga en progreso: {progress}% ({total_downloaded/1024/1024:.1f}MB de {file_size/1024/1024:.1f}MB)"
-                        )
-
-                        # Estimar tiempo restante
-                        elapsed_time = time.time() - start_time
-                        if progress > 0:
-                            estimated_total_time = elapsed_time / (progress / 100)
-                            remaining_time = estimated_total_time - elapsed_time
-                            if remaining_time > 60:
-                                st.write(
-                                    f"Tiempo restante estimado: {remaining_time/60:.1f} minutos"
-                                )
-
-                        # Cada 25% completado, mostrar mensaje de progreso
-                        if progress % 25 == 0 and progress > 0:
-                            st.success(f"Progreso: {progress}% completado")
-
-                    except Exception as chunk_error:
-                        st.error(
-                            f"❌ Error descargando parte del archivo: {str(chunk_error)}"
-                        )
+                    except Exception:
                         # Intentar continuar con el siguiente chunk en lugar de abortar
-                        st.write("Intentando continuar con la descarga...")
                         continue
         else:
             # Para archivos medianos, usar el método estándar con chunks más grandes
@@ -137,19 +90,11 @@ def download_file_with_timeout(
                 )  # 20MB chunks
                 done = False
 
-                # Crear barra de progreso
-                progress_bar = st.progress(0)
-
                 while not done:
                     if time.time() - start_time > timeout:
-                        st.error(
-                            f"⏱️ Tiempo de espera excedido al descargar {file_name}"
-                        )
                         return False
 
                     status, done = downloader.next_chunk()
-                    progress = int(status.progress() * 100)
-                    progress_bar.progress(progress / 100)
 
         # Verificar resultado
         if destination_path.exists():
@@ -157,34 +102,20 @@ def download_file_with_timeout(
 
             # Verificar integridad
             if downloaded_size >= file_size * 0.99:  # Permitir 1% de diferencia
-                st.success(
-                    f"✅ Archivo descargado exitosamente: {file_name} ({downloaded_size/1024/1024:.1f} MB)"
-                )
                 return True
             else:
-                st.warning(
-                    f"⚠️ El archivo parece incompleto: {downloaded_size/1024/1024:.1f}MB vs {file_size/1024/1024:.1f}MB esperados"
-                )
                 size_difference = abs(file_size - downloaded_size)
                 percent_difference = (size_difference / file_size) * 100
 
                 # Si la diferencia es pequeña, aceptar el archivo
                 if percent_difference < 5:  # Menos del 5% de diferencia
-                    st.info(
-                        f"La diferencia es solo {percent_difference:.2f}%, utilizando el archivo de todos modos"
-                    )
                     return True
                 else:
                     return False
         else:
-            st.error(f"❌ Error: El archivo no se descargó correctamente")
             return False
 
-    except Exception as e:
-        st.error(f"❌ Error general descargando archivo: {str(e)}")
-        import traceback
-
-        st.error(traceback.format_exc())
+    except Exception:
         return False
 
 
@@ -198,9 +129,14 @@ def load_from_drive():
     ASSETS_DIR.mkdir(exist_ok=True, parents=True)
     IMAGES_DIR.mkdir(exist_ok=True, parents=True)
 
-    try:
-        st.info("📥 Iniciando descarga de archivos desde Google Drive...")
+    # Verificar si tenemos secretos configurados
+    if "google_drive" not in st.secrets:
+        return False
 
+    if "gcp_service_account" not in st.secrets:
+        return False
+
+    try:
         # Verificar que los IDs de archivos estén configurados
         required_files = ["poblacion_xlsx", "vacunacion_csv", "logo_gobernacion"]
         missing_files = [
@@ -208,9 +144,6 @@ def load_from_drive():
         ]
 
         if missing_files:
-            st.error(
-                f"❌ Faltan IDs de archivos en la configuración: {', '.join(missing_files)}"
-            )
             return False
 
         # Crear credenciales
@@ -219,13 +152,7 @@ def load_from_drive():
                 st.secrets["gcp_service_account"],
                 scopes=["https://www.googleapis.com/auth/drive.readonly"],
             )
-            st.success("✅ Credenciales de servicio creadas correctamente")
-        except Exception as e:
-            st.error(f"❌ Error al crear credenciales de servicio: {str(e)}")
-            st.write(
-                "Detalles:",
-                st.secrets["gcp_service_account"].get("client_email", "N/A"),
-            )
+        except Exception:
             return False
 
         # Construir servicio de Drive
@@ -234,14 +161,10 @@ def load_from_drive():
 
             # Verificar conexión - intentar listar archivos
             response = drive_service.files().list(pageSize=1).execute()
-            if "files" in response:
-                st.success("✅ Conexión exitosa con Google Drive API")
-            else:
-                st.error("❌ Error al conectar con Google Drive: Respuesta inválida")
+            if "files" not in response:
                 return False
 
-        except Exception as e:
-            st.error(f"❌ Error al construir servicio de Drive: {str(e)}")
+        except Exception:
             return False
 
         # Descargar archivo de población
@@ -249,93 +172,54 @@ def load_from_drive():
             poblacion_path = DATA_DIR / "POBLACION.xlsx"
             file_id = st.secrets["google_drive"]["poblacion_xlsx"]
 
-            st.write(f"📄 Descargando archivo de población... (ID: {file_id})")
             try:
-                request = (
-                    drive_service.files()
-                    .get(fileId=file_id, fields="name,size,mimeType")
-                    .execute()
-                )
-                st.write(
-                    f"Información del archivo: {request.get('name')} ({request.get('mimeType')})"
-                )
+                drive_service.files().get(
+                    fileId=file_id, fields="name,size,mimeType"
+                ).execute()
 
-                result = download_file_with_timeout(
+                download_file_with_timeout(
                     drive_service,
                     file_id,
                     poblacion_path,
                 )
-
-                if result and poblacion_path.exists():
-                    st.success(
-                        f"✅ Archivo de población descargado correctamente ({poblacion_path.stat().st_size} bytes)"
-                    )
-                else:
-                    st.error(f"❌ No se pudo descargar el archivo de población")
-            except Exception as e:
-                st.error(f"❌ Error al descargar archivo de población: {str(e)}")
+            except Exception:
+                pass
 
         # Descargar archivo de vacunación
         if "vacunacion_csv" in st.secrets["google_drive"]:
             vacunacion_path = DATA_DIR / "vacunacion_fa.csv"
             file_id = st.secrets["google_drive"]["vacunacion_csv"]
 
-            st.write(f"📄 Descargando archivo de vacunación... (ID: {file_id})")
             try:
-                request = (
-                    drive_service.files()
-                    .get(fileId=file_id, fields="name,size,mimeType")
-                    .execute()
-                )
-                st.write(
-                    f"Información del archivo: {request.get('name')} ({request.get('mimeType')})"
-                )
+                drive_service.files().get(
+                    fileId=file_id, fields="name,size,mimeType"
+                ).execute()
 
-                result = download_file_with_timeout(
+                download_file_with_timeout(
                     drive_service,
                     file_id,
                     vacunacion_path,
                 )
-
-                if result and vacunacion_path.exists():
-                    st.success(
-                        f"✅ Archivo de vacunación descargado correctamente ({vacunacion_path.stat().st_size} bytes)"
-                    )
-                else:
-                    st.error(f"❌ No se pudo descargar el archivo de vacunación")
-            except Exception as e:
-                st.error(f"❌ Error al descargar archivo de vacunación: {str(e)}")
+            except Exception:
+                pass
 
         # Descargar logo
         if "logo_gobernacion" in st.secrets["google_drive"]:
             logo_path = IMAGES_DIR / "logo_gobernacion.png"
             file_id = st.secrets["google_drive"]["logo_gobernacion"]
 
-            st.write(f"🖼️ Descargando logo... (ID: {file_id})")
             try:
-                request = (
-                    drive_service.files()
-                    .get(fileId=file_id, fields="name,size,mimeType")
-                    .execute()
-                )
-                st.write(
-                    f"Información del archivo: {request.get('name')} ({request.get('mimeType')})"
-                )
+                drive_service.files().get(
+                    fileId=file_id, fields="name,size,mimeType"
+                ).execute()
 
-                result = download_file_with_timeout(
+                download_file_with_timeout(
                     drive_service,
                     file_id,
                     logo_path,
                 )
-
-                if result and logo_path.exists():
-                    st.success(
-                        f"✅ Logo descargado correctamente ({logo_path.stat().st_size} bytes)"
-                    )
-                else:
-                    st.error(f"❌ No se pudo descargar el logo")
-            except Exception as e:
-                st.error(f"❌ Error al descargar logo: {str(e)}")
+            except Exception:
+                pass
 
         # Verificación final
         required_files_paths = [
@@ -349,20 +233,30 @@ def load_from_drive():
         ]
 
         if missing_files:
-            st.error(
-                f"❌ Faltan archivos después de la descarga: {', '.join(missing_files)}"
-            )
             return False
 
-        st.success("✅ Todos los archivos fueron descargados exitosamente")
         return True
 
-    except Exception as e:
-        import traceback
-
-        st.error(f"❌ Error general al cargar desde Google Drive: {str(e)}")
-        st.error(traceback.format_exc())
+    except Exception:
         return False
+
+
+def download_file(drive_service, file_id, destination_path):
+    """
+    Descarga un archivo de Google Drive a una ubicación local.
+
+    Args:
+        drive_service: Servicio de Google Drive
+        file_id (str): ID del archivo en Google Drive
+        destination_path (Path): Ruta local donde guardar el archivo
+    """
+    request = drive_service.files().get_media(fileId=file_id)
+
+    with open(destination_path, "wb") as f:
+        downloader = MediaIoBaseDownload(f, request)
+        done = False
+        while not done:
+            status, done = downloader.next_chunk()
 
 
 # Modificar la función de carga para usar timeout
