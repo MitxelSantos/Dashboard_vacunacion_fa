@@ -369,6 +369,27 @@ def load_datasets():
         # Calcular métricas
         metricas_df = calculate_metrics(municipios_df, vacunacion_df)
 
+        try:
+            import time
+            from datetime import datetime
+
+            file_stats = vacunacion_file.stat()
+            file_size = file_stats.st_size / (1024 * 1024)  # Tamaño en MB
+            modified_time = datetime.fromtimestamp(file_stats.st_mtime).strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
+            num_rows = len(vacunacion_df)
+            st.sidebar.info(
+                f"""
+            **Diagnóstico archivo CSV:**
+            - Tamaño: {file_size:.2f} MB
+            - Modificado: {modified_time}
+            - Filas: {num_rows:,}
+            """
+            )
+        except Exception as e:
+            pass  # Ignorar errores en el diagnóstico
+
         return {
             "municipios": municipios_df,
             "vacunacion": vacunacion_df,
