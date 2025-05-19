@@ -244,6 +244,9 @@ def main():
         # Selector de fuente de datos de población
         st.subheader("Fuente de datos")
 
+        if "fuente_radio" not in st.session_state:
+            st.session_state.fuente_radio = "DANE"  # Valor predeterminado
+
         def on_fuente_change():
             st.session_state.fuente_poblacion = st.session_state.fuente_radio
 

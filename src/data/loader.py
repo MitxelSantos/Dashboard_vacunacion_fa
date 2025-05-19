@@ -129,6 +129,8 @@ def load_from_drive():
     ASSETS_DIR.mkdir(exist_ok=True, parents=True)
     IMAGES_DIR.mkdir(exist_ok=True, parents=True)
 
+    print("Iniciando descarga desde Google Drive...")
+
     # Verificar si tenemos secretos configurados
     if "google_drive" not in st.secrets:
         return False
@@ -260,7 +262,7 @@ def download_file(drive_service, file_id, destination_path):
 
 
 # Modificar la función de carga para usar timeout
-@st.cache_data(ttl=3600)
+# @st.cache_data(ttl=3600)
 def load_datasets():
     """
     Carga los datasets necesarios para la aplicación.
