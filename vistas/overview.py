@@ -20,13 +20,17 @@ def format_responsive_number(number, is_small_screen=False):
         # Convertir a float para manejar cualquier entrada numérica
         number = float(number)
         
-        if is_small_screen:
-            if number >= 1_000_000:
-                return f"{number/1_000_000:.1f}M"
-            elif number >= 1_000:
+        # Para valores muy grandes, siempre usar notación compacta
+        if number >= 1_000_000:
+            return f"{number/1_000_000:.1f}M"
+        elif number >= 10_000 or is_small_screen:
+            # Usar notación K para valores mayores a 10,000 o en pantallas pequeñas
+            if number >= 1_000:
                 return f"{number/1_000:.1f}K"
-            else:
-                return f"{number:.0f}"
+        
+        # Para valores más pequeños o en pantallas grandes
+        if is_small_screen:
+            return f"{number:.0f}"
         else:
             # Formato normal con puntos como separador de miles
             return f"{number:,.0f}".replace(",", ".")
@@ -136,6 +140,9 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
             border-left: 4px solid var(--primary-color);
             margin-bottom: 10px;
             height: 100%;
+            /* Añadimos estas propiedades para evitar desbordamiento */
+            overflow: hidden;
+            position: relative;
         }
         .metric-card:hover {
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
@@ -149,16 +156,28 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
             margin-bottom: 5px;
         }
         .metric-value {
-            font-size: clamp(1.2rem, 3vw, 1.8rem);
+            font-size: clamp(1rem, 2vw, 1.6rem);
             font-weight: 700;
             color: #7D0F2B;
+            /* Estas propiedades aseguran que el texto se ajuste al tamaño de la tarjeta */
+            width: 100%;
             white-space: nowrap;
-            overflow: visible;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
         .metric-poblacion { border-color: #7D0F2B; }
         .metric-vacunados { border-color: #F2A900; }
         .metric-cobertura { border-color: #509E2F; }
         .metric-pendientes { border-color: #F7941D; }
+
+        /* Estilos adicionales para columnas más equilibradas */
+        div.row-widget.stHorizontal {
+            gap: 10px;
+        }
+        div.row-widget.stHorizontal > div {
+            flex: 1;
+            min-width: 0;
+        }
         </style>
         """, unsafe_allow_html=True)
 
@@ -169,18 +188,22 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
             row2_col1, row2_col2 = st.columns(2)
             
             with row1_col1:
+                # Usar notación compacta para población total en pantallas muy pequeñas
+                poblacion_display = format_responsive_number(total_poblacion, True)
                 st.markdown(f"""
                 <div class="metric-card metric-poblacion">
                     <div class="metric-title">Población Total</div>
-                    <div class="metric-value">{format_responsive_number(total_poblacion, True)}</div>
+                    <div class="metric-value">{poblacion_display}</div>
                 </div>
                 """, unsafe_allow_html=True)
             
             with row1_col2:
+                # Usar notación compacta para vacunados en pantallas muy pequeñas
+                vacunados_display = format_responsive_number(total_vacunados, True)
                 st.markdown(f"""
                 <div class="metric-card metric-vacunados">
                     <div class="metric-title">Vacunados</div>
-                    <div class="metric-value">{format_responsive_number(total_vacunados, True)}</div>
+                    <div class="metric-value">{vacunados_display}</div>
                 </div>
                 """, unsafe_allow_html=True)
             
@@ -195,10 +218,12 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
                 """, unsafe_allow_html=True)
             
             with row2_col2:
+                # Usar notación compacta para pendientes en pantallas muy pequeñas
+                pendientes_display = format_responsive_number(pendientes, True)
                 st.markdown(f"""
                 <div class="metric-card metric-pendientes">
                     <div class="metric-title">Pendientes</div>
-                    <div class="metric-value">{format_responsive_number(pendientes, True)}</div>
+                    <div class="metric-value">{pendientes_display}</div>
                 </div>
                 """, unsafe_allow_html=True)
         else:
@@ -206,18 +231,22 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
             col1_1, col1_2, col1_3, col1_4 = st.columns(4)
             
             with col1_1:
+                # Usar notación compacta para población total sin importar el tamaño de pantalla
+                poblacion_display = format_responsive_number(total_poblacion, True) if total_poblacion >= 100000 else format_responsive_number(total_poblacion, is_small_screen)
                 st.markdown(f"""
                 <div class="metric-card metric-poblacion">
                     <div class="metric-title">Población Total</div>
-                    <div class="metric-value">{format_responsive_number(total_poblacion, is_small_screen)}</div>
+                    <div class="metric-value">{poblacion_display}</div>
                 </div>
                 """, unsafe_allow_html=True)
             
             with col1_2:
+                # Usar notación compacta para vacunados si es un número grande
+                vacunados_display = format_responsive_number(total_vacunados, True) if total_vacunados >= 100000 else format_responsive_number(total_vacunados, is_small_screen)
                 st.markdown(f"""
                 <div class="metric-card metric-vacunados">
                     <div class="metric-title">Vacunados</div>
-                    <div class="metric-value">{format_responsive_number(total_vacunados, is_small_screen)}</div>
+                    <div class="metric-value">{vacunados_display}</div>
                 </div>
                 """, unsafe_allow_html=True)
             
@@ -232,10 +261,12 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
                 """, unsafe_allow_html=True)
             
             with col1_4:
+                # Usar notación compacta para pendientes si es un número grande
+                pendientes_display = format_responsive_number(pendientes, True) if pendientes >= 100000 else format_responsive_number(pendientes, is_small_screen)
                 st.markdown(f"""
                 <div class="metric-card metric-pendientes">
                     <div class="metric-title">Pendientes</div>
-                    <div class="metric-value">{format_responsive_number(pendientes, is_small_screen)}</div>
+                    <div class="metric-value">{pendientes_display}</div>
                 </div>
                 """, unsafe_allow_html=True)
 
