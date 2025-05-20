@@ -108,11 +108,9 @@ def create_bar_chart(
 
     return fig
 
-# Reemplaza la función create_pie_chart en charts.py con esta versión:
-
 def create_pie_chart(data, names, values, title, color_map, height=400, filters=None):
     """
-    Crea un gráfico circular usando Plotly con mejor manejo de etiquetas.
+    Crea un gráfico circular usando Plotly con leyenda en la parte superior.
 
     Args:
         data (pd.DataFrame): Datos para el gráfico
@@ -129,6 +127,9 @@ def create_pie_chart(data, names, values, title, color_map, height=400, filters=
     # Ajustar altura para dispositivos móviles
     if st.session_state.get("_is_small_screen", False):
         height = max(300, height - 50)
+    else:
+        # Para pantallas normales, aumentar la altura para dar espacio a la leyenda arriba
+        height = height + 50  # Añadir espacio extra para la leyenda
 
     # Añadir información de filtros al título si existe
     full_title = title
@@ -210,7 +211,7 @@ def create_pie_chart(data, names, values, title, color_map, height=400, filters=
                 colors.append(institutional_colors[i % len(institutional_colors)])
 
     # Detectar si hay muchas categorías
-    many_categories = len(categories) > 4
+    many_categories = len(categories) > 3
     
     # Crear el gráfico
     fig = px.pie(
@@ -222,48 +223,61 @@ def create_pie_chart(data, names, values, title, color_map, height=400, filters=
         height=height,
     )
 
-    # Personalizar el diseño y la forma en que se muestran las etiquetas
+    # Calcular los mejores márgenes según el número de categorías
+    top_margin = 30  # Margen superior base para el título
     if many_categories:
-        # Para gráficos con muchas categorías, solo mostrar porcentajes dentro
-        # y mover todo el texto a la leyenda
-        fig.update_traces(
-            textposition='inside',
-            textinfo='percent',  # Solo mostrar porcentajes
-            insidetextorientation='radial',  # Orientación radial para mejor ajuste
-        )
-        
-        # Posicionar la leyenda a la izquierda y ajustar su tamaño
-        fig.update_layout(
-            legend=dict(
-                orientation="v",  # Orientación vertical
-                yanchor="middle",  # Anclaje al medio
-                y=0.5,             # Centrado verticalmente
-                xanchor="left",    # Anclaje a la izquierda
-                x=-0.1,            # Posición un poco a la izquierda del gráfico
-                font=dict(size=9), # Tamaño de fuente reducido
-                itemsizing='constant',  # Tamaño constante para los íconos
-                itemwidth=30,      # Ancho reducido para los ítems
-            )
-        )
-    else:
-        # Para gráficos con pocas categorías, mostrar etiquetas dentro
-        fig.update_traces(
-            textposition='inside', 
-            textinfo='percent+label',
-            insidetextfont=dict(size=10),
-        )
+        # Estimar el espacio necesario para la leyenda (más categorías = más espacio)
+        # Aproximadamente 15px por categoría si están en horizontal
+        legend_height = min(30 + len(categories) * 15, 120)  # Limitar a máximo 120px
+        top_margin += legend_height
 
-    # Diseño general para todos los gráficos
+    # Personalizar el diseño y posicionar la leyenda ARRIBA del gráfico
     fig.update_layout(
         plot_bgcolor="white",
         paper_bgcolor="white",
-        margin=dict(l=10, r=10, t=40, b=20),
+        margin=dict(l=10, r=10, t=top_margin, b=20),  # Margen superior ajustado
         title={"y": 0.98, "x": 0.5, "xanchor": "center", "yanchor": "top"},
         title_font=dict(
             size=16 if not st.session_state.get("_is_small_screen", False) else 14
         ),
         autosize=True,  # Importante para responsividad
+        # Configuración de la leyenda en la parte superior
+        legend=dict(
+            orientation="h",  # Orientación horizontal
+            yanchor="bottom", # Anclaje inferior
+            y=1.02,           # Posición un poco por encima del gráfico
+            xanchor="center", # Anclaje central
+            x=0.5,            # Centrado horizontalmente
+            font=dict(size=10 if many_categories else 12),  # Tamaño de fuente según categorías
+            # Ajustar el traceorder para que sea consistente con el gráfico
+            traceorder="normal",
+            # Si hay muchas categorías, ajustar para múltiples filas
+            itemsizing='constant' if many_categories else 'trace',
+        )
     )
+
+    # Configurar las etiquetas dentro del gráfico
+    if many_categories:
+        # Para muchas categorías, solo mostrar porcentajes
+        fig.update_traces(
+            textposition='inside',
+            textinfo='percent',  # Solo mostrar porcentajes
+            insidetextorientation='radial',  # Orientación radial para mejor ajuste
+            # Diseño de las etiquetas
+            textfont=dict(
+                size=10,
+                color='white'
+            ),
+            # Aumentar el tamaño del agujero para dejar más espacio
+            hole=0.4,
+        )
+    else:
+        # Para pocas categorías, mostrar porcentajes y etiquetas
+        fig.update_traces(
+            textposition='inside', 
+            textinfo='percent+label',
+            insidetextfont=dict(size=10),
+        )
 
     return fig
 
