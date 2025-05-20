@@ -11,7 +11,7 @@ from src.visualization.charts import (
 
 # Función auxiliar para formatear números grandes de manera responsiva
 def format_responsive_number(number, is_small_screen=False):
-    """Formatea números grandes de manera más compacta para pantallas pequeñas"""
+    """Formatea números con puntos como separador de miles - sin abreviaciones"""
     # Manejar valores nulos o no numéricos
     if pd.isna(number):
         return "N/A"
@@ -20,20 +20,8 @@ def format_responsive_number(number, is_small_screen=False):
         # Convertir a float para manejar cualquier entrada numérica
         number = float(number)
         
-        # Para valores muy grandes, siempre usar notación compacta
-        if number >= 1_000_000:
-            return f"{number/1_000_000:.1f}M"
-        elif number >= 10_000 or is_small_screen:
-            # Usar notación K para valores mayores a 10,000 o en pantallas pequeñas
-            if number >= 1_000:
-                return f"{number/1_000:.1f}K"
-        
-        # Para valores más pequeños o en pantallas grandes
-        if is_small_screen:
-            return f"{number:.0f}"
-        else:
-            # Formato normal con puntos como separador de miles
-            return f"{number:,.0f}".replace(",", ".")
+        # Formato normal con puntos como separador de miles - SIN ABREVIACIONES
+        return f"{number:,.0f}".replace(",", ".")
     except (ValueError, TypeError):
         # Devolver valor original si falla el formateo
         return str(number)
@@ -85,7 +73,7 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
             # Si hay algún filtro aplicado
             total_vacunados = len(filtered_data["vacunacion"])
 
-            # Para la población total y pendientes, debemos hacer cálculos específicos
+            # Para la población total y susceptibles, debemos hacer cálculos específicos
             if filters["municipio"] != "Todos":
                 # Si hay filtro de municipio, buscar la población de ese municipio
                 municipio_data = filtered_data["metricas"][
@@ -117,32 +105,32 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
             total_poblacion = filtered_data["metricas"][fuente_poblacion].sum()
             total_vacunados = filtered_data["metricas"]["Vacunados"].sum()
 
-        # Calcular cobertura y pendientes
+        # Calcular cobertura y susceptibles
         cobertura = (
             (total_vacunados / total_poblacion * 100) if total_poblacion > 0 else 0
         )
-        pendientes = total_poblacion - total_vacunados
+        susceptibles = total_poblacion - total_vacunados
 
         # Detectar tamaño de pantalla para formato responsivo
         is_small_screen = st.session_state.get("_is_small_screen", False)
         screen_width = st.session_state.get("_screen_width", 1200)
         is_very_small_screen = screen_width < 768
 
-        # Crear CSS personalizado para las tarjetas de métricas
+        # Crear CSS personalizado para las tarjetas de métricas con mejor manejo de números grandes
         st.markdown("""
         <style>
         .metric-card {
             background-color: white;
             border-radius: 8px;
-            padding: 10px;
+            padding: 8px 4px;
             box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
             text-align: center;
             border-left: 4px solid var(--primary-color);
             margin-bottom: 10px;
             height: 100%;
-            /* Añadimos estas propiedades para evitar desbordamiento */
-            overflow: hidden;
-            position: relative;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
         }
         .metric-card:hover {
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
@@ -150,25 +138,26 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
             transition: all 0.3s ease;
         }
         .metric-title {
-            font-size: 0.85rem;
+            font-size: 0.8rem;
             font-weight: 600;
             color: #333;
-            margin-bottom: 5px;
+            margin-bottom: 2px;
         }
         .metric-value {
-            font-size: clamp(1rem, 2vw, 1.6rem);
+            font-size: 0.9rem;
             font-weight: 700;
             color: #7D0F2B;
-            /* Estas propiedades aseguran que el texto se ajuste al tamaño de la tarjeta */
+            /* Ajustar el texto para números grandes */
             width: 100%;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
+            word-break: break-word;
+            hyphens: none;
+            margin: 0 auto;
+            padding: 0 2px;
         }
         .metric-poblacion { border-color: #7D0F2B; }
         .metric-vacunados { border-color: #F2A900; }
         .metric-cobertura { border-color: #509E2F; }
-        .metric-pendientes { border-color: #F7941D; }
+        .metric-susceptibles { border-color: #F7941D; }
 
         /* Estilos adicionales para columnas más equilibradas */
         div.row-widget.stHorizontal {
@@ -188,8 +177,8 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
             row2_col1, row2_col2 = st.columns(2)
             
             with row1_col1:
-                # Usar notación compacta para población total en pantallas muy pequeñas
-                poblacion_display = format_responsive_number(total_poblacion, True)
+                # Usar formato con separador de miles
+                poblacion_display = format_responsive_number(total_poblacion)
                 st.markdown(f"""
                 <div class="metric-card metric-poblacion">
                     <div class="metric-title">Población Total</div>
@@ -198,8 +187,8 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
                 """, unsafe_allow_html=True)
             
             with row1_col2:
-                # Usar notación compacta para vacunados en pantallas muy pequeñas
-                vacunados_display = format_responsive_number(total_vacunados, True)
+                # Usar formato con separador de miles
+                vacunados_display = format_responsive_number(total_vacunados)
                 st.markdown(f"""
                 <div class="metric-card metric-vacunados">
                     <div class="metric-title">Vacunados</div>
@@ -218,12 +207,12 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
                 """, unsafe_allow_html=True)
             
             with row2_col2:
-                # Usar notación compacta para pendientes en pantallas muy pequeñas
-                pendientes_display = format_responsive_number(pendientes, True)
+                # Cambiar "Pendientes" por "Susceptibles"
+                susceptibles_display = format_responsive_number(susceptibles)
                 st.markdown(f"""
-                <div class="metric-card metric-pendientes">
-                    <div class="metric-title">Pendientes</div>
-                    <div class="metric-value">{pendientes_display}</div>
+                <div class="metric-card metric-susceptibles">
+                    <div class="metric-title">Susceptibles</div>
+                    <div class="metric-value">{susceptibles_display}</div>
                 </div>
                 """, unsafe_allow_html=True)
         else:
@@ -231,8 +220,8 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
             col1_1, col1_2, col1_3, col1_4 = st.columns(4)
             
             with col1_1:
-                # Usar notación compacta para población total sin importar el tamaño de pantalla
-                poblacion_display = format_responsive_number(total_poblacion, True) if total_poblacion >= 100000 else format_responsive_number(total_poblacion, is_small_screen)
+                # Usar formato con separador de miles
+                poblacion_display = format_responsive_number(total_poblacion)
                 st.markdown(f"""
                 <div class="metric-card metric-poblacion">
                     <div class="metric-title">Población Total</div>
@@ -241,8 +230,8 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
                 """, unsafe_allow_html=True)
             
             with col1_2:
-                # Usar notación compacta para vacunados si es un número grande
-                vacunados_display = format_responsive_number(total_vacunados, True) if total_vacunados >= 100000 else format_responsive_number(total_vacunados, is_small_screen)
+                # Usar formato con separador de miles
+                vacunados_display = format_responsive_number(total_vacunados)
                 st.markdown(f"""
                 <div class="metric-card metric-vacunados">
                     <div class="metric-title">Vacunados</div>
@@ -261,12 +250,12 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
                 """, unsafe_allow_html=True)
             
             with col1_4:
-                # Usar notación compacta para pendientes si es un número grande
-                pendientes_display = format_responsive_number(pendientes, True) if pendientes >= 100000 else format_responsive_number(pendientes, is_small_screen)
+                # Cambiar "Pendientes" por "Susceptibles" y usar formato con separador de miles
+                susceptibles_display = format_responsive_number(susceptibles)
                 st.markdown(f"""
-                <div class="metric-card metric-pendientes">
-                    <div class="metric-title">Pendientes</div>
-                    <div class="metric-value">{pendientes_display}</div>
+                <div class="metric-card metric-susceptibles">
+                    <div class="metric-title">Susceptibles</div>
+                    <div class="metric-value">{susceptibles_display}</div>
                 </div>
                 """, unsafe_allow_html=True)
 
@@ -325,18 +314,11 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
             is_small_screen = st.session_state.get("_is_small_screen", False)
 
             # Formatear valores antes de crear el DataFrame (OPCIÓN 3)
-            if is_small_screen:
-                # Formato para pantallas pequeñas
-                dane_formatted = f"{dane_total/1000:.1f}K" if dane_total >= 1000 else f"{dane_total:.0f}"
-                sisben_formatted = f"{sisben_total/1000:.1f}K" if sisben_total >= 1000 else f"{sisben_total:.0f}"
-                dane_cob = f"{((vacunados_total / dane_total * 100) if dane_total > 0 else 0):.1f}%"
-                sisben_cob = f"{((vacunados_total / sisben_total * 100) if sisben_total > 0 else 0):.1f}%"
-            else:
-                # Formato normal
-                dane_formatted = f"{dane_total:,.0f}".replace(",", ".")
-                sisben_formatted = f"{sisben_total:,.0f}".replace(",", ".")
-                dane_cob = f"{((vacunados_total / dane_total * 100) if dane_total > 0 else 0):.2f}%"
-                sisben_cob = f"{((vacunados_total / sisben_total * 100) if sisben_total > 0 else 0):.2f}%"
+            # Formato normal con números completos
+            dane_formatted = f"{dane_total:,.0f}".replace(",", ".")
+            sisben_formatted = f"{sisben_total:,.0f}".replace(",", ".")
+            dane_cob = f"{((vacunados_total / dane_total * 100) if dane_total > 0 else 0):.2f}%"
+            sisben_cob = f"{((vacunados_total / sisben_total * 100) if sisben_total > 0 else 0):.2f}%"
 
             # Crear DataFrame con valores ya formateados
             comparativa = {
