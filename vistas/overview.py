@@ -9,6 +9,21 @@ from src.visualization.charts import (
 )
 
 
+# Función auxiliar para formatear números grandes de manera responsiva
+def format_responsive_number(number, is_small_screen=False):
+    """Formatea números grandes de manera más compacta para pantallas pequeñas"""
+    if is_small_screen:
+        if number >= 1_000_000:
+            return f"{number/1_000_000:.1f}M"
+        elif number >= 1_000:
+            return f"{number/1_000:.1f}K"
+        else:
+            return f"{number:.0f}"
+    else:
+        # Formato normal con puntos como separador de miles
+        return f"{number:,.0f}".replace(",", ".")
+
+
 def show(data, filters, colors, fuente_poblacion="DANE"):
     """
     Muestra la página de visión general del dashboard.
@@ -93,22 +108,121 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
         )
         pendientes = total_poblacion - total_vacunados
 
-        # Mostrar métricas en columnas
-        col1_1, col1_2, col1_3, col1_4 = st.columns(4)
+        # Detectar tamaño de pantalla para formato responsivo
+        is_small_screen = st.session_state.get("_is_small_screen", False)
+        screen_width = st.session_state.get("_screen_width", 1200)
+        is_very_small_screen = screen_width < 768
 
-        with col1_1:
-            st.metric(
-                label="Población Total", value=f"{total_poblacion:,}".replace(",", ".")
-            )
+        # Crear CSS personalizado para las tarjetas de métricas
+        st.markdown("""
+        <style>
+        .metric-card {
+            background-color: white;
+            border-radius: 8px;
+            padding: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            border-left: 4px solid var(--primary-color);
+            margin-bottom: 10px;
+            height: 100%;
+        }
+        .metric-card:hover {
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+            transform: translateY(-2px);
+            transition: all 0.3s ease;
+        }
+        .metric-title {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 5px;
+        }
+        .metric-value {
+            font-size: clamp(1.2rem, 3vw, 1.8rem);
+            font-weight: 700;
+            color: #7D0F2B;
+            white-space: nowrap;
+            overflow: visible;
+        }
+        .metric-poblacion { border-color: #7D0F2B; }
+        .metric-vacunados { border-color: #F2A900; }
+        .metric-cobertura { border-color: #509E2F; }
+        .metric-pendientes { border-color: #F7941D; }
+        </style>
+        """, unsafe_allow_html=True)
 
-        with col1_2:
-            st.metric(label="Vacunados", value=f"{total_vacunados:,}".replace(",", "."))
-
-        with col1_3:
-            st.metric(label="Cobertura", value=f"{cobertura:.2f}%")
-
-        with col1_4:
-            st.metric(label="Pendientes", value=f"{pendientes:,}".replace(",", "."))
+        # Diseño adaptable según el tamaño de pantalla
+        if is_very_small_screen:
+            # Diseño 2x2 para pantallas muy pequeñas
+            row1_col1, row1_col2 = st.columns(2)
+            row2_col1, row2_col2 = st.columns(2)
+            
+            with row1_col1:
+                st.markdown(f"""
+                <div class="metric-card metric-poblacion">
+                    <div class="metric-title">Población Total</div>
+                    <div class="metric-value">{format_responsive_number(total_poblacion, True)}</div>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with row1_col2:
+                st.markdown(f"""
+                <div class="metric-card metric-vacunados">
+                    <div class="metric-title">Vacunados</div>
+                    <div class="metric-value">{format_responsive_number(total_vacunados, True)}</div>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with row2_col1:
+                st.markdown(f"""
+                <div class="metric-card metric-cobertura">
+                    <div class="metric-title">Cobertura</div>
+                    <div class="metric-value">{cobertura:.1f}%</div>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with row2_col2:
+                st.markdown(f"""
+                <div class="metric-card metric-pendientes">
+                    <div class="metric-title">Pendientes</div>
+                    <div class="metric-value">{format_responsive_number(pendientes, True)}</div>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            # Diseño normal 1x4
+            col1_1, col1_2, col1_3, col1_4 = st.columns(4)
+            
+            with col1_1:
+                st.markdown(f"""
+                <div class="metric-card metric-poblacion">
+                    <div class="metric-title">Población Total</div>
+                    <div class="metric-value">{format_responsive_number(total_poblacion, is_small_screen)}</div>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col1_2:
+                st.markdown(f"""
+                <div class="metric-card metric-vacunados">
+                    <div class="metric-title">Vacunados</div>
+                    <div class="metric-value">{format_responsive_number(total_vacunados, is_small_screen)}</div>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col1_3:
+                st.markdown(f"""
+                <div class="metric-card metric-cobertura">
+                    <div class="metric-title">Cobertura</div>
+                    <div class="metric-value">{cobertura:.1f if is_small_screen else cobertura:.2f}%</div>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col1_4:
+                st.markdown(f"""
+                <div class="metric-card metric-pendientes">
+                    <div class="metric-title">Pendientes</div>
+                    <div class="metric-value">{format_responsive_number(pendientes, is_small_screen)}</div>
+                </div>
+                """, unsafe_allow_html=True)
 
     with col2:
         # Mostrar comparativa entre DANE y SISBEN
@@ -172,13 +286,31 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
 
             comparativa_df = pd.DataFrame(comparativa)
 
-            # Mostrar la tabla
-            st.dataframe(
-                comparativa_df.style.format(
-                    {"Población Total": "{:,.0f}", "Cobertura (%)": "{:.2f}%"}
-                ),
-                use_container_width=True,
-            )
+            # Mostrar la tabla con formato adaptado
+            is_small_screen = st.session_state.get("_is_small_screen", False)
+            
+            if is_small_screen:
+                # Para pantallas pequeñas, usar formato compacto
+                st.dataframe(
+                    comparativa_df.style.format(
+                        {
+                            "Población Total": lambda x: format_responsive_number(x, True),
+                            "Cobertura (%)": "{:.1f}%"
+                        }
+                    ),
+                    use_container_width=True,
+                )
+            else:
+                # Para pantallas normales, usar formato completo
+                st.dataframe(
+                    comparativa_df.style.format(
+                        {
+                            "Población Total": "{:,.0f}".replace(",", "."),
+                            "Cobertura (%)": "{:.2f}%"
+                        }
+                    ),
+                    use_container_width=True,
+                )
 
             # Crear gráfico de barras para comparar coberturas
             fig = create_bar_chart(

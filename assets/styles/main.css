@@ -62,6 +62,42 @@ h1 {
     font-weight: 500;
 }
 
+/* Tarjetas de métricas mejoradas */
+.metric-card-container {
+    background-color: white;
+    border-radius: 8px;
+    padding: 1rem;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    text-align: center;
+    border-left: 4px solid var(--primary-color);
+    margin-bottom: 1rem;
+}
+
+.metric-card-container:hover {
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+    transform: translateY(-2px);
+    transition: all 0.3s ease;
+}
+
+.metric-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--dark-color);
+    margin-bottom: 0.5rem;
+}
+
+.metric-value {
+    font-size: clamp(1.2rem, 3vw, 1.8rem);
+    font-weight: 700;
+    color: var(--primary-color);
+}
+
+/* Colores especiales para cada métrica */
+.metric-poblacion { border-color: var(--primary-color); }
+.metric-vacunados { border-color: var(--secondary-color); }
+.metric-cobertura { border-color: var(--success-color); }
+.metric-pendientes { border-color: var(--warning-color); }
+
 /* Personalización de la barra lateral */
 .sidebar .sidebar-content {
     background-color: var(--light-color);
