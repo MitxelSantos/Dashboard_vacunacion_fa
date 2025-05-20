@@ -12,16 +12,27 @@ from src.visualization.charts import (
 # Función auxiliar para formatear números grandes de manera responsiva
 def format_responsive_number(number, is_small_screen=False):
     """Formatea números grandes de manera más compacta para pantallas pequeñas"""
-    if is_small_screen:
-        if number >= 1_000_000:
-            return f"{number/1_000_000:.1f}M"
-        elif number >= 1_000:
-            return f"{number/1_000:.1f}K"
+    # Manejar valores nulos o no numéricos
+    if pd.isna(number):
+        return "N/A"
+    
+    try:
+        # Convertir a float para manejar cualquier entrada numérica
+        number = float(number)
+        
+        if is_small_screen:
+            if number >= 1_000_000:
+                return f"{number/1_000_000:.1f}M"
+            elif number >= 1_000:
+                return f"{number/1_000:.1f}K"
+            else:
+                return f"{number:.0f}"
         else:
-            return f"{number:.0f}"
-    else:
-        # Formato normal con puntos como separador de miles
-        return f"{number:,.0f}".replace(",", ".")
+            # Formato normal con puntos como separador de miles
+            return f"{number:,.0f}".replace(",", ".")
+    except (ValueError, TypeError):
+        # Devolver valor original si falla el formateo
+        return str(number)
 
 
 def show(data, filters, colors, fuente_poblacion="DANE"):
@@ -279,7 +290,37 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
                 sisben_total = filtered_data["metricas"]["SISBEN"].sum()
                 vacunados_total = filtered_data["metricas"]["Vacunados"].sum()
 
+            # Detectar tamaño de pantalla
+            is_small_screen = st.session_state.get("_is_small_screen", False)
+
+            # Formatear valores antes de crear el DataFrame (OPCIÓN 3)
+            if is_small_screen:
+                # Formato para pantallas pequeñas
+                dane_formatted = f"{dane_total/1000:.1f}K" if dane_total >= 1000 else f"{dane_total:.0f}"
+                sisben_formatted = f"{sisben_total/1000:.1f}K" if sisben_total >= 1000 else f"{sisben_total:.0f}"
+                dane_cob = f"{((vacunados_total / dane_total * 100) if dane_total > 0 else 0):.1f}%"
+                sisben_cob = f"{((vacunados_total / sisben_total * 100) if sisben_total > 0 else 0):.1f}%"
+            else:
+                # Formato normal
+                dane_formatted = f"{dane_total:,.0f}".replace(",", ".")
+                sisben_formatted = f"{sisben_total:,.0f}".replace(",", ".")
+                dane_cob = f"{((vacunados_total / dane_total * 100) if dane_total > 0 else 0):.2f}%"
+                sisben_cob = f"{((vacunados_total / sisben_total * 100) if sisben_total > 0 else 0):.2f}%"
+
+            # Crear DataFrame con valores ya formateados
             comparativa = {
+                "Fuente": ["DANE", "SISBEN"],
+                "Población Total": [dane_formatted, sisben_formatted],
+                "Cobertura (%)": [dane_cob, sisben_cob],
+            }
+
+            comparativa_df = pd.DataFrame(comparativa)
+
+            # Mostrar sin formateo adicional
+            st.dataframe(comparativa_df, use_container_width=True)
+
+            # Para el gráfico, necesitamos una versión con valores numéricos
+            comparativa_num = {
                 "Fuente": ["DANE", "SISBEN"],
                 "Población Total": [dane_total, sisben_total],
                 "Cobertura (%)": [
@@ -287,38 +328,11 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
                     (vacunados_total / sisben_total * 100) if sisben_total > 0 else 0,
                 ],
             }
-
-            comparativa_df = pd.DataFrame(comparativa)
-
-            # Mostrar la tabla con formato adaptado
-            is_small_screen = st.session_state.get("_is_small_screen", False)
-            
-            if is_small_screen:
-                # Para pantallas pequeñas, usar formato compacto
-                st.dataframe(
-                    comparativa_df.style.format(
-                        {
-                            "Población Total": lambda x: format_responsive_number(x, True),
-                            "Cobertura (%)": "{:.1f}%"
-                        }
-                    ),
-                    use_container_width=True,
-                )
-            else:
-                # Para pantallas normales, usar formato completo
-                st.dataframe(
-                    comparativa_df.style.format(
-                        {
-                            "Población Total": "{:,.0f}".replace(",", "."),
-                            "Cobertura (%)": "{:.2f}%"
-                        }
-                    ),
-                    use_container_width=True,
-                )
+            comparativa_df_num = pd.DataFrame(comparativa_num)
 
             # Crear gráfico de barras para comparar coberturas
             fig = create_bar_chart(
-                data=comparativa_df,
+                data=comparativa_df_num,
                 x="Fuente",
                 y="Cobertura (%)",
                 title="Cobertura según fuente de población",
