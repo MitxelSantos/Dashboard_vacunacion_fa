@@ -108,10 +108,11 @@ def create_bar_chart(
 
     return fig
 
+# Reemplaza la función create_pie_chart en charts.py con esta versión:
 
 def create_pie_chart(data, names, values, title, color_map, height=400, filters=None):
     """
-    Crea un gráfico circular usando Plotly.
+    Crea un gráfico circular usando Plotly con mejor manejo de etiquetas.
 
     Args:
         data (pd.DataFrame): Datos para el gráfico
@@ -208,6 +209,9 @@ def create_pie_chart(data, names, values, title, color_map, height=400, filters=
             for i, cat in enumerate(categories):
                 colors.append(institutional_colors[i % len(institutional_colors)])
 
+    # Detectar si hay muchas categorías
+    many_categories = len(categories) > 4
+    
     # Crear el gráfico
     fig = px.pie(
         data,
@@ -218,11 +222,42 @@ def create_pie_chart(data, names, values, title, color_map, height=400, filters=
         height=height,
     )
 
-    # Personalizar el diseño
+    # Personalizar el diseño y la forma en que se muestran las etiquetas
+    if many_categories:
+        # Para gráficos con muchas categorías, solo mostrar porcentajes dentro
+        # y mover todo el texto a la leyenda
+        fig.update_traces(
+            textposition='inside',
+            textinfo='percent',  # Solo mostrar porcentajes
+            insidetextorientation='radial',  # Orientación radial para mejor ajuste
+        )
+        
+        # Posicionar la leyenda a la izquierda y ajustar su tamaño
+        fig.update_layout(
+            legend=dict(
+                orientation="v",  # Orientación vertical
+                yanchor="middle",  # Anclaje al medio
+                y=0.5,             # Centrado verticalmente
+                xanchor="left",    # Anclaje a la izquierda
+                x=-0.1,            # Posición un poco a la izquierda del gráfico
+                font=dict(size=9), # Tamaño de fuente reducido
+                itemsizing='constant',  # Tamaño constante para los íconos
+                itemwidth=30,      # Ancho reducido para los ítems
+            )
+        )
+    else:
+        # Para gráficos con pocas categorías, mostrar etiquetas dentro
+        fig.update_traces(
+            textposition='inside', 
+            textinfo='percent+label',
+            insidetextfont=dict(size=10),
+        )
+
+    # Diseño general para todos los gráficos
     fig.update_layout(
         plot_bgcolor="white",
         paper_bgcolor="white",
-        margin=dict(l=10, r=10, t=40, b=10),
+        margin=dict(l=10, r=10, t=40, b=20),
         title={"y": 0.98, "x": 0.5, "xanchor": "center", "yanchor": "top"},
         title_font=dict(
             size=16 if not st.session_state.get("_is_small_screen", False) else 14
@@ -230,21 +265,7 @@ def create_pie_chart(data, names, values, title, color_map, height=400, filters=
         autosize=True,  # Importante para responsividad
     )
 
-    # Configuración responsiva para dispositivos móviles
-    if st.session_state.get("_is_small_screen", False):
-        # Etiquetas más simplificadas para pantallas pequeñas
-        fig.update_traces(textposition="inside", textinfo="percent")
-        # Leyenda más compacta
-        fig.update_layout(
-            legend=dict(
-                font=dict(size=10), yanchor="top", y=0.99, xanchor="left", x=0.01
-            )
-        )
-    else:
-        fig.update_traces(textposition="inside", textinfo="percent+label")
-
     return fig
-
 
 def create_scatter_plot(
     data,
