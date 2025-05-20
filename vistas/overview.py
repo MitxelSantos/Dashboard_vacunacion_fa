@@ -544,7 +544,7 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
                 )
                 genero_counts.columns = ["Genero", "Vacunados"]
 
-                # Crear gráfico
+                # Usar la función original importada del módulo charts
                 fig_genero = create_pie_chart(
                     data=genero_counts,
                     names="Genero",
@@ -568,7 +568,7 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
             )
             etnia_counts.columns = ["GrupoEtnico", "Vacunados"]
 
-            # Crear gráfico
+            # Usar la función original importada del módulo charts
             fig_etnia = create_pie_chart(
                 data=etnia_counts,
                 names="GrupoEtnico",
@@ -594,7 +594,7 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
             )
             regimen_counts.columns = ["RegimenAfiliacion", "Vacunados"]
 
-            # Crear gráfico
+            # Usar la función original importada del módulo charts
             fig_regimen = create_pie_chart(
                 data=regimen_counts,
                 names="RegimenAfiliacion",
