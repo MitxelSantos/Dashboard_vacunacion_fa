@@ -174,10 +174,12 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
                 """, unsafe_allow_html=True)
             
             with row2_col1:
+                # Formatear antes
+                cobertura_formatted = f"{cobertura:.1f}"
                 st.markdown(f"""
                 <div class="metric-card metric-cobertura">
                     <div class="metric-title">Cobertura</div>
-                    <div class="metric-value">{cobertura:.1f}%</div>
+                    <div class="metric-value">{cobertura_formatted}%</div>
                 </div>
                 """, unsafe_allow_html=True)
             
@@ -209,10 +211,12 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
                 """, unsafe_allow_html=True)
             
             with col1_3:
+                # Formatear antes
+                cobertura_formatted = f"{cobertura:.1f}" if is_small_screen else f"{cobertura:.2f}"
                 st.markdown(f"""
                 <div class="metric-card metric-cobertura">
                     <div class="metric-title">Cobertura</div>
-                    <div class="metric-value">{cobertura:.1f if is_small_screen else cobertura:.2f}%</div>
+                    <div class="metric-value">{cobertura_formatted}%</div>
                 </div>
                 """, unsafe_allow_html=True)
             
