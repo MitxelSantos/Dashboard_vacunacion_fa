@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
+import plotly.graph_objects as go
 from src.visualization.charts import (
     create_bar_chart,
     create_pie_chart,
@@ -25,6 +26,62 @@ def format_responsive_number(number, is_small_screen=False):
     except (ValueError, TypeError):
         # Devolver valor original si falla el formateo
         return str(number)
+
+
+def normalize_gender(value):
+    """Normaliza los valores de género a las tres categorías estándar"""
+    if pd.isna(value) or str(value).lower() in ['nan', '', 'none', 'null']:
+        return "Sin dato"
+    
+    value_str = str(value).lower().strip()
+    
+    if value_str in ['masculino', 'm', 'masc', 'hombre', 'h', 'male', '1']:
+        return "Masculino"
+    elif value_str in ['femenino', 'f', 'fem', 'mujer', 'female', '2']:
+        return "Femenino"
+    else:
+        # Todas las demás clasificaciones van a "No Binario"
+        return "No Binario"
+
+
+def create_improved_bar_chart_with_hover(data, x_col, y_col, title, color, height=400):
+    """
+    Crea un gráfico de barras mejorado que siempre muestra porcentajes 
+    y cantidad en hover
+    """
+    fig = go.Figure()
+    
+    # Calcular porcentajes
+    total = data[y_col].sum()
+    percentages = (data[y_col] / total * 100).round(1)
+    
+    fig.add_trace(go.Bar(
+        x=data[x_col],
+        y=percentages,
+        text=[f"{p}%" for p in percentages],
+        textposition='outside',
+        hovertemplate='<b>%{x}</b><br>' +
+                      'Porcentaje: %{y}%<br>' +
+                      'Cantidad: %{customdata:,}<br>' +
+                      '<extra></extra>',
+        customdata=data[y_col],
+        marker_color=color,
+        name=''
+    ))
+    
+    fig.update_layout(
+        title=title,
+        title_x=0.5,
+        xaxis_title="",
+        yaxis_title="Porcentaje (%)",
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        height=height,
+        margin=dict(l=10, r=10, t=40, b=10),
+        showlegend=False
+    )
+    
+    return fig
 
 
 def show(data, filters, colors, fuente_poblacion="DANE"):
@@ -56,26 +113,160 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
         # Crear columna de vacunados
         filtered_data["metricas"]["Vacunados"] = 0
 
-    # Resumen de métricas
-    st.subheader(
-        f"Resumen de Vacunación - Fiebre Amarilla (Población {fuente_poblacion})"
-    )
+    # =====================================================================
+    # SECCIÓN 1: MÉTRICAS PRINCIPALES (OCUPAN TODO EL ANCHO HORIZONTAL)
+    # =====================================================================
+    st.subheader(f"Resumen de Vacunación - Fiebre Amarilla (Población {fuente_poblacion})")
 
-    # Métricas para comparar ambas fuentes
-    col1, col2 = st.columns(2)
+    # Calcular métricas
+    if any(filters[k] != "Todos" for k in filters):
+        # Si hay algún filtro aplicado
+        total_vacunados = len(filtered_data["vacunacion"])
 
-    with col1:
-        st.markdown(f"### Métricas basadas en población {fuente_poblacion}")
+        # Para la población total y susceptibles, debemos hacer cálculos específicos
+        if filters["municipio"] != "Todos":
+            # Si hay filtro de municipio, buscar la población de ese municipio
+            municipio_data = filtered_data["metricas"][
+                filtered_data["metricas"]["DPMP"].str.lower()
+                == filters["municipio"].lower()
+            ]
 
-        # Calcular métricas para todos los tipos de filtros
-        # Para todos los filtros, usar directamente el conteo de registros en los datos filtrados
+            # Caso especial para Mariquita y Armero
+            if filters["municipio"] == "Mariquita" and len(municipio_data) == 0:
+                municipio_data = filtered_data["metricas"][
+                    filtered_data["metricas"]["DPMP"].str.lower()
+                    == "san sebastian de mariquita"
+                ]
+            elif filters["municipio"] == "Armero" and len(municipio_data) == 0:
+                municipio_data = filtered_data["metricas"][
+                    filtered_data["metricas"]["DPMP"].str.lower()
+                    == "armero guayabal"
+                ]
+
+            if len(municipio_data) > 0:
+                total_poblacion = municipio_data[fuente_poblacion].sum()
+            else:
+                total_poblacion = filtered_data["metricas"][fuente_poblacion].sum()
+        else:
+            # Para otros filtros, usar la población total
+            total_poblacion = filtered_data["metricas"][fuente_poblacion].sum()
+    else:
+        # Sin filtros, usar las métricas calculadas
+        total_poblacion = filtered_data["metricas"][fuente_poblacion].sum()
+        total_vacunados = filtered_data["metricas"]["Vacunados"].sum()
+
+    # Calcular cobertura y susceptibles
+    cobertura = (total_vacunados / total_poblacion * 100) if total_poblacion > 0 else 0
+    susceptibles = total_poblacion - total_vacunados
+
+    # Detectar tamaño de pantalla para formato responsivo
+    is_small_screen = st.session_state.get("_is_small_screen", False)
+    screen_width = st.session_state.get("_screen_width", 1200)
+    is_very_small_screen = screen_width < 768
+
+    # CSS mejorado para las métricas que ocupan todo el ancho horizontal
+    st.markdown("""
+    <style>
+    .metrics-container {
+        display: flex;
+        justify-content: space-between;
+        gap: 15px;
+        margin-bottom: 30px;
+        flex-wrap: wrap;
+    }
+    .metric-card-full {
+        background-color: white;
+        border-radius: 12px;
+        padding: 20px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        text-align: center;
+        border-left: 5px solid var(--primary-color);
+        flex: 1;
+        min-width: 200px;
+        transition: all 0.3s ease;
+    }
+    .metric-card-full:hover {
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+        transform: translateY(-3px);
+    }
+    .metric-title-full {
+        font-size: 1rem;
+        font-weight: 600;
+        color: #333;
+        margin-bottom: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    .metric-value-full {
+        font-size: 2.2rem;
+        font-weight: 700;
+        color: #7D0F2B;
+        margin-bottom: 5px;
+        line-height: 1.1;
+    }
+    .metric-poblacion { border-color: #7D0F2B; }
+    .metric-vacunados { border-color: #F2A900; }
+    .metric-cobertura { border-color: #509E2F; }
+    .metric-susceptibles { border-color: #F7941D; }
+    
+    /* Responsivo para pantallas pequeñas */
+    @media (max-width: 768px) {
+        .metrics-container {
+            flex-direction: column;
+        }
+        .metric-card-full {
+            min-width: auto;
+        }
+        .metric-value-full {
+            font-size: 1.8rem;
+        }
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # Crear métricas que ocupan todo el ancho horizontal
+    poblacion_display = format_responsive_number(total_poblacion)
+    vacunados_display = format_responsive_number(total_vacunados)
+    cobertura_formatted = f"{cobertura:.1f}"
+    susceptibles_display = format_responsive_number(susceptibles)
+
+    st.markdown(f"""
+    <div class="metrics-container">
+        <div class="metric-card-full metric-poblacion">
+            <div class="metric-title-full">Población Total</div>
+            <div class="metric-value-full">{poblacion_display}</div>
+        </div>
+        <div class="metric-card-full metric-vacunados">
+            <div class="metric-title-full">Vacunados</div>
+            <div class="metric-value-full">{vacunados_display}</div>
+        </div>
+        <div class="metric-card-full metric-cobertura">
+            <div class="metric-title-full">Cobertura</div>
+            <div class="metric-value-full">{cobertura_formatted}%</div>
+        </div>
+        <div class="metric-card-full metric-susceptibles">
+            <div class="metric-title-full">Susceptibles</div>
+            <div class="metric-value-full">{susceptibles_display}</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # =====================================================================
+    # SECCIÓN 2: COMPARATIVA DANE vs SISBEN (SOLO GRÁFICO DE BARRAS)
+    # =====================================================================
+    st.subheader("Comparativa de Cobertura DANE vs SISBEN")
+
+    # Verificar que ambas columnas existan
+    if (
+        "DANE" not in filtered_data["metricas"].columns
+        or "SISBEN" not in filtered_data["metricas"].columns
+    ):
+        st.error("Faltan columnas necesarias para la comparativa DANE vs SISBEN")
+    else:
+        # Preparar datos para la comparativa, considerando los filtros
         if any(filters[k] != "Todos" for k in filters):
-            # Si hay algún filtro aplicado
-            total_vacunados = len(filtered_data["vacunacion"])
-
-            # Para la población total y susceptibles, debemos hacer cálculos específicos
             if filters["municipio"] != "Todos":
-                # Si hay filtro de municipio, buscar la población de ese municipio
+                # Si hay filtro de municipio, buscar los datos específicos
                 municipio_data = filtered_data["metricas"][
                     filtered_data["metricas"]["DPMP"].str.lower()
                     == filters["municipio"].lower()
@@ -94,268 +285,49 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
                     ]
 
                 if len(municipio_data) > 0:
-                    total_poblacion = municipio_data[fuente_poblacion].sum()
+                    dane_total = municipio_data["DANE"].sum()
+                    sisben_total = municipio_data["SISBEN"].sum()
                 else:
-                    total_poblacion = filtered_data["metricas"][fuente_poblacion].sum()
-            else:
-                # Para otros filtros, usar la población total
-                total_poblacion = filtered_data["metricas"][fuente_poblacion].sum()
-        else:
-            # Sin filtros, usar las métricas calculadas
-            total_poblacion = filtered_data["metricas"][fuente_poblacion].sum()
-            total_vacunados = filtered_data["metricas"]["Vacunados"].sum()
-
-        # Calcular cobertura y susceptibles
-        cobertura = (
-            (total_vacunados / total_poblacion * 100) if total_poblacion > 0 else 0
-        )
-        susceptibles = total_poblacion - total_vacunados
-
-        # Detectar tamaño de pantalla para formato responsivo
-        is_small_screen = st.session_state.get("_is_small_screen", False)
-        screen_width = st.session_state.get("_screen_width", 1200)
-        is_very_small_screen = screen_width < 768
-
-        # Crear CSS personalizado para las tarjetas de métricas con mejor manejo de números grandes
-        st.markdown("""
-        <style>
-        .metric-card {
-            background-color: white;
-            border-radius: 8px;
-            padding: 8px 4px;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-            text-align: center;
-            border-left: 4px solid var(--primary-color);
-            margin-bottom: 10px;
-            height: 100%;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-        }
-        .metric-card:hover {
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
-            transform: translateY(-2px);
-            transition: all 0.3s ease;
-        }
-        .metric-title {
-            font-size: 0.8rem;
-            font-weight: 600;
-            color: #333;
-            margin-bottom: 2px;
-        }
-        .metric-value {
-            font-size: 0.9rem;
-            font-weight: 700;
-            color: #7D0F2B;
-            /* Ajustar el texto para números grandes */
-            width: 100%;
-            word-break: break-word;
-            hyphens: none;
-            margin: 0 auto;
-            padding: 0 2px;
-        }
-        .metric-poblacion { border-color: #7D0F2B; }
-        .metric-vacunados { border-color: #F2A900; }
-        .metric-cobertura { border-color: #509E2F; }
-        .metric-susceptibles { border-color: #F7941D; }
-
-        /* Estilos adicionales para columnas más equilibradas */
-        div.row-widget.stHorizontal {
-            gap: 10px;
-        }
-        div.row-widget.stHorizontal > div {
-            flex: 1;
-            min-width: 0;
-        }
-        </style>
-        """, unsafe_allow_html=True)
-
-        # Diseño adaptable según el tamaño de pantalla
-        if is_very_small_screen:
-            # Diseño 2x2 para pantallas muy pequeñas
-            row1_col1, row1_col2 = st.columns(2)
-            row2_col1, row2_col2 = st.columns(2)
-            
-            with row1_col1:
-                # Usar formato con separador de miles
-                poblacion_display = format_responsive_number(total_poblacion)
-                st.markdown(f"""
-                <div class="metric-card metric-poblacion">
-                    <div class="metric-title">Población Total</div>
-                    <div class="metric-value">{poblacion_display}</div>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            with row1_col2:
-                # Usar formato con separador de miles
-                vacunados_display = format_responsive_number(total_vacunados)
-                st.markdown(f"""
-                <div class="metric-card metric-vacunados">
-                    <div class="metric-title">Vacunados</div>
-                    <div class="metric-value">{vacunados_display}</div>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            with row2_col1:
-                # Formatear antes
-                cobertura_formatted = f"{cobertura:.1f}"
-                st.markdown(f"""
-                <div class="metric-card metric-cobertura">
-                    <div class="metric-title">Cobertura</div>
-                    <div class="metric-value">{cobertura_formatted}%</div>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            with row2_col2:
-                # Cambiar "Pendientes" por "Susceptibles"
-                susceptibles_display = format_responsive_number(susceptibles)
-                st.markdown(f"""
-                <div class="metric-card metric-susceptibles">
-                    <div class="metric-title">Susceptibles</div>
-                    <div class="metric-value">{susceptibles_display}</div>
-                </div>
-                """, unsafe_allow_html=True)
-        else:
-            # Diseño normal 1x4
-            col1_1, col1_2, col1_3, col1_4 = st.columns(4)
-            
-            with col1_1:
-                # Usar formato con separador de miles
-                poblacion_display = format_responsive_number(total_poblacion)
-                st.markdown(f"""
-                <div class="metric-card metric-poblacion">
-                    <div class="metric-title">Población Total</div>
-                    <div class="metric-value">{poblacion_display}</div>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            with col1_2:
-                # Usar formato con separador de miles
-                vacunados_display = format_responsive_number(total_vacunados)
-                st.markdown(f"""
-                <div class="metric-card metric-vacunados">
-                    <div class="metric-title">Vacunados</div>
-                    <div class="metric-value">{vacunados_display}</div>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            with col1_3:
-                # Formatear antes
-                cobertura_formatted = f"{cobertura:.1f}" if is_small_screen else f"{cobertura:.2f}"
-                st.markdown(f"""
-                <div class="metric-card metric-cobertura">
-                    <div class="metric-title">Cobertura</div>
-                    <div class="metric-value">{cobertura_formatted}%</div>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            with col1_4:
-                # Cambiar "Pendientes" por "Susceptibles" y usar formato con separador de miles
-                susceptibles_display = format_responsive_number(susceptibles)
-                st.markdown(f"""
-                <div class="metric-card metric-susceptibles">
-                    <div class="metric-title">Susceptibles</div>
-                    <div class="metric-value">{susceptibles_display}</div>
-                </div>
-                """, unsafe_allow_html=True)
-
-    with col2:
-        # Mostrar comparativa entre DANE y SISBEN
-        st.markdown("### Comparativa DANE vs SISBEN")
-
-        # Verificar que ambas columnas existan
-        if (
-            "DANE" not in filtered_data["metricas"].columns
-            or "SISBEN" not in filtered_data["metricas"].columns
-        ):
-            st.error("Faltan columnas necesarias para la comparativa DANE vs SISBEN")
-        else:
-            # Preparar datos para la comparativa, considerando los filtros
-            if any(filters[k] != "Todos" for k in filters):
-                if filters["municipio"] != "Todos":
-                    # Si hay filtro de municipio, buscar los datos específicos
-                    municipio_data = filtered_data["metricas"][
-                        filtered_data["metricas"]["DPMP"].str.lower()
-                        == filters["municipio"].lower()
-                    ]
-
-                    # Caso especial para Mariquita y Armero
-                    if filters["municipio"] == "Mariquita" and len(municipio_data) == 0:
-                        municipio_data = filtered_data["metricas"][
-                            filtered_data["metricas"]["DPMP"].str.lower()
-                            == "san sebastian de mariquita"
-                        ]
-                    elif filters["municipio"] == "Armero" and len(municipio_data) == 0:
-                        municipio_data = filtered_data["metricas"][
-                            filtered_data["metricas"]["DPMP"].str.lower()
-                            == "armero guayabal"
-                        ]
-
-                    if len(municipio_data) > 0:
-                        dane_total = municipio_data["DANE"].sum()
-                        sisben_total = municipio_data["SISBEN"].sum()
-                    else:
-                        dane_total = filtered_data["metricas"]["DANE"].sum()
-                        sisben_total = filtered_data["metricas"]["SISBEN"].sum()
-                else:
-                    # Para otros filtros, usar todas las poblaciones
                     dane_total = filtered_data["metricas"]["DANE"].sum()
                     sisben_total = filtered_data["metricas"]["SISBEN"].sum()
-
-                # Usar el conteo de registros para todos los filtros
-                vacunados_total = len(filtered_data["vacunacion"])
             else:
-                # Sin filtros, usar los totales
+                # Para otros filtros, usar todas las poblaciones
                 dane_total = filtered_data["metricas"]["DANE"].sum()
                 sisben_total = filtered_data["metricas"]["SISBEN"].sum()
-                vacunados_total = filtered_data["metricas"]["Vacunados"].sum()
 
-            # Detectar tamaño de pantalla
-            is_small_screen = st.session_state.get("_is_small_screen", False)
+            # Usar el conteo de registros para todos los filtros
+            vacunados_total = len(filtered_data["vacunacion"])
+        else:
+            # Sin filtros, usar los totales
+            dane_total = filtered_data["metricas"]["DANE"].sum()
+            sisben_total = filtered_data["metricas"]["SISBEN"].sum()
+            vacunados_total = filtered_data["metricas"]["Vacunados"].sum()
 
-            # Formatear valores antes de crear el DataFrame (OPCIÓN 3)
-            # Formato normal con números completos
-            dane_formatted = f"{dane_total:,.0f}".replace(",", ".")
-            sisben_formatted = f"{sisben_total:,.0f}".replace(",", ".")
-            dane_cob = f"{((vacunados_total / dane_total * 100) if dane_total > 0 else 0):.2f}%"
-            sisben_cob = f"{((vacunados_total / sisben_total * 100) if sisben_total > 0 else 0):.2f}%"
+        # Crear DataFrame para el gráfico mejorado
+        comparativa_data = pd.DataFrame({
+            "Fuente": ["DANE", "SISBEN"],
+            "Poblacion": [dane_total, sisben_total],
+            "Cobertura": [
+                (vacunados_total / dane_total * 100) if dane_total > 0 else 0,
+                (vacunados_total / sisben_total * 100) if sisben_total > 0 else 0,
+            ],
+        })
 
-            # Crear DataFrame con valores ya formateados
-            comparativa = {
-                "Fuente": ["DANE", "SISBEN"],
-                "Población Total": [dane_formatted, sisben_formatted],
-                "Cobertura (%)": [dane_cob, sisben_cob],
-            }
+        # Crear gráfico mejorado que muestra porcentaje y hover con cantidad
+        fig_comparativa = create_improved_bar_chart_with_hover(
+            data=comparativa_data,
+            x_col="Fuente",
+            y_col="Poblacion",
+            title="Cobertura según fuente de población",
+            color=colors["primary"],
+            height=350
+        )
 
-            comparativa_df = pd.DataFrame(comparativa)
+        st.plotly_chart(fig_comparativa, use_container_width=True)
 
-            # Mostrar sin formateo adicional
-            st.dataframe(comparativa_df, use_container_width=True)
-
-            # Para el gráfico, necesitamos una versión con valores numéricos
-            comparativa_num = {
-                "Fuente": ["DANE", "SISBEN"],
-                "Población Total": [dane_total, sisben_total],
-                "Cobertura (%)": [
-                    (vacunados_total / dane_total * 100) if dane_total > 0 else 0,
-                    (vacunados_total / sisben_total * 100) if sisben_total > 0 else 0,
-                ],
-            }
-            comparativa_df_num = pd.DataFrame(comparativa_num)
-
-            # Crear gráfico de barras para comparar coberturas
-            fig = create_bar_chart(
-                data=comparativa_df_num,
-                x="Fuente",
-                y="Cobertura (%)",
-                title="Cobertura según fuente de población",
-                color=colors["primary"],
-                height=250,
-                filters=None,  # No pasar filtros a la gráfica para que no se muestren en el título
-            )
-
-            st.plotly_chart(fig, use_container_width=True)
-
+    # =====================================================================
+    # SECCIÓN 3: GRÁFICOS PRINCIPALES
+    # =====================================================================
     # Dividir en dos columnas para los gráficos principales
     col_left, col_right = st.columns(2)
 
@@ -386,7 +358,7 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
                 color=colors["primary"],
                 height=400,
                 formatter="%{y:.1f}%",
-                filters=None,  # No pasar filtros
+                filters=None,
             )
 
             st.plotly_chart(fig_mun, use_container_width=True)
@@ -400,7 +372,7 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
             )
         else:
             try:
-                # Asegurarse de que los datos estén en formato string y sin espacios
+                # Normalizar datos de edad y reemplazar NaN con "Sin dato"
                 filtered_data["vacunacion"]["Grupo_Edad"] = filtered_data["vacunacion"][
                     "Grupo_Edad"
                 ].astype(str)
@@ -409,7 +381,7 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
                 ].str.strip()
                 filtered_data["vacunacion"]["Grupo_Edad"] = filtered_data["vacunacion"][
                     "Grupo_Edad"
-                ].replace("nan", "Sin especificar")
+                ].replace(["nan", "NaN", ""], "Sin dato")
 
                 # Agrupar por grupo de edad
                 edad_counts = (
@@ -422,27 +394,21 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
                 # Ordenar por grupos de edad
                 try:
                     orden_grupos = [
-                        "0-4",
-                        "5-14",
-                        "15-19",
-                        "20-29",
-                        "30-39",
-                        "40-49",
-                        "50-59",
-                        "60-69",
-                        "70-79",
-                        "80+",
+                        "0-4", "5-14", "15-19", "20-29", "30-39", 
+                        "40-49", "50-59", "60-69", "70-79", "80+", "Sin dato"
                     ]
                     # Verificar si tenemos estos grupos en nuestros datos
                     grupos_presentes = set(edad_counts["Grupo_Edad"])
                     grupos_orden = [g for g in orden_grupos if g in grupos_presentes]
 
+                    # Añadir grupos no contemplados al final
+                    grupos_orden.extend([g for g in grupos_presentes if g not in grupos_orden])
+
                     # Si hay grupos en el orden predefinido, usarlos
                     if grupos_orden:
                         edad_counts["Grupo_Edad"] = pd.Categorical(
                             edad_counts["Grupo_Edad"],
-                            categories=grupos_orden
-                            + [g for g in grupos_presentes if g not in grupos_orden],
+                            categories=grupos_orden,
                             ordered=True,
                         )
                         edad_counts = edad_counts.sort_values("Grupo_Edad")
@@ -458,7 +424,7 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
                     title="Distribución por grupos de edad",
                     color=colors["secondary"],
                     height=400,
-                    filters=None,  # No pasar filtros
+                    filters=None,
                 )
 
                 st.plotly_chart(fig_edad, use_container_width=True)
@@ -467,12 +433,14 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
                     f"Error al crear gráfico de distribución por grupos de edad: {str(e)}"
                 )
 
-    # Añadir gráfico de dispersión para comparar DANE vs SISBEN
+    # =====================================================================
+    # SECCIÓN 4: ANÁLISIS DE CORRELACIÓN (DANE vs SISBEN)
+    # =====================================================================
     if (
         "DANE" in filtered_data["metricas"].columns
         and "SISBEN" in filtered_data["metricas"].columns
     ):
-        st.subheader("Comparativa DANE vs SISBEN por municipio")
+        st.subheader("Análisis de Correlación DANE vs SISBEN por municipio")
 
         # Crear gráfico de dispersión
         fig_scatter = create_scatter_plot(
@@ -483,7 +451,7 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
             color=colors["accent"],
             hover_data=["DPMP", "Vacunados", "Cobertura_DANE", "Cobertura_SISBEN"],
             height=500,
-            filters=None,  # No pasar filtros
+            filters=None,
         )
 
         st.plotly_chart(fig_scatter, use_container_width=True)
@@ -495,56 +463,37 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
         """
         )
 
-    # División en 3 columnas para gráficos de pastel
+    # =====================================================================
+    # SECCIÓN 5: DISTRIBUCIÓN DEMOGRÁFICA (GRÁFICOS DE PASTEL MEJORADOS)
+    # =====================================================================
     st.subheader("Distribución demográfica de vacunados")
     col1, col2, col3 = st.columns(3)
 
-    # Gráfico de distribución por género (antes sexo)
+    # Gráfico de distribución por género (normalizado)
     with col1:
         # Verificar si existe Genero o usar Sexo como fallback
         if "Genero" in filtered_data["vacunacion"].columns:
             genero_col = "Genero"
         elif "Sexo" in filtered_data["vacunacion"].columns:
             genero_col = "Sexo"
-            # Normalizar los valores de sexo a las categorías de género
-            filtered_data["vacunacion"]["Genero_Normalizado"] = filtered_data[
-                "vacunacion"
-            ][genero_col].apply(
-                lambda x: (
-                    "MASCULINO"
-                    if str(x).lower()
-                    in ["masculino", "m", "masc", "hombre", "h", "male"]
-                    else (
-                        "FEMENINO"
-                        if str(x).lower() in ["femenino", "f", "fem", "mujer", "female"]
-                        else (
-                            "NO BINARIO"
-                            if str(x).lower()
-                            in ["no binario", "nb", "otro", "other", "non-binary"]
-                            else "Sin especificar"
-                        )
-                    )
-                )
-            )
-            genero_col = "Genero_Normalizado"
         else:
             st.error("No se encontró columna de Género o Sexo en los datos.")
             genero_col = None
 
         if genero_col:
             try:
-                # Asegurarse de que no hay valores nulos
-                filtered_data["vacunacion"][genero_col] = filtered_data["vacunacion"][
-                    genero_col
-                ].fillna("Sin especificar")
+                # Normalizar géneros usando la nueva función
+                filtered_data["vacunacion"]["Genero_Normalizado"] = filtered_data["vacunacion"][genero_col].apply(normalize_gender)
 
-                # Agrupar por género
+                # Agrupar por género normalizado
                 genero_counts = (
-                    filtered_data["vacunacion"][genero_col].value_counts().reset_index()
+                    filtered_data["vacunacion"]["Genero_Normalizado"]
+                    .value_counts()
+                    .reset_index()
                 )
                 genero_counts.columns = ["Genero", "Vacunados"]
 
-                # Usar la función original importada del módulo charts
+                # Crear gráfico de pastel
                 fig_genero = create_pie_chart(
                     data=genero_counts,
                     names="Genero",
@@ -562,21 +511,26 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
     # Gráfico de distribución por etnia
     with col2:
         if "GrupoEtnico" in filtered_data["vacunacion"].columns:
+            # Normalizar valores NaN a "Sin dato"
+            filtered_data["vacunacion"]["GrupoEtnico_clean"] = filtered_data["vacunacion"]["GrupoEtnico"].fillna("Sin dato")
+            filtered_data["vacunacion"]["GrupoEtnico_clean"] = filtered_data["vacunacion"]["GrupoEtnico_clean"].replace(["", "nan", "NaN"], "Sin dato")
+            
             # Agrupar por grupo étnico
             etnia_counts = (
-                filtered_data["vacunacion"]["GrupoEtnico"].value_counts().reset_index()
+                filtered_data["vacunacion"]["GrupoEtnico_clean"]
+                .value_counts()
+                .reset_index()
             )
             etnia_counts.columns = ["GrupoEtnico", "Vacunados"]
 
-            # Usar la función original importada del módulo charts
             fig_etnia = create_pie_chart(
                 data=etnia_counts,
                 names="GrupoEtnico",
                 values="Vacunados",
                 title="Distribución por grupo étnico",
-                color_map={},  # Colores automáticos
+                color_map={},
                 height=350,
-                filters=None,  # No pasar filtros
+                filters=None,
             )
 
             st.plotly_chart(fig_etnia, use_container_width=True)
@@ -586,23 +540,26 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
     # Gráfico de distribución por régimen
     with col3:
         if "RegimenAfiliacion" in filtered_data["vacunacion"].columns:
+            # Normalizar valores NaN a "Sin dato"
+            filtered_data["vacunacion"]["RegimenAfiliacion_clean"] = filtered_data["vacunacion"]["RegimenAfiliacion"].fillna("Sin dato")
+            filtered_data["vacunacion"]["RegimenAfiliacion_clean"] = filtered_data["vacunacion"]["RegimenAfiliacion_clean"].replace(["", "nan", "NaN"], "Sin dato")
+            
             # Agrupar por régimen
             regimen_counts = (
-                filtered_data["vacunacion"]["RegimenAfiliacion"]
+                filtered_data["vacunacion"]["RegimenAfiliacion_clean"]
                 .value_counts()
                 .reset_index()
             )
             regimen_counts.columns = ["RegimenAfiliacion", "Vacunados"]
 
-            # Usar la función original importada del módulo charts
             fig_regimen = create_pie_chart(
                 data=regimen_counts,
                 names="RegimenAfiliacion",
                 values="Vacunados",
                 title="Distribución por régimen",
-                color_map={},  # Colores automáticos
+                color_map={},
                 height=350,
-                filters=None,  # No pasar filtros
+                filters=None,
             )
 
             st.plotly_chart(fig_regimen, use_container_width=True)

@@ -114,13 +114,44 @@ COLORS = {
 }
 
 
-# Función auxiliar para limpiar listas con posibles valores NaN
-def clean_list(lista):
-    return [str(item) for item in lista if not pd.isna(item)]
+def normalize_gender_for_filter(value):
+    """
+    Normaliza los valores de género para el filtro
+    """
+    if pd.isna(value) or str(value).lower().strip() in ['nan', '', 'none', 'null', 'na']:
+        return "Sin dato"
+    
+    value_str = str(value).lower().strip()
+    
+    if value_str in ['masculino', 'm', 'masc', 'hombre', 'h', 'male', '1']:
+        return "Masculino"
+    elif value_str in ['femenino', 'f', 'fem', 'mujer', 'female', '2']:
+        return "Femenino"
+    else:
+        # Todas las demás clasificaciones van a "No Binario"
+        return "No Binario"
+
+
+def clean_and_normalize_list(lista, normalize_func=None):
+    """
+    Limpia una lista eliminando valores NaN y aplicando normalización si se especifica
+    """
+    if normalize_func:
+        # Aplicar función de normalización
+        normalized_list = [normalize_func(item) for item in lista if not pd.isna(item)]
+        # Eliminar duplicados manteniendo orden y excluyendo "Sin dato"
+        clean_list = []
+        for item in normalized_list:
+            if item not in clean_list and item != "Sin dato":
+                clean_list.append(item)
+        return clean_list
+    else:
+        # Solo limpiar NaN
+        return [str(item) for item in lista if not pd.isna(item) and str(item) != "Sin dato"]
 
 
 def main():
-    """Aplicación principal del dashboard."""
+    """Aplicación principal del dashboard mejorado."""
 
     # Detectar tamaño de pantalla con JavaScript
     st.markdown(
@@ -148,10 +179,23 @@ def main():
     screen_width = st.session_state.get("_screen_width", 1200)
     st.session_state["_is_small_screen"] = screen_width < 1200
 
-    # Cargar datos
+    # =====================================================================
+    # CARGA Y VALIDACIÓN DE DATOS
+    # =====================================================================
     try:
-        with st.spinner("Cargando datos..."):
+        with st.spinner("Cargando y normalizando datos..."):
             data = load_datasets()
+
+            # Validar calidad de datos
+            from src.data.preprocessor import validate_data_quality
+            quality_report = validate_data_quality(data)
+            
+            # Mostrar alertas de calidad si es necesario
+            if quality_report["data_quality_score"] < 80:
+                st.sidebar.warning(f"⚠️ Calidad de datos: {quality_report['data_quality_score']:.1f}%")
+                if st.sidebar.expander("Ver detalles de calidad"):
+                    for issue in quality_report["issues"]:
+                        st.sidebar.write(f"• {issue}")
 
             # Intentar encontrar la columna más parecida a "Grupo_Edad"
             grupo_edad_col = None
@@ -167,57 +211,43 @@ def main():
                 )
                 if "Edad_Vacunacion" in data["vacunacion"].columns:
                     # Crear grupo de edad a partir de edad
-                    data["vacunacion"]["Grupo_Edad"] = data["vacunacion"][
-                        "Edad_Vacunacion"
-                    ].apply(
-                        lambda x: (
-                            "0-4"
-                            if pd.notna(x) and x < 5
-                            else (
-                                "5-14"
-                                if pd.notna(x) and x < 15
-                                else (
-                                    "15-19"
-                                    if pd.notna(x) and x < 20
-                                    else (
-                                        "20-29"
-                                        if pd.notna(x) and x < 30
-                                        else (
-                                            "30-39"
-                                            if pd.notna(x) and x < 40
-                                            else (
-                                                "40-49"
-                                                if pd.notna(x) and x < 50
-                                                else (
-                                                    "50-59"
-                                                    if pd.notna(x) and x < 60
-                                                    else (
-                                                        "60-69"
-                                                        if pd.notna(x) and x < 70
-                                                        else (
-                                                            "70-79"
-                                                            if pd.notna(x) and x < 80
-                                                            else (
-                                                                "80+"
-                                                                if pd.notna(x)
-                                                                and x >= 80
-                                                                else "Sin especificar"
-                                                            )
-                                                        )
-                                                    )
-                                                )
-                                            )
-                                        )
-                                    )
-                                )
-                            )
-                        )
-                    )
+                    def categorize_age(x):
+                        try:
+                            age = float(x)
+                            if pd.isna(age):
+                                return "Sin dato"
+                            elif age < 5:
+                                return "0-4"
+                            elif age < 15:
+                                return "5-14"
+                            elif age < 20:
+                                return "15-19"
+                            elif age < 30:
+                                return "20-29"
+                            elif age < 40:
+                                return "30-39"
+                            elif age < 50:
+                                return "40-49"
+                            elif age < 60:
+                                return "50-59"
+                            elif age < 70:
+                                return "60-69"
+                            elif age < 80:
+                                return "70-79"
+                            elif age >= 80:
+                                return "80+"
+                            else:
+                                return "Sin dato"
+                        except (ValueError, TypeError):
+                            return "Sin dato"
+                    
+                    data["vacunacion"]["Grupo_Edad"] = data["vacunacion"]["Edad_Vacunacion"].apply(categorize_age)
                     grupo_edad_col = "Grupo_Edad"
                 else:
                     # Si no hay campo de edad, crear una columna con valor único
-                    data["vacunacion"]["Grupo_Edad"] = "Sin especificar"
+                    data["vacunacion"]["Grupo_Edad"] = "Sin dato"
                     grupo_edad_col = "Grupo_Edad"
+
     except FileNotFoundError as e:
         st.error(f"Error al cargar datos: {str(e)}")
         st.info(
@@ -225,7 +255,9 @@ def main():
         )
         return
 
-    # Barra lateral con logo y filtros
+    # =====================================================================
+    # BARRA LATERAL CON LOGO Y FILTROS MEJORADOS
+    # =====================================================================
     with st.sidebar:
         # Logo de la Gobernación
         logo_path = IMAGES_DIR / "logo_gobernacion.png"
@@ -262,7 +294,9 @@ def main():
         if "fuente_poblacion" not in st.session_state:
             st.session_state.fuente_poblacion = fuente_poblacion
 
-        # Filtros globales
+        # ================================================================
+        # FILTROS GLOBALES MEJORADOS CON NORMALIZACIÓN
+        # ================================================================
         st.subheader("Filtros")
 
         # Función para aplicar filtros automáticamente
@@ -276,8 +310,8 @@ def main():
                 "aseguradora": st.session_state.aseguradora_filter,
             }
 
-        # Limpiar municipios antes de ordenarlos
-        municipios = clean_list(data["municipios"]["DPMP"].unique().tolist())
+        # Filtro de municipios (sin cambios)
+        municipios = clean_and_normalize_list(data["municipios"]["DPMP"].unique().tolist())
         municipio = st.selectbox(
             "Municipio",
             options=["Todos"] + sorted(municipios),
@@ -285,34 +319,53 @@ def main():
             on_change=on_filter_change,
         )
 
-        # Obtener valores únicos de la columna Grupo_Edad y limpiarlos
+        # Filtro de grupos de edad (normalizado)
         try:
-            grupos_edad = clean_list(data["vacunacion"]["Grupo_Edad"].unique().tolist())
+            grupos_edad = clean_and_normalize_list(data["vacunacion"]["Grupo_Edad"].unique().tolist())
+            # Ordenar grupos de edad lógicamente
+            orden_grupos = ["0-4", "5-14", "15-19", "20-29", "30-39", 
+                           "40-49", "50-59", "60-69", "70-79", "80+"]
+            grupos_ordenados = [g for g in orden_grupos if g in grupos_edad]
+            grupos_otros = sorted([g for g in grupos_edad if g not in orden_grupos])
+            grupos_edad_final = grupos_ordenados + grupos_otros
         except KeyError:
-            # Usar un valor predeterminado
-            grupos_edad = ["Sin especificar"]
+            grupos_edad_final = ["Sin dato"]
+        
         grupo_edad = st.selectbox(
             "Grupo de Edad",
-            options=["Todos"] + sorted(grupos_edad),
+            options=["Todos"] + grupos_edad_final,
             key="grupo_edad_filter",
             on_change=on_filter_change,
         )
 
-        # Obtener valores únicos para el resto de filtros y limpiarlos
+        # Filtro de género (MEJORADO Y NORMALIZADO)
         # Preferir la columna Genero si existe
         if "Genero" in data["vacunacion"].columns:
-            generos = clean_list(data["vacunacion"]["Genero"].unique().tolist())
+            generos = clean_and_normalize_list(
+                data["vacunacion"]["Genero"].unique().tolist(), 
+                normalize_gender_for_filter
+            )
         else:
-            generos = clean_list(data["vacunacion"]["Sexo"].unique().tolist())
+            generos = clean_and_normalize_list(
+                data["vacunacion"]["Sexo"].unique().tolist(), 
+                normalize_gender_for_filter
+            )
+
+        # Asegurar orden específico para géneros
+        orden_generos = ["Masculino", "Femenino", "No Binario"]
+        generos_ordenados = [g for g in orden_generos if g in generos]
+        generos_otros = [g for g in generos if g not in orden_generos]
+        generos_final = generos_ordenados + generos_otros
 
         genero = st.selectbox(
-            "Género",
-            options=["Todos"] + sorted(generos),
+            "Género",  # Cambiar de "Género" para ser más inclusivo
+            options=["Todos"] + generos_final,
             key="sexo_filter",  # Mantener misma key para compatibilidad
             on_change=on_filter_change,
         )
 
-        grupos_etnicos = clean_list(data["vacunacion"]["GrupoEtnico"].unique().tolist())
+        # Filtro de grupos étnicos (normalizado)
+        grupos_etnicos = clean_and_normalize_list(data["vacunacion"]["GrupoEtnico"].unique().tolist())
         grupo_etnico = st.selectbox(
             "Grupo Étnico",
             options=["Todos"] + sorted(grupos_etnicos),
@@ -320,7 +373,8 @@ def main():
             on_change=on_filter_change,
         )
 
-        regimenes = clean_list(
+        # Filtro de regímenes (normalizado)
+        regimenes = clean_and_normalize_list(
             data["vacunacion"]["RegimenAfiliacion"].unique().tolist()
         )
         regimen = st.selectbox(
@@ -330,12 +384,17 @@ def main():
             on_change=on_filter_change,
         )
 
-        aseguradoras = clean_list(
+        # Filtro de aseguradoras (normalizado)
+        aseguradoras = clean_and_normalize_list(
             data["vacunacion"]["NombreAseguradora"].unique().tolist()
         )
+        # Limitar las opciones de aseguradoras para mejor UX
+        top_aseguradoras = sorted(data["vacunacion"]["NombreAseguradora"].value_counts().head(20).index.tolist())
+        top_aseguradoras_clean = [a for a in top_aseguradoras if str(a) != "Sin dato" and not pd.isna(a)]
+        
         aseguradora = st.selectbox(
-            "Aseguradora",
-            options=["Todos"] + sorted(aseguradoras),
+            "EAPB/Aseguradora",
+            options=["Todos"] + top_aseguradoras_clean,
             key="aseguradora_filter",
             on_change=on_filter_change,
         )
@@ -358,14 +417,31 @@ def main():
             on_filter_change()
 
         # Botón para resetear filtros
-        if st.button("Restablecer Filtros", on_click=reset_filters):
+        if st.button("🔄 Restablecer Filtros", on_click=reset_filters):
             pass  # La lógica está en reset_filters
+
+        # Información sobre filtros activos
+        if "filters" in st.session_state:
+            active_filters = [
+                f"{k.replace('_', ' ').title()}: {v}"
+                for k, v in st.session_state.filters.items()
+                if v != "Todos"
+            ]
+            if active_filters:
+                st.info(f"🔍 **Filtros activos:** {len(active_filters)}")
 
         # Información del desarrollador
         st.sidebar.markdown("---")
         st.sidebar.caption("Desarrollado por: Ing. José Miguel Santos")
         st.sidebar.caption("Secretaría de Salud del Tolima © 2025")
+        
+        # Información de calidad de datos
+        if quality_report["data_quality_score"] >= 80:
+            st.sidebar.success(f"✅ Calidad de datos: {quality_report['data_quality_score']:.1f}%")
 
+    # =====================================================================
+    # INICIALIZACIÓN DE FILTROS
+    # =====================================================================
     # Inicializar filtros si no existen
     if "filters" not in st.session_state:
         st.session_state.filters = {
@@ -377,41 +453,52 @@ def main():
             "aseguradora": "Todos",
         }
 
-    # Banner principal y logos
+    # =====================================================================
+    # BANNER PRINCIPAL Y LOGOS
+    # =====================================================================
     col1, col2 = st.columns([3, 1])
 
     with col1:
         st.title("Dashboard Vacunación Fiebre Amarilla - Tolima")
         st.write("Secretaría de Salud del Tolima - Vigilancia Epidemiológica")
 
-    # Mostrar filtros activos en un banner con fondo vinotinto (banner global)
+    # Banner de filtros activos mejorado
     active_filters = [
-        f"{k.capitalize()}: {v}"
+        f"{k.replace('_', ' ').title()}: {v}"
         for k, v in st.session_state.filters.items()
         if v != "Todos"
     ]
     if active_filters:
         st.markdown(
             f"""
-            <div style="background-color: {COLORS['primary']}; color: white; padding: 10px; border-radius: 5px; margin-bottom: 15px;">
-                <strong>Filtros aplicados:</strong> {', '.join(active_filters)}
+            <div style="background: linear-gradient(90deg, {COLORS['primary']}, {COLORS['accent']}); 
+                        color: white; padding: 12px; border-radius: 8px; margin-bottom: 20px;
+                        box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                <strong>🔍 Filtros aplicados:</strong> {' | '.join(active_filters)}
+                <small style="float: right; opacity: 0.8;">
+                    Mostrando datos filtrados de {fuente_poblacion}
+                </small>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
-    # Pestañas de navegación
+    # =====================================================================
+    # PESTAÑAS DE NAVEGACIÓN
+    # =====================================================================
     tab1, tab2, tab3, tab4, tab5 = st.tabs(
         [
-            "Visión General",
-            "Distribución Geográfica",
-            "Perfil Demográfico",
-            "Aseguramiento",
-            "Tendencias",
+            "📊 Visión General",
+            "🗺️ Distribución Geográfica",
+            "👥 Perfil Demográfico",
+            "🏥 Aseguramiento",
+            "📈 Tendencias",
         ]
     )
 
-    # Contenido de cada pestaña
+    # =====================================================================
+    # CONTENIDO DE CADA PESTAÑA
+    # =====================================================================
     with tab1:
         if "overview" in vistas_modules:
             vistas_modules["overview"].show(
@@ -421,27 +508,70 @@ def main():
                 st.session_state.fuente_poblacion,
             )
         else:
-            st.warning("El módulo de visión general no está disponible")
+            st.warning("⚠️ El módulo de visión general no está disponible")
 
     with tab2:
-        geographic.show(
-            data, st.session_state.filters, COLORS, st.session_state.fuente_poblacion
-        )
+        if "geographic" in vistas_modules:
+            vistas_modules["geographic"].show(
+                data, st.session_state.filters, COLORS, st.session_state.fuente_poblacion
+            )
+        else:
+            st.warning("⚠️ El módulo de distribución geográfica no está disponible")
 
     with tab3:
-        demographic.show(
-            data, st.session_state.filters, COLORS, st.session_state.fuente_poblacion
-        )
+        if "demographic" in vistas_modules:
+            vistas_modules["demographic"].show(
+                data, st.session_state.filters, COLORS, st.session_state.fuente_poblacion
+            )
+        else:
+            st.warning("⚠️ El módulo de perfil demográfico no está disponible")
 
     with tab4:
-        insurance.show(
-            data, st.session_state.filters, COLORS, st.session_state.fuente_poblacion
-        )
+        if "insurance" in vistas_modules:
+            vistas_modules["insurance"].show(
+                data, st.session_state.filters, COLORS, st.session_state.fuente_poblacion
+            )
+        else:
+            st.warning("⚠️ El módulo de aseguramiento no está disponible")
 
     with tab5:
-        trends.show(
-            data, st.session_state.filters, COLORS, st.session_state.fuente_poblacion
-        )
+        if "trends" in vistas_modules:
+            vistas_modules["trends"].show(
+                data, st.session_state.filters, COLORS, st.session_state.fuente_poblacion
+            )
+        else:
+            st.warning("⚠️ El módulo de tendencias no está disponible")
+
+    # =====================================================================
+    # FOOTER CON INFORMACIÓN ADICIONAL
+    # =====================================================================
+    st.markdown("---")
+    col_footer1, col_footer2, col_footer3 = st.columns(3)
+    
+    with col_footer1:
+        st.markdown("### 📊 Dashboard Info")
+        st.markdown(f"""
+        - **Registros totales:** {len(data['vacunacion']):,}
+        - **Municipios:** {len(data['municipios'])}
+        - **Fuente población:** {st.session_state.fuente_poblacion}
+        """.replace(",", "."))
+    
+    with col_footer2:
+        st.markdown("### 🎯 Calidad de Datos")
+        score_color = "🟢" if quality_report["data_quality_score"] >= 90 else "🟡" if quality_report["data_quality_score"] >= 70 else "🔴"
+        st.markdown(f"""
+        - **Score general:** {score_color} {quality_report["data_quality_score"]:.1f}%
+        - **Completitud promedio:** {quality_report["data_quality_score"]:.1f}%
+        - **Issues detectados:** {len(quality_report["issues"])}
+        """)
+    
+    with col_footer3:
+        st.markdown("### ℹ️ Soporte")
+        st.markdown("""
+        - **Desarrollador:** José Miguel Santos
+        - **Email:** [contacto](mailto:contacto@example.com)
+        - **Versión:** 2.0.0 (Mejorada)
+        """)
 
 
 if __name__ == "__main__":
