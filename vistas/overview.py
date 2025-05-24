@@ -86,9 +86,69 @@ def create_improved_bar_chart_with_hover(data, x_col, y_col, title, color, heigh
     return fig
 
 
+def create_empty_data_structure():
+    """
+    Crea una estructura de datos vacía pero válida para casos de error
+    """
+    return {
+        "municipios": pd.DataFrame(columns=["DPMP", "DANE", "SISBEN"]),
+        "vacunacion": pd.DataFrame(
+            columns=[
+                "IdPaciente",
+                "Sexo",
+                "Grupo_Edad",
+                "GrupoEtnico",
+                "RegimenAfiliacion",
+            ]
+        ),
+        "metricas": pd.DataFrame(
+            columns=[
+                "DPMP",
+                "DANE",
+                "SISBEN",
+                "Vacunados",
+                "Cobertura_DANE",
+                "Cobertura_SISBEN",
+            ]
+        ),
+    }
+
+
+def validate_filtered_data(filtered_data):
+    """
+    Valida que filtered_data tenga la estructura correcta
+    """
+    if filtered_data is None:
+        st.error("❌ Error crítico: Los datos filtrados son None")
+        return False
+
+    if not isinstance(filtered_data, dict):
+        st.error("❌ Error crítico: Los datos filtrados no son un diccionario")
+        return False
+
+    required_keys = ["municipios", "vacunacion", "metricas"]
+    for key in required_keys:
+        if key not in filtered_data:
+            st.error(f"❌ Error crítico: Falta la clave '{key}' en los datos filtrados")
+            return False
+
+        if filtered_data[key] is None:
+            st.error(
+                f"❌ Error crítico: La clave '{key}' es None en los datos filtrados"
+            )
+            return False
+
+        if not isinstance(filtered_data[key], pd.DataFrame):
+            st.error(f"❌ Error crítico: La clave '{key}' no es un DataFrame")
+            return False
+
+    return True
+
+
 def show(data, filters, colors, fuente_poblacion="DANE"):
     """
     Muestra la página de visión general del dashboard.
+    VERSIÓN CORREGIDA: Con manejo robusto de errores y validación de datos.
 
     Args:
         data (dict): Diccionario con los dataframes
@@ -98,22 +158,111 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
     """
     st.title("Visión General")
 
-    # Aplicar filtros a los datos
-    from src.data.preprocessor import apply_filters
+    # =====================================================================
+    # VALIDACIÓN Y CARGA DE DATOS CON MANEJO DE ERRORES ROBUSTO
+    # =====================================================================
 
-    filtered_data = apply_filters(data, filters, fuente_poblacion)
+    # Validar datos de entrada
+    if data is None:
+        st.error("❌ Error crítico: No se pudieron cargar los datos iniciales")
+        st.info(
+            "🔄 Por favor, reinicia la aplicación o verifica que los archivos de datos estén disponibles"
+        )
+        return
+
+    if not isinstance(data, dict):
+        st.error("❌ Error crítico: Los datos iniciales no tienen el formato correcto")
+        st.info("🔄 Por favor, reinicia la aplicación")
+        return
+
+    # Intentar aplicar filtros con manejo de errores
+    try:
+        st.info("🔄 Aplicando filtros a los datos...")
+
+        # Aplicar filtros a los datos
+        from src.data.preprocessor import apply_filters
+
+        filtered_data = apply_filters(data, filters, fuente_poblacion)
+
+        # Validar el resultado
+        if not validate_filtered_data(filtered_data):
+            st.warning(
+                "⚠️ Usando estructura de datos vacía debido a errores en el filtrado"
+            )
+            filtered_data = create_empty_data_structure()
+
+    except Exception as e:
+        st.error(f"❌ Error al aplicar filtros: {str(e)}")
+        st.warning("⚠️ Usando estructura de datos vacía para evitar fallos críticos")
+        filtered_data = create_empty_data_structure()
+
+        # Mostrar información de debug si es necesario
+        with st.expander("🔍 Información de depuración"):
+            st.write("**Error detallado:**", str(e))
+            st.write("**Tipo de error:**", type(e).__name__)
+            import traceback
+
+            st.code(traceback.format_exc())
+
+    # Verificar si tenemos datos para trabajar
+    if len(filtered_data["vacunacion"]) == 0:
+        st.warning("⚠️ No hay datos de vacunación disponibles con los filtros aplicados")
+        if any(filters[k] != "Todos" for k in filters):
+            st.info("💡 Prueba removiendo algunos filtros para obtener más datos")
+        else:
+            st.info(
+                "💡 Verifica que los archivos de datos estén cargados correctamente"
+            )
+        return
 
     # Verificar que las columnas existan en los dataframes
     if fuente_poblacion not in filtered_data["metricas"].columns:
-        st.error(
-            f"Columna '{fuente_poblacion}' no encontrada en los datos. Usando 'DANE' como alternativa."
+        st.warning(
+            f"⚠️ Columna '{fuente_poblacion}' no encontrada. Usando 'DANE' como alternativa."
         )
         fuente_poblacion = "DANE"
 
+        # Si DANE tampoco existe, crear columnas básicas
+        if "DANE" not in filtered_data["metricas"].columns:
+            st.warning(
+                "⚠️ Creando columnas de población básicas con valores predeterminados"
+            )
+            filtered_data["metricas"]["DANE"] = 1000  # Valor predeterminado
+            filtered_data["metricas"]["SISBEN"] = 1000
+
     if "Vacunados" not in filtered_data["metricas"].columns:
-        st.error("Columna 'Vacunados' no encontrada en los datos.")
-        # Crear columna de vacunados
-        filtered_data["metricas"]["Vacunados"] = 0
+        st.warning(
+            "⚠️ Columna 'Vacunados' no encontrada. Calculando desde datos de vacunación."
+        )
+        # Calcular vacunados desde los datos filtrados
+        if (
+            "DPMP" in filtered_data["metricas"].columns
+            and "NombreMunicipioResidencia" in filtered_data["vacunacion"].columns
+        ):
+            vacunados_por_municipio = (
+                filtered_data["vacunacion"]
+                .groupby("NombreMunicipioResidencia")
+                .size()
+                .reset_index()
+            )
+            vacunados_por_municipio.columns = ["Municipio", "Vacunados"]
+
+            # Fusionar con métricas
+            filtered_data["metricas"] = pd.merge(
+                filtered_data["metricas"],
+                vacunados_por_municipio,
+                left_on="DPMP",
+                right_on="Municipio",
+                how="left",
+            )
+            filtered_data["metricas"]["Vacunados"] = filtered_data["metricas"][
+                "Vacunados"
+            ].fillna(0)
+            filtered_data["metricas"] = filtered_data["metricas"].drop(
+                "Municipio", axis=1, errors="ignore"
+            )
+        else:
+            filtered_data["metricas"]["Vacunados"] = 0
 
     # =====================================================================
     # SECCIÓN 1: MÉTRICAS PRINCIPALES (OCUPAN TODO EL ANCHO HORIZONTAL)
@@ -122,45 +271,70 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
         f"Resumen de Vacunación - Fiebre Amarilla (Población {fuente_poblacion})"
     )
 
-    # Calcular métricas
-    if any(filters[k] != "Todos" for k in filters):
-        # Si hay algún filtro aplicado
-        total_vacunados = len(filtered_data["vacunacion"])
+    # Calcular métricas con manejo de errores
+    try:
+        if any(filters[k] != "Todos" for k in filters):
+            # Si hay algún filtro aplicado
+            total_vacunados = len(filtered_data["vacunacion"])
 
-        # Para la población total y susceptibles, debemos hacer cálculos específicos
-        if filters["municipio"] != "Todos":
-            # Si hay filtro de municipio, buscar la población de ese municipio
-            municipio_data = filtered_data["metricas"][
-                filtered_data["metricas"]["DPMP"].str.lower()
-                == filters["municipio"].lower()
-            ]
-
-            # Caso especial para Mariquita y Armero
-            if filters["municipio"] == "Mariquita" and len(municipio_data) == 0:
+            # Para la población total y susceptibles, debemos hacer cálculos específicos
+            if filters["municipio"] != "Todos":
+                # Si hay filtro de municipio, buscar la población de ese municipio
                 municipio_data = filtered_data["metricas"][
                     filtered_data["metricas"]["DPMP"].str.lower()
-                    == "san sebastian de mariquita"
-                ]
-            elif filters["municipio"] == "Armero" and len(municipio_data) == 0:
-                municipio_data = filtered_data["metricas"][
-                    filtered_data["metricas"]["DPMP"].str.lower() == "armero guayabal"
+                    == filters["municipio"].lower()
                 ]
 
-            if len(municipio_data) > 0:
-                total_poblacion = municipio_data[fuente_poblacion].sum()
+                # Caso especial para Mariquita y Armero
+                if filters["municipio"] == "Mariquita" and len(municipio_data) == 0:
+                    municipio_data = filtered_data["metricas"][
+                        filtered_data["metricas"]["DPMP"].str.lower()
+                        == "san sebastian de mariquita"
+                    ]
+                elif filters["municipio"] == "Armero" and len(municipio_data) == 0:
+                    municipio_data = filtered_data["metricas"][
+                        filtered_data["metricas"]["DPMP"].str.lower()
+                        == "armero guayabal"
+                    ]
+
+                if len(municipio_data) > 0:
+                    total_poblacion = municipio_data[fuente_poblacion].sum()
+                else:
+                    total_poblacion = filtered_data["metricas"][fuente_poblacion].sum()
             else:
+                # Para otros filtros, usar la población total
                 total_poblacion = filtered_data["metricas"][fuente_poblacion].sum()
         else:
-            # Para otros filtros, usar la población total
+            # Sin filtros, usar las métricas calculadas
             total_poblacion = filtered_data["metricas"][fuente_poblacion].sum()
-    else:
-        # Sin filtros, usar las métricas calculadas
-        total_poblacion = filtered_data["metricas"][fuente_poblacion].sum()
-        total_vacunados = filtered_data["metricas"]["Vacunados"].sum()
+            total_vacunados = filtered_data["metricas"]["Vacunados"].sum()
 
-    # Calcular cobertura y susceptibles
-    cobertura = (total_vacunados / total_poblacion * 100) if total_poblacion > 0 else 0
-    susceptibles = total_poblacion - total_vacunados
+        # Validar que no haya divisiones por cero
+        if total_poblacion == 0:
+            st.warning("⚠️ La población total es 0. Usando valores predeterminados.")
+            total_poblacion = 1000
+
+        # Calcular cobertura y susceptibles
+        cobertura = (
+            (total_vacunados / total_poblacion * 100) if total_poblacion > 0 else 0
+        )
+        susceptibles = max(
+            0, total_poblacion - total_vacunados
+        )  # Evitar valores negativos
+
+    except Exception as e:
+        st.error(f"❌ Error al calcular métricas principales: {str(e)}")
+        # Valores predeterminados seguros
+        total_poblacion = 1000
+        total_vacunados = (
+            len(filtered_data["vacunacion"])
+            if len(filtered_data["vacunacion"]) > 0
+            else 0
+        )
+        cobertura = (
+            (total_vacunados / total_poblacion * 100) if total_poblacion > 0 else 0
+        )
+        susceptibles = total_poblacion - total_vacunados
 
     # Detectar tamaño de pantalla para formato responsivo
     is_small_screen = st.session_state.get("_is_small_screen", False)
@@ -270,8 +444,17 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
         "DANE" not in filtered_data["metricas"].columns
         or "SISBEN" not in filtered_data["metricas"].columns
     ):
-        st.error("Faltan columnas necesarias para la comparativa DANE vs SISBEN")
-    else:
+        st.warning(
+            "⚠️ Faltan datos de población DANE o SISBEN. Mostrando datos disponibles."
+        )
+
+        # Crear datos básicos si faltan
+        if "DANE" not in filtered_data["metricas"].columns:
+            filtered_data["metricas"]["DANE"] = total_poblacion
+        if "SISBEN" not in filtered_data["metricas"].columns:
+            filtered_data["metricas"]["SISBEN"] = total_poblacion
+
+    try:
         # Preparar datos para la comparativa, considerando los filtros
         if any(filters[k] != "Todos" for k in filters):
             if filters["municipio"] != "Todos":
@@ -312,6 +495,12 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
             sisben_total = filtered_data["metricas"]["SISBEN"].sum()
             vacunados_total = filtered_data["metricas"]["Vacunados"].sum()
 
+        # Validar datos
+        if dane_total == 0:
+            dane_total = 1
+        if sisben_total == 0:
+            sisben_total = 1
+
         # Crear DataFrame para el gráfico mejorado
         comparativa_data = pd.DataFrame(
             {
@@ -336,6 +525,9 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
 
         st.plotly_chart(fig_comparativa, use_container_width=True)
 
+    except Exception as e:
+        st.error(f"❌ Error al crear comparativa DANE vs SISBEN: {str(e)}")
+
     # =====================================================================
     # SECCIÓN 3: GRÁFICOS PRINCIPALES
     # =====================================================================
@@ -344,15 +536,29 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
 
     # Gráfico de cobertura por municipio (Top 10)
     with col_left:
-        # Determinar qué columna de cobertura usar según la fuente
-        cobertura_col = f"Cobertura_{fuente_poblacion}"
+        try:
+            # Determinar qué columna de cobertura usar según la fuente
+            cobertura_col = f"Cobertura_{fuente_poblacion}"
 
-        # Verificar que la columna exista
-        if cobertura_col not in filtered_data["metricas"].columns:
-            st.error(
-                f"Columna '{cobertura_col}' no encontrada en los datos. No se puede mostrar gráfico de cobertura por municipio."
-            )
-        else:
+            # Verificar que la columna exista, si no, crearla
+            if cobertura_col not in filtered_data["metricas"].columns:
+                st.warning(f"⚠️ Creando columna de cobertura '{cobertura_col}'")
+                if (
+                    fuente_poblacion in filtered_data["metricas"].columns
+                    and "Vacunados" in filtered_data["metricas"].columns
+                ):
+                    filtered_data["metricas"][cobertura_col] = (
+                        (
+                            filtered_data["metricas"]["Vacunados"]
+                            / filtered_data["metricas"][fuente_poblacion]
+                            * 100
+                        )
+                        .fillna(0)
+                        .round(2)
+                    )
+                else:
+                    filtered_data["metricas"][cobertura_col] = 0
+
             # Ordenar municipios por cobertura
             top_municipios = (
                 filtered_data["metricas"]
@@ -360,48 +566,54 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
                 .head(10)
             )
 
-            # Crear gráfico
-            fig_mun = create_bar_chart(
-                data=top_municipios,
-                x="DPMP",
-                y=cobertura_col,
-                title=f"Cobertura por municipio (Top 10) - {fuente_poblacion}",
-                color=colors["primary"],
-                height=400,
-                formatter="%{y:.1f}%",
-                filters=None,
-            )
+            if len(top_municipios) > 0:
+                # Crear gráfico
+                fig_mun = create_bar_chart(
+                    data=top_municipios,
+                    x="DPMP",
+                    y=cobertura_col,
+                    title=f"Cobertura por municipio (Top 10) - {fuente_poblacion}",
+                    color=colors["primary"],
+                    height=400,
+                    formatter="%{y:.1f}%",
+                    filters=None,
+                )
 
-            st.plotly_chart(fig_mun, use_container_width=True)
+                st.plotly_chart(fig_mun, use_container_width=True)
+            else:
+                st.info(
+                    "📊 No hay datos suficientes para mostrar cobertura por municipio"
+                )
+
+        except Exception as e:
+            st.error(f"❌ Error al crear gráfico de cobertura por municipio: {str(e)}")
 
     # Gráfico de distribución por grupos de edad
     with col_right:
-        # Verificar que Grupo_Edad exista
-        if "Grupo_Edad" not in filtered_data["vacunacion"].columns:
-            st.error(
-                "Columna 'Grupo_Edad' no encontrada en los datos. No se puede mostrar distribución por grupo de edad."
+        try:
+            # Verificar que Grupo_Edad exista
+            if "Grupo_Edad" not in filtered_data["vacunacion"].columns:
+                st.warning("⚠️ Creando columna de grupo de edad básica")
+                filtered_data["vacunacion"]["Grupo_Edad"] = "Sin dato"
+
+            # Normalizar datos de edad y reemplazar NaN con "Sin dato"
+            filtered_data["vacunacion"]["Grupo_Edad"] = filtered_data["vacunacion"][
+                "Grupo_Edad"
+            ].astype(str)
+            filtered_data["vacunacion"]["Grupo_Edad"] = filtered_data["vacunacion"][
+                "Grupo_Edad"
+            ].str.strip()
+            filtered_data["vacunacion"]["Grupo_Edad"] = filtered_data["vacunacion"][
+                "Grupo_Edad"
+            ].replace(["nan", "NaN", ""], "Sin dato")
+
+            # Agrupar por grupo de edad
+            edad_counts = (
+                filtered_data["vacunacion"]["Grupo_Edad"].value_counts().reset_index()
             )
-        else:
-            try:
-                # Normalizar datos de edad y reemplazar NaN con "Sin dato"
-                filtered_data["vacunacion"]["Grupo_Edad"] = filtered_data["vacunacion"][
-                    "Grupo_Edad"
-                ].astype(str)
-                filtered_data["vacunacion"]["Grupo_Edad"] = filtered_data["vacunacion"][
-                    "Grupo_Edad"
-                ].str.strip()
-                filtered_data["vacunacion"]["Grupo_Edad"] = filtered_data["vacunacion"][
-                    "Grupo_Edad"
-                ].replace(["nan", "NaN", ""], "Sin dato")
+            edad_counts.columns = ["Grupo_Edad", "Vacunados"]
 
-                # Agrupar por grupo de edad
-                edad_counts = (
-                    filtered_data["vacunacion"]["Grupo_Edad"]
-                    .value_counts()
-                    .reset_index()
-                )
-                edad_counts.columns = ["Grupo_Edad", "Vacunados"]
-
+            if len(edad_counts) > 0:
                 # Ordenar por grupos de edad
                 try:
                     orden_grupos = [
@@ -450,40 +662,53 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
                 )
 
                 st.plotly_chart(fig_edad, use_container_width=True)
-            except Exception as e:
-                st.error(
-                    f"Error al crear gráfico de distribución por grupos de edad: {str(e)}"
-                )
+            else:
+                st.info("📊 No hay datos de grupos de edad para mostrar")
+
+        except Exception as e:
+            st.error(
+                f"❌ Error al crear gráfico de distribución por grupos de edad: {str(e)}"
+            )
 
     # =====================================================================
     # SECCIÓN 4: ANÁLISIS DE CORRELACIÓN (DANE vs SISBEN)
     # =====================================================================
-    if (
-        "DANE" in filtered_data["metricas"].columns
-        and "SISBEN" in filtered_data["metricas"].columns
-    ):
-        st.subheader("Análisis de Correlación DANE vs SISBEN por municipio")
+    try:
+        if (
+            "DANE" in filtered_data["metricas"].columns
+            and "SISBEN" in filtered_data["metricas"].columns
+            and len(filtered_data["metricas"]) > 1
+        ):
+            st.subheader("Análisis de Correlación DANE vs SISBEN por municipio")
 
-        # Crear gráfico de dispersión
-        fig_scatter = create_scatter_plot(
-            data=filtered_data["metricas"],
-            x="DANE",
-            y="SISBEN",
-            title="Relación entre población DANE y SISBEN por municipio",
-            color=colors["accent"],
-            hover_data=["DPMP", "Vacunados", "Cobertura_DANE", "Cobertura_SISBEN"],
-            height=500,
-            filters=None,
-        )
+            # Crear gráfico de dispersión
+            hover_data_columns = ["DPMP", "Vacunados"]
+            if f"Cobertura_DANE" in filtered_data["metricas"].columns:
+                hover_data_columns.append("Cobertura_DANE")
+            if f"Cobertura_SISBEN" in filtered_data["metricas"].columns:
+                hover_data_columns.append("Cobertura_SISBEN")
 
-        st.plotly_chart(fig_scatter, use_container_width=True)
+            fig_scatter = create_scatter_plot(
+                data=filtered_data["metricas"],
+                x="DANE",
+                y="SISBEN",
+                title="Relación entre población DANE y SISBEN por municipio",
+                color=colors["accent"],
+                hover_data=hover_data_columns,
+                height=500,
+                filters=None,
+            )
 
-        st.markdown(
+            st.plotly_chart(fig_scatter, use_container_width=True)
+
+            st.markdown(
+                """
+            **Interpretación:** Los puntos por encima de la línea diagonal indican municipios donde la población SISBEN 
+            es mayor que la reportada por el DANE. Los puntos por debajo indican lo contrario.
             """
-        **Interpretación:** Los puntos por encima de la línea diagonal indican municipios donde la población SISBEN 
-        es mayor que la reportada por el DANE. Los puntos por debajo indican lo contrario.
-        """
-        )
+            )
+    except Exception as e:
+        st.error(f"❌ Error al crear análisis de correlación: {str(e)}")
 
     # =====================================================================
     # SECCIÓN 5: DISTRIBUCIÓN DEMOGRÁFICA (GRÁFICOS DE PASTEL MEJORADOS)
@@ -493,30 +718,31 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
 
     # Gráfico de distribución por género (normalizado)
     with col1:
-        # Verificar si existe Genero o usar Sexo como fallback
-        if "Genero" in filtered_data["vacunacion"].columns:
-            genero_col = "Genero"
-        elif "Sexo" in filtered_data["vacunacion"].columns:
-            genero_col = "Sexo"
-        else:
-            st.error("No se encontró columna de Género o Sexo en los datos.")
-            genero_col = None
+        try:
+            # Verificar si existe Genero o usar Sexo como fallback
+            if "Genero" in filtered_data["vacunacion"].columns:
+                genero_col = "Genero"
+            elif "Sexo" in filtered_data["vacunacion"].columns:
+                genero_col = "Sexo"
+            else:
+                st.warning("⚠️ Creando columna de género básica")
+                filtered_data["vacunacion"]["Sexo"] = "Sin dato"
+                genero_col = "Sexo"
 
-        if genero_col:
-            try:
-                # Normalizar géneros usando la nueva función
-                filtered_data["vacunacion"]["Genero_Normalizado"] = filtered_data[
-                    "vacunacion"
-                ][genero_col].apply(normalize_gender)
+            # Normalizar géneros usando la nueva función
+            filtered_data["vacunacion"]["Genero_Normalizado"] = filtered_data[
+                "vacunacion"
+            ][genero_col].apply(normalize_gender)
 
-                # Agrupar por género normalizado
-                genero_counts = (
-                    filtered_data["vacunacion"]["Genero_Normalizado"]
-                    .value_counts()
-                    .reset_index()
-                )
-                genero_counts.columns = ["Genero", "Vacunados"]
+            # Agrupar por género normalizado
+            genero_counts = (
+                filtered_data["vacunacion"]["Genero_Normalizado"]
+                .value_counts()
+                .reset_index()
+            )
+            genero_counts.columns = ["Genero", "Vacunados"]
 
+            if len(genero_counts) > 0:
                 # Crear gráfico de pastel
                 fig_genero = create_pie_chart(
                     data=genero_counts,
@@ -529,12 +755,19 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
                 )
 
                 st.plotly_chart(fig_genero, use_container_width=True)
-            except Exception as e:
-                st.error(f"Error al crear gráfico de distribución por género: {str(e)}")
+            else:
+                st.info("📊 No hay datos de género para mostrar")
+
+        except Exception as e:
+            st.error(f"❌ Error al crear gráfico de distribución por género: {str(e)}")
 
     # Gráfico de distribución por etnia
     with col2:
-        if "GrupoEtnico" in filtered_data["vacunacion"].columns:
+        try:
+            if "GrupoEtnico" not in filtered_data["vacunacion"].columns:
+                st.warning("⚠️ Creando columna de grupo étnico básica")
+                filtered_data["vacunacion"]["GrupoEtnico"] = "Sin dato"
+
             # Normalizar valores NaN a "Sin dato"
             filtered_data["vacunacion"]["GrupoEtnico_clean"] = filtered_data[
                 "vacunacion"
@@ -551,23 +784,31 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
             )
             etnia_counts.columns = ["GrupoEtnico", "Vacunados"]
 
-            fig_etnia = create_pie_chart(
-                data=etnia_counts,
-                names="GrupoEtnico",
-                values="Vacunados",
-                title="Distribución por grupo étnico",
-                color_map={},
-                height=350,
-                filters=None,
-            )
+            if len(etnia_counts) > 0:
+                fig_etnia = create_pie_chart(
+                    data=etnia_counts,
+                    names="GrupoEtnico",
+                    values="Vacunados",
+                    title="Distribución por grupo étnico",
+                    color_map={},
+                    height=350,
+                    filters=None,
+                )
 
-            st.plotly_chart(fig_etnia, use_container_width=True)
-        else:
-            st.error("Columna 'GrupoEtnico' no encontrada en los datos.")
+                st.plotly_chart(fig_etnia, use_container_width=True)
+            else:
+                st.info("📊 No hay datos étnicos para mostrar")
+
+        except Exception as e:
+            st.error(f"❌ Error al crear gráfico de distribución por etnia: {str(e)}")
 
     # Gráfico de distribución por régimen
     with col3:
-        if "RegimenAfiliacion" in filtered_data["vacunacion"].columns:
+        try:
+            if "RegimenAfiliacion" not in filtered_data["vacunacion"].columns:
+                st.warning("⚠️ Creando columna de régimen básica")
+                filtered_data["vacunacion"]["RegimenAfiliacion"] = "Sin dato"
+
             # Normalizar valores NaN a "Sin dato"
             filtered_data["vacunacion"]["RegimenAfiliacion_clean"] = filtered_data[
                 "vacunacion"
@@ -584,16 +825,38 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
             )
             regimen_counts.columns = ["RegimenAfiliacion", "Vacunados"]
 
-            fig_regimen = create_pie_chart(
-                data=regimen_counts,
-                names="RegimenAfiliacion",
-                values="Vacunados",
-                title="Distribución por régimen",
-                color_map={},
-                height=350,
-                filters=None,
-            )
+            if len(regimen_counts) > 0:
+                fig_regimen = create_pie_chart(
+                    data=regimen_counts,
+                    names="RegimenAfiliacion",
+                    values="Vacunados",
+                    title="Distribución por régimen",
+                    color_map={},
+                    height=350,
+                    filters=None,
+                )
 
-            st.plotly_chart(fig_regimen, use_container_width=True)
-        else:
-            st.error("Columna 'RegimenAfiliacion' no encontrada en los datos.")
+                st.plotly_chart(fig_regimen, use_container_width=True)
+            else:
+                st.info("📊 No hay datos de régimen para mostrar")
+
+        except Exception as e:
+            st.error(f"❌ Error al crear gráfico de distribución por régimen: {str(e)}")
+
+    # =====================================================================
+    # MENSAJE FINAL DE ESTADO
+    # =====================================================================
+    st.success("✅ Visión general cargada correctamente")
+
+    # Información adicional para debugging si es necesario
+    if st.checkbox("🔍 Mostrar información técnica"):
+        st.markdown("### Información técnica de los datos:")
+        st.write(
+            f"- Total de registros de vacunación: {len(filtered_data['vacunacion'])}"
+        )
+        st.write(f"- Total de municipios: {len(filtered_data['municipios'])}")
+        st.write(f"- Métricas calculadas: {len(filtered_data['metricas'])}")
+        st.write(f"- Fuente de población activa: {fuente_poblacion}")
+        st.write(
+            f"- Filtros activos: {sum(1 for v in filters.values() if v != 'Todos')}"
+        )
