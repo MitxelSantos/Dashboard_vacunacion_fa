@@ -74,7 +74,7 @@ EAPB_MAPPING = {
     # CRUZ BLANCA (54 registros)
     "CRUZ BLANCA  EPS S.A.-CM": "Cruz Blanca",
     # ================================================================
-    # NUEVOS MAPEOS IDENTIFICADOS Y AÑADIDOS
+    # NUEVOS MAPEOS AÑADIDOS POR EL USUARIO
     # ================================================================
     # COMFENALCO VALLE
     "COMFENALCO VALLE E.P.S.-CM": "COMFENALCO VALLE EPS",
@@ -111,9 +111,9 @@ def get_eapb_stats():
         "total_mappings": len(ALL_EAPB_MAPPINGS),
         "main_mappings": len(EAPB_MAPPING),
         "additional_mappings": len(ADDITIONAL_MAPPINGS),
-        "affected_records_estimate": 350000,  # Actualizado con nuevos mapeos
+        "affected_records_estimate": 360000,  # Actualizado con nuevos mapeos
         "unique_canonical_names": len(set(ALL_EAPB_MAPPINGS.values())),
-        "new_mappings_added": 7,  # Número de nuevos mapeos añadidos
+        "new_mappings_added": 8,  # Número de nuevos mapeos añadidos por el usuario
     }
 
 
@@ -151,9 +151,9 @@ def get_mapping_categories():
 
 def validate_new_mappings():
     """
-    Valida que los nuevos mapeos añadidos sean consistentes
+    Valida que los nuevos mapeos añadidos por el usuario sean consistentes
     """
-    new_mappings = {
+    new_user_mappings = {
         "COMFENALCO VALLE E.P.S.-CM": "COMFENALCO VALLE EPS",
         "COOSALUD EPS S.A.Contributivo": "COOSALUD ESS EPS-S",
         "Colmédica": "Colmédica medicina prepagada",
@@ -164,10 +164,10 @@ def validate_new_mappings():
         "Salud Coomeva": "COOMEVA EPS SA",
     }
 
-    print("🔍 Validando nuevos mapeos de EAPB:")
-    print("=" * 50)
+    print("🔍 Validando nuevos mapeos de EAPB añadidos por el usuario:")
+    print("=" * 60)
 
-    for original, canonical in new_mappings.items():
+    for original, canonical in new_user_mappings.items():
         if original in ALL_EAPB_MAPPINGS:
             current_mapping = ALL_EAPB_MAPPINGS[original]
             if current_mapping == canonical:
@@ -186,7 +186,7 @@ if __name__ == "__main__":
     for key, value in stats.items():
         print(f"  - {key}: {value:,}".replace(",", "."))
 
-    print("\n🔍 Validando nuevos mapeos...")
+    print("\n🔍 Validando nuevos mapeos añadidos por el usuario...")
     validate_new_mappings()
 
     print(f"\n📈 Total de mapeos: {len(ALL_EAPB_MAPPINGS)}")

@@ -11,15 +11,21 @@ def normalize_insurance_data(df):
     Normaliza los datos de aseguramiento reemplazando valores NaN con "Sin dato"
     """
     df_clean = df.copy()
-    
+
     # Columnas a normalizar
-    columns_to_clean = ['NombreAseguradora', 'RegimenAfiliacion', 'NombreMunicipioResidencia']
-    
+    columns_to_clean = [
+        "NombreAseguradora",
+        "RegimenAfiliacion",
+        "NombreMunicipioResidencia",
+    ]
+
     for col in columns_to_clean:
         if col in df_clean.columns:
             df_clean[col] = df_clean[col].fillna("Sin dato")
-            df_clean[col] = df_clean[col].replace(["", "nan", "NaN", "null", "NULL"], "Sin dato")
-    
+            df_clean[col] = df_clean[col].replace(
+                ["", "nan", "NaN", "null", "NULL"], "Sin dato"
+            )
+
     return df_clean
 
 
@@ -27,108 +33,204 @@ def create_eapb_municipality_heatmap(data, colors):
     """
     Crea un heatmap/gráfico de distribución de EAPB por municipio
     """
-    # Crear tabla cruzada entre municipios y EAPB
-    pivot_data = pd.crosstab(
-        data['NombreMunicipioResidencia'], 
-        data['NombreAseguradora'], 
-        margins=False
-    )
-    
-    # Convertir a porcentajes por fila (por municipio)
-    pivot_pct = pivot_data.div(pivot_data.sum(axis=1), axis=0) * 100
-    
-    # Seleccionar top 10 municipios con más vacunados para mejor visualización
-    top_municipios = data['NombreMunicipioResidencia'].value_counts().head(10).index
-    pivot_pct_filtered = pivot_pct.loc[top_municipios]
-    
-    # Seleccionar top 8 EAPB para evitar sobrecarga visual
-    top_eapb = data['NombreAseguradora'].value_counts().head(8).index
-    pivot_pct_final = pivot_pct_filtered[top_eapb]
-    
-    # Crear heatmap
-    fig = go.Figure(data=go.Heatmap(
-        z=pivot_pct_final.values,
-        x=pivot_pct_final.columns,
-        y=pivot_pct_final.index,
-        colorscale='RdYlBu_r',
-        hovertemplate='Municipio: %{y}<br>EAPB: %{x}<br>Porcentaje: %{z:.1f}%<extra></extra>',
-        colorbar=dict(title="% de Vacunados")
-    ))
-    
-    fig.update_layout(
-        title="Distribución de EAPB por Municipio (Top 10 municipios y 8 EAPB principales)",
-        xaxis_title="EAPB",
-        yaxis_title="Municipio",
-        height=600,
-        plot_bgcolor="white",
-        paper_bgcolor="white"
-    )
-    
-    # Rotar etiquetas del eje X para mejor legibilidad
-    fig.update_xaxes(tickangle=45)
-    
-    return fig
+    try:
+        # Crear tabla cruzada entre municipios y EAPB
+        pivot_data = pd.crosstab(
+            data["NombreMunicipioResidencia"], data["NombreAseguradora"], margins=False
+        )
+
+        # Convertir a porcentajes por fila (por municipio)
+        pivot_pct = pivot_data.div(pivot_data.sum(axis=1), axis=0) * 100
+
+        # Seleccionar top 10 municipios con más vacunados para mejor visualización
+        top_municipios = data["NombreMunicipioResidencia"].value_counts().head(10).index
+        pivot_pct_filtered = pivot_pct.loc[pivot_pct.index.intersection(top_municipios)]
+
+        # Seleccionar top 8 EAPB para evitar sobrecarga visual
+        top_eapb = data["NombreAseguradora"].value_counts().head(8).index
+        pivot_pct_final = pivot_pct_filtered[
+            pivot_pct_filtered.columns.intersection(top_eapb)
+        ]
+
+        if pivot_pct_final.empty:
+            return None
+
+        # Crear heatmap
+        fig = go.Figure(
+            data=go.Heatmap(
+                z=pivot_pct_final.values,
+                x=pivot_pct_final.columns,
+                y=pivot_pct_final.index,
+                colorscale="RdYlBu_r",
+                hovertemplate="Municipio: %{y}<br>EAPB: %{x}<br>Porcentaje: %{z:.1f}%<extra></extra>",
+                colorbar=dict(title="% de Vacunados"),
+            )
+        )
+
+        fig.update_layout(
+            title="Distribución de EAPB por Municipio (Top 10 municipios y 8 EAPB principales)",
+            xaxis_title="EAPB",
+            yaxis_title="Municipio",
+            height=600,
+            plot_bgcolor="white",
+            paper_bgcolor="white",
+        )
+
+        # Rotar etiquetas del eje X para mejor legibilidad
+        fig.update_xaxes(tickangle=45)
+
+        return fig
+    except Exception as e:
+        st.error(f"Error creando heatmap: {str(e)}")
+        return None
 
 
 def create_eapb_coverage_by_municipality(data, metricas_data, fuente_poblacion, colors):
     """
     Crea gráfico de cobertura por EAPB en cada municipio
+    VERSIÓN CORREGIDA: Con mejor manejo de datos y diagnósticos
     """
-    # Contar vacunados por EAPB y municipio
-    eapb_municipio = data.groupby(['NombreMunicipioResidencia', 'NombreAseguradora']).size().reset_index()
-    eapb_municipio.columns = ['Municipio', 'EAPB', 'Vacunados']
-    
-    # Fusionar con datos de población para calcular cobertura
-    eapb_municipio = pd.merge(
-        eapb_municipio,
-        metricas_data[['DPMP', fuente_poblacion]],
-        left_on='Municipio',
-        right_on='DPMP',
-        how='left'
-    )
-    
-    # Calcular cobertura por EAPB por municipio
-    eapb_municipio['Cobertura'] = (eapb_municipio['Vacunados'] / eapb_municipio[fuente_poblacion] * 100).round(2)
-    
-    # Filtrar top municipios y EAPB para visualización clara
-    top_municipios = data['NombreMunicipioResidencia'].value_counts().head(8).index
-    top_eapb = data['NombreAseguradora'].value_counts().head(6).index
-    
-    filtered_data = eapb_municipio[
-        (eapb_municipio['Municipio'].isin(top_municipios)) & 
-        (eapb_municipio['EAPB'].isin(top_eapb))
-    ]
-    
-    # Crear gráfico de barras agrupadas
-    fig = px.bar(
-        filtered_data,
-        x='Municipio',
-        y='Cobertura',
-        color='EAPB',
-        title=f"Cobertura por EAPB en Municipios Principales (Población {fuente_poblacion})",
-        labels={'Cobertura': 'Cobertura (%)', 'Municipio': 'Municipio'},
-        height=500,
-        barmode='group',
-        color_discrete_sequence=px.colors.qualitative.Set3
-    )
-    
-    fig.update_layout(
-        plot_bgcolor="white",
-        paper_bgcolor="white",
-        xaxis_tickangle=45,
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1
+    try:
+        st.write("🔍 **Diagnóstico de datos para cobertura por EAPB:**")
+
+        # Debug: mostrar información básica
+        st.write(f"- Registros de vacunación: {len(data)}")
+        st.write(
+            f"- Municipios únicos en vacunación: {data['NombreMunicipioResidencia'].nunique()}"
         )
-    )
-    
-    # Añadir valores en las barras
-    fig.update_traces(texttemplate='%{y:.1f}%', textposition='outside')
-    
-    return fig
+        st.write(f"- EAPB únicas: {data['NombreAseguradora'].nunique()}")
+        st.write(f"- Municipios en métricas: {len(metricas_data)}")
+
+        # Verificar que tenemos datos suficientes
+        if len(data) == 0:
+            st.warning("No hay datos de vacunación disponibles")
+            return None
+
+        if len(metricas_data) == 0:
+            st.warning("No hay datos de métricas disponibles")
+            return None
+
+        # Contar vacunados por EAPB y municipio
+        eapb_municipio = (
+            data.groupby(["NombreMunicipioResidencia", "NombreAseguradora"])
+            .size()
+            .reset_index()
+        )
+        eapb_municipio.columns = ["Municipio", "EAPB", "Vacunados"]
+
+        st.write(f"- Combinaciones municipio-EAPB: {len(eapb_municipio)}")
+
+        # Mostrar muestra de datos
+        if len(eapb_municipio) > 0:
+            st.write("**Muestra de datos municipio-EAPB:**")
+            st.dataframe(eapb_municipio.head(3))
+
+        # Preparar datos de métricas para fusión
+        # Usar normalización de nombres de municipios
+        from src.data.normalize import normalize_municipality_names
+
+        # Normalizar nombres en ambos datasets
+        metricas_norm = normalize_municipality_names(metricas_data.copy(), "DPMP")
+        eapb_municipio_norm = normalize_municipality_names(
+            eapb_municipio.copy(), "Municipio"
+        )
+
+        # Fusionar con datos de población usando nombres normalizados
+        eapb_municipio_merged = pd.merge(
+            eapb_municipio_norm,
+            metricas_norm[["DPMP", "DPMP_norm", fuente_poblacion]],
+            left_on="Municipio_norm",
+            right_on="DPMP_norm",
+            how="left",
+        )
+
+        st.write(f"- Registros después de fusión: {len(eapb_municipio_merged)}")
+        st.write(
+            f"- Registros con población válida: {eapb_municipio_merged[fuente_poblacion].notna().sum()}"
+        )
+
+        # Eliminar registros sin población
+        eapb_municipio_valid = eapb_municipio_merged.dropna(subset=[fuente_poblacion])
+
+        if len(eapb_municipio_valid) == 0:
+            st.error("❌ No se pudieron fusionar los datos de municipios con población")
+            st.write("**Municipios en datos de vacunación:**")
+            st.write(sorted(data["NombreMunicipioResidencia"].unique()[:10]))
+            st.write("**Municipios en datos de métricas:**")
+            st.write(sorted(metricas_data["DPMP"].unique()[:10]))
+            return None
+
+        # Calcular cobertura por EAPB por municipio
+        # Evitar división por cero
+        eapb_municipio_valid["Cobertura"] = np.where(
+            eapb_municipio_valid[fuente_poblacion] > 0,
+            (
+                eapb_municipio_valid["Vacunados"]
+                / eapb_municipio_valid[fuente_poblacion]
+                * 100
+            ).round(2),
+            0,
+        )
+
+        st.write(f"- Registros con cobertura calculada: {len(eapb_municipio_valid)}")
+        st.write(
+            f"- Rango de cobertura: {eapb_municipio_valid['Cobertura'].min():.2f}% - {eapb_municipio_valid['Cobertura'].max():.2f}%"
+        )
+
+        # Filtrar para visualización: top municipios y EAPB
+        top_municipios = data["NombreMunicipioResidencia"].value_counts().head(6).index
+        top_eapb = data["NombreAseguradora"].value_counts().head(5).index
+
+        st.write(f"**Top municipios:** {', '.join(top_municipios[:3])}")
+        st.write(f"**Top EAPB:** {', '.join(top_eapb[:3])}")
+
+        filtered_data = eapb_municipio_valid[
+            (eapb_municipio_valid["Municipio"].isin(top_municipios))
+            & (eapb_municipio_valid["EAPB"].isin(top_eapb))
+        ].copy()
+
+        st.write(f"- Registros para gráfico: {len(filtered_data)}")
+
+        if len(filtered_data) == 0:
+            st.warning(
+                "⚠️ No hay datos suficientes después del filtrado para el gráfico"
+            )
+            return None
+
+        # Crear gráfico de barras agrupadas
+        fig = px.bar(
+            filtered_data,
+            x="Municipio",
+            y="Cobertura",
+            color="EAPB",
+            title=f"Cobertura por EAPB en Municipios Principales (Población {fuente_poblacion})",
+            labels={"Cobertura": "Cobertura (%)", "Municipio": "Municipio"},
+            height=500,
+            barmode="group",
+            color_discrete_sequence=px.colors.qualitative.Set3,
+        )
+
+        fig.update_layout(
+            plot_bgcolor="white",
+            paper_bgcolor="white",
+            xaxis_tickangle=45,
+            legend=dict(
+                orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
+            ),
+        )
+
+        # Añadir valores en las barras solo si no hay demasiados datos
+        if len(filtered_data) < 30:
+            fig.update_traces(texttemplate="%{y:.1f}%", textposition="outside")
+
+        return fig
+
+    except Exception as e:
+        st.error(f"❌ Error detallado al crear gráfico de cobertura por EAPB: {str(e)}")
+        import traceback
+
+        st.code(traceback.format_exc())
+        return None
 
 
 def show(data, filters, colors, fuente_poblacion="DANE"):
@@ -172,7 +274,9 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
             regimen_counts.columns = ["RegimenAfiliacion", "Vacunados"]
 
             # Calcular porcentajes
-            regimen_counts['Porcentaje'] = (regimen_counts['Vacunados'] / regimen_counts['Vacunados'].sum() * 100).round(1)
+            regimen_counts["Porcentaje"] = (
+                regimen_counts["Vacunados"] / regimen_counts["Vacunados"].sum() * 100
+            ).round(1)
 
             # Crear gráfico
             fig_regimen = create_bar_chart(
@@ -187,10 +291,12 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
             st.plotly_chart(fig_regimen, use_container_width=True)
 
             # Mostrar estadísticas
-            st.info(f"""
+            st.info(
+                f"""
             **Régimen predominante:** {regimen_counts.iloc[0]['RegimenAfiliacion']} 
             ({regimen_counts.iloc[0]['Porcentaje']:.1f}%)
-            """)
+            """
+            )
 
         except Exception as e:
             st.error(f"Error al crear gráfico de distribución por régimen: {str(e)}")
@@ -223,60 +329,105 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
 
             # Mostrar estadísticas
             total_aseguradoras = len(aseguradora_counts)
-            concentracion_top5 = (top_aseguradoras.head(5)['Vacunados'].sum() / 
-                                top_aseguradoras['Vacunados'].sum() * 100)
-            
-            st.info(f"""
+            concentracion_top5 = (
+                top_aseguradoras.head(5)["Vacunados"].sum()
+                / top_aseguradoras["Vacunados"].sum()
+                * 100
+            )
+
+            st.info(
+                f"""
             **Total de EAPB:** {total_aseguradoras}  
             **Concentración Top 5:** {concentracion_top5:.1f}%
-            """)
+            """
+            )
 
         except Exception as e:
-            st.error(f"Error al crear gráfico de distribución por aseguradora: {str(e)}")
+            st.error(
+                f"Error al crear gráfico de distribución por aseguradora: {str(e)}"
+            )
 
     # =====================================================================
     # SECCIÓN 2: ANÁLISIS DETALLADO DE EAPB POR MUNICIPIO (NUEVA SECCIÓN)
     # =====================================================================
     st.subheader("📍 Distribución y Cobertura de EAPB por Municipio")
-    
-    st.markdown("""
+
+    st.markdown(
+        """
     Esta sección muestra cómo se distribuyen las diferentes EAPB en cada municipio 
     y su contribución a la cobertura de vacunación.
-    """)
+    """
+    )
 
     # Heatmap de distribución EAPB por municipio
     try:
         fig_heatmap = create_eapb_municipality_heatmap(
-            filtered_data["vacunacion"], 
-            colors
+            filtered_data["vacunacion"], colors
         )
-        st.plotly_chart(fig_heatmap, use_container_width=True)
-        
-        st.markdown("""
-        **Interpretación del Heatmap:** 
-        - Colores más intensos indican mayor concentración de vacunados de esa EAPB en el municipio
-        - Permite identificar patrones de distribución territorial de las aseguradoras
-        """)
-        
+        if fig_heatmap:
+            st.plotly_chart(fig_heatmap, use_container_width=True)
+
+            st.markdown(
+                """
+            **Interpretación del Heatmap:** 
+            - Colores más intensos indican mayor concentración de vacunados de esa EAPB en el municipio
+            - Permite identificar patrones de distribución territorial de las aseguradoras
+            """
+            )
+        else:
+            st.warning("No se pudo generar el heatmap de distribución")
+
     except Exception as e:
         st.error(f"Error al crear heatmap de EAPB por municipio: {str(e)}")
 
-    # Gráfico de cobertura por EAPB por municipio
+    # Gráfico de cobertura por EAPB por municipio (CORREGIDO)
     try:
-        fig_coverage = create_eapb_coverage_by_municipality(
-            filtered_data["vacunacion"],
-            filtered_data["metricas"],
-            fuente_poblacion,
-            colors
-        )
-        st.plotly_chart(fig_coverage, use_container_width=True)
-        
-        st.markdown("""
-        **Interpretación de Cobertura por EAPB:** 
-        - Muestra qué tan efectiva es cada EAPB en la vacunación por municipio
-        - Permite identificar EAPB con mejor desempeño en diferentes territorios
-        """)
-        
+        with st.expander("🔍 Ver diagnóstico detallado", expanded=False):
+            fig_coverage = create_eapb_coverage_by_municipality(
+                filtered_data["vacunacion"],
+                filtered_data["metricas"],
+                fuente_poblacion,
+                colors,
+            )
+
+        if fig_coverage:
+            st.plotly_chart(fig_coverage, use_container_width=True)
+
+            st.markdown(
+                """
+            **Interpretación de Cobertura por EAPB:** 
+            - Muestra qué tan efectiva es cada EAPB en la vacunación por municipio
+            - Permite identificar EAPB con mejor desempeño en diferentes territorios
+            """
+            )
+        else:
+            st.error("❌ No se pudo generar el gráfico de cobertura por EAPB")
+
+            # Información adicional para troubleshooting
+            st.markdown("### 🔧 Información para diagnóstico:")
+
+            col_diag1, col_diag2 = st.columns(2)
+
+            with col_diag1:
+                st.write("**Top 5 Municipios en datos:**")
+                top_munic = (
+                    filtered_data["vacunacion"]["NombreMunicipioResidencia"]
+                    .value_counts()
+                    .head(5)
+                )
+                for munic, count in top_munic.items():
+                    st.write(f"- {munic}: {count} vacunados")
+
+            with col_diag2:
+                st.write("**Top 5 EAPB en datos:**")
+                top_eapb = (
+                    filtered_data["vacunacion"]["NombreAseguradora"]
+                    .value_counts()
+                    .head(5)
+                )
+                for eapb, count in top_eapb.items():
+                    st.write(f"- {eapb}: {count} vacunados")
+
     except Exception as e:
         st.error(f"Error al crear gráfico de cobertura por EAPB: {str(e)}")
 
@@ -308,7 +459,9 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
 
             # Filtrar datos para esos municipios
             top_data = filtered_data["vacunacion"][
-                filtered_data["vacunacion"]["NombreMunicipioResidencia"].isin(top_municipios)
+                filtered_data["vacunacion"]["NombreMunicipioResidencia"].isin(
+                    top_municipios
+                )
             ]
 
             # Contar por municipio y régimen
@@ -328,7 +481,7 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
                 title="Distribución por régimen en los municipios principales",
                 height=500,
                 barmode="group",
-                color_discrete_sequence=px.colors.qualitative.Set2
+                color_discrete_sequence=px.colors.qualitative.Set2,
             )
 
             # Personalizar diseño
@@ -339,7 +492,7 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
                 title={"y": 0.98, "x": 0.5, "xanchor": "center", "yanchor": "top"},
                 title_font=dict(size=16),
                 legend_title="Régimen",
-                xaxis_tickangle=45
+                xaxis_tickangle=45,
             )
 
             st.plotly_chart(fig, use_container_width=True)
@@ -358,7 +511,7 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
         aseguradoras_lista = list(
             filtered_data["vacunacion"]["NombreAseguradora"]
             .value_counts()
-            .drop("Sin dato", errors='ignore')
+            .drop("Sin dato", errors="ignore")
             .index
         )
         aseguradoras = ["Todas"] + sorted(aseguradoras_lista)
@@ -371,18 +524,23 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
         if aseguradora_seleccionada != "Todas":
             # Filtrar datos para la aseguradora seleccionada
             datos_aseguradora = filtered_data["vacunacion"][
-                filtered_data["vacunacion"]["NombreAseguradora"] == aseguradora_seleccionada
+                filtered_data["vacunacion"]["NombreAseguradora"]
+                == aseguradora_seleccionada
             ]
 
             if len(datos_aseguradora) == 0:
-                st.warning(f"No hay datos disponibles para la EAPB {aseguradora_seleccionada}")
+                st.warning(
+                    f"No hay datos disponibles para la EAPB {aseguradora_seleccionada}"
+                )
             else:
                 # Métricas principales
                 col1, col2, col3, col4 = st.columns(4)
 
                 with col1:
                     total_vacunados = len(datos_aseguradora)
-                    porcentaje = (total_vacunados / len(filtered_data["vacunacion"]) * 100)
+                    porcentaje = (
+                        total_vacunados / len(filtered_data["vacunacion"]) * 100
+                    )
                     st.metric(
                         label="Total vacunados",
                         value=f"{total_vacunados:,}".replace(",", "."),
@@ -419,7 +577,9 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
 
                 with col4:
                     # Número de municipios donde opera
-                    municipios_operacion = datos_aseguradora["NombreMunicipioResidencia"].nunique()
+                    municipios_operacion = datos_aseguradora[
+                        "NombreMunicipioResidencia"
+                    ].nunique()
                     st.metric("Municipios de operación", f"{municipios_operacion}")
 
                 # Gráficos específicos de la aseguradora
@@ -474,40 +634,53 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
                         st.info("Datos de grupo de edad no disponibles para esta EAPB")
 
                 # Análisis de cobertura por municipio para esta EAPB
-                st.markdown(f"### Cobertura de {aseguradora_seleccionada} por Municipio")
-                
+                st.markdown(
+                    f"### Cobertura de {aseguradora_seleccionada} por Municipio"
+                )
+
                 # Calcular cobertura por municipio para esta EAPB específica
-                cobertura_aseg = datos_aseguradora.groupby('NombreMunicipioResidencia').size().reset_index()
-                cobertura_aseg.columns = ['Municipio', 'Vacunados_EAPB']
-                
+                cobertura_aseg = (
+                    datos_aseguradora.groupby("NombreMunicipioResidencia")
+                    .size()
+                    .reset_index()
+                )
+                cobertura_aseg.columns = ["Municipio", "Vacunados_EAPB"]
+
                 # Fusionar con datos de población
                 cobertura_aseg = pd.merge(
                     cobertura_aseg,
-                    filtered_data["metricas"][['DPMP', fuente_poblacion]],
-                    left_on='Municipio',
-                    right_on='DPMP',
-                    how='left'
+                    filtered_data["metricas"][["DPMP", fuente_poblacion]],
+                    left_on="Municipio",
+                    right_on="DPMP",
+                    how="left",
                 )
-                
+
                 # Calcular cobertura de esta EAPB específica
-                cobertura_aseg['Cobertura_EAPB'] = (
-                    cobertura_aseg['Vacunados_EAPB'] / cobertura_aseg[fuente_poblacion] * 100
+                cobertura_aseg["Cobertura_EAPB"] = (
+                    cobertura_aseg["Vacunados_EAPB"]
+                    / cobertura_aseg[fuente_poblacion]
+                    * 100
                 ).round(2)
-                
+
                 # Mostrar top 10 municipios por cobertura de esta EAPB
-                top_cobertura_eapb = cobertura_aseg.nlargest(10, 'Cobertura_EAPB')
-                
-                fig_cob_eapb = create_bar_chart(
-                    data=top_cobertura_eapb,
-                    x="Municipio",
-                    y="Cobertura_EAPB",
-                    title=f"Top 10 municipios por cobertura de {aseguradora_seleccionada}",
-                    color=colors["warning"],
-                    height=400,
-                    formatter="%{y:.2f}%",
-                )
-                
-                st.plotly_chart(fig_cob_eapb, use_container_width=True)
+                top_cobertura_eapb = cobertura_aseg.nlargest(10, "Cobertura_EAPB")
+
+                if len(top_cobertura_eapb) > 0:
+                    fig_cob_eapb = create_bar_chart(
+                        data=top_cobertura_eapb,
+                        x="Municipio",
+                        y="Cobertura_EAPB",
+                        title=f"Top 10 municipios por cobertura de {aseguradora_seleccionada}",
+                        color=colors["warning"],
+                        height=400,
+                        formatter="%{y:.2f}%",
+                    )
+
+                    st.plotly_chart(fig_cob_eapb, use_container_width=True)
+                else:
+                    st.info(
+                        "No hay datos suficientes para mostrar cobertura por municipio"
+                    )
 
     except Exception as e:
         st.error(f"Error en análisis detallado por aseguradora: {str(e)}")
@@ -521,13 +694,23 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
     try:
         # Calcular algunos insights automáticos
         total_eapb = len(filtered_data["vacunacion"]["NombreAseguradora"].unique())
-        eapb_principal = filtered_data["vacunacion"]["NombreAseguradora"].value_counts().index[0]
-        participacion_principal = (filtered_data["vacunacion"]["NombreAseguradora"].value_counts().iloc[0] / 
-                                 len(filtered_data["vacunacion"]) * 100)
+        eapb_principal = (
+            filtered_data["vacunacion"]["NombreAseguradora"].value_counts().index[0]
+        )
+        participacion_principal = (
+            filtered_data["vacunacion"]["NombreAseguradora"].value_counts().iloc[0]
+            / len(filtered_data["vacunacion"])
+            * 100
+        )
 
-        regimen_principal = filtered_data["vacunacion"]["RegimenAfiliacion"].value_counts().index[0]
-        participacion_regimen = (filtered_data["vacunacion"]["RegimenAfiliacion"].value_counts().iloc[0] / 
-                               len(filtered_data["vacunacion"]) * 100)
+        regimen_principal = (
+            filtered_data["vacunacion"]["RegimenAfiliacion"].value_counts().index[0]
+        )
+        participacion_regimen = (
+            filtered_data["vacunacion"]["RegimenAfiliacion"].value_counts().iloc[0]
+            / len(filtered_data["vacunacion"])
+            * 100
+        )
 
         insights_aseguramiento = [
             f"🏥 **{total_eapb} EAPB diferentes** participan en la vacunación",
@@ -536,13 +719,19 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
         ]
 
         # Calcular concentración (índice Herfindahl simple)
-        participaciones = filtered_data["vacunacion"]["NombreAseguradora"].value_counts(normalize=True)
-        hhi = (participaciones ** 2).sum()
-        
+        participaciones = filtered_data["vacunacion"]["NombreAseguradora"].value_counts(
+            normalize=True
+        )
+        hhi = (participaciones**2).sum()
+
         if hhi > 0.25:
-            insights_aseguramiento.append("⚠️ **Alta concentración** en pocas EAPB - considerar diversificación")
+            insights_aseguramiento.append(
+                "⚠️ **Alta concentración** en pocas EAPB - considerar diversificación"
+            )
         else:
-            insights_aseguramiento.append("✅ **Distribución balanceada** entre diferentes EAPB")
+            insights_aseguramiento.append(
+                "✅ **Distribución balanceada** entre diferentes EAPB"
+            )
 
         # Mostrar insights
         for insight in insights_aseguramiento:

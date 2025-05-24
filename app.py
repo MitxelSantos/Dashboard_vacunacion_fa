@@ -327,9 +327,7 @@ def main():
             # Logo de la Gobernación
             logo_path = IMAGES_DIR / "logo_gobernacion.png"
             if logo_path.exists():
-                st.image(
-                    str(logo_path), width=150, caption="Secretaría de Salud del Tolima"
-                )
+                st.image(str(logo_path), width=150)
             else:
                 st.info("💡 Logo no encontrado en assets/images/logo_gobernacion.png")
 
