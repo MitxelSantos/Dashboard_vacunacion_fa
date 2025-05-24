@@ -252,33 +252,6 @@ def main():
             with st.spinner("Cargando y normalizando datos..."):
                 data = load_data_with_fallback()
 
-                if data is not None:
-                    # Validar calidad de datos
-                    try:
-                        from src.data.preprocessor import validate_data_quality
-
-                        quality_report = validate_data_quality(data)
-
-                        # Mostrar alertas de calidad si es necesario
-                        if quality_report.get("data_quality_score", 0) < 80:
-                            st.sidebar.warning(
-                                f"⚠️ Calidad de datos: {quality_report.get('data_quality_score', 0):.1f}%"
-                            )
-                            if st.sidebar.expander("Ver detalles de calidad"):
-                                for issue in quality_report.get("issues", []):
-                                    st.sidebar.write(f"• {issue}")
-                        else:
-                            st.sidebar.success(
-                                f"✅ Calidad de datos: {quality_report.get('data_quality_score', 100):.1f}%"
-                            )
-
-                    except Exception as e:
-                        st.sidebar.warning(
-                            f"⚠️ No se pudo validar calidad de datos: {str(e)}"
-                        )
-
-                    data_loaded_successfully = True
-
         except Exception as e:
             st.error(f"❌ Error crítico cargando datos: {str(e)}")
             st.markdown("### 🚨 Error Crítico")
