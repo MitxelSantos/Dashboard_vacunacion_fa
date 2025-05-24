@@ -63,7 +63,7 @@ def normalize_gender_values(df, column_name):
     """
     Normaliza los valores de género a las tres categorías estándar:
     - Masculino
-    - Femenino  
+    - Femenino
     - No Binario (para todo lo demás)
     - Sin dato (para valores NaN o vacíos)
 
@@ -75,145 +75,168 @@ def normalize_gender_values(df, column_name):
         pd.DataFrame: DataFrame con valores de género normalizados
     """
     df_clean = df.copy()
-    
+
     def normalize_single_gender(value):
         """Normaliza un valor individual de género"""
-        if pd.isna(value) or str(value).lower().strip() in ['nan', '', 'none', 'null', 'na']:
+        if pd.isna(value) or str(value).lower().strip() in [
+            "nan",
+            "",
+            "none",
+            "null",
+            "na",
+        ]:
             return "Sin dato"
-        
+
         value_str = str(value).lower().strip()
-        
-        if value_str in ['masculino', 'm', 'masc', 'hombre', 'h', 'male', '1']:
+
+        if value_str in ["masculino", "m", "masc", "hombre", "h", "male", "1"]:
             return "Masculino"
-        elif value_str in ['femenino', 'f', 'fem', 'mujer', 'female', '2']:
+        elif value_str in ["femenino", "f", "fem", "mujer", "female", "2"]:
             return "Femenino"
         else:
             # Todas las demás clasificaciones van a "No Binario"
             return "No Binario"
-    
+
     # Aplicar la normalización
-    df_clean[f"{column_name}_normalized"] = df_clean[column_name].apply(normalize_single_gender)
-    
+    df_clean[f"{column_name}_normalized"] = df_clean[column_name].apply(
+        normalize_single_gender
+    )
+
     return df_clean
 
 
 def normalize_nan_values(df, columns_to_clean=None, replacement="Sin dato"):
     """
     Normaliza todos los valores NaN en las columnas especificadas o en todo el DataFrame.
-    
+
     Args:
         df (pd.DataFrame): DataFrame a limpiar
         columns_to_clean (list): Lista de columnas a limpiar. Si es None, limpia todas.
         replacement (str): Valor de reemplazo para NaN
-        
+
     Returns:
         pd.DataFrame: DataFrame con valores NaN normalizados
     """
     df_clean = df.copy()
-    
+
     # Si no se especifican columnas, usar todas las columnas de tipo object/string
     if columns_to_clean is None:
-        columns_to_clean = df_clean.select_dtypes(include=['object', 'string']).columns.tolist()
-    
+        columns_to_clean = df_clean.select_dtypes(
+            include=["object", "string"]
+        ).columns.tolist()
+
     # Normalizar cada columna especificada
     for col in columns_to_clean:
         if col in df_clean.columns:
             # Convertir a string si es categórica
             if pd.api.types.is_categorical_dtype(df_clean[col]):
                 df_clean[col] = df_clean[col].astype(str)
-            
+
             # Reemplazar diversos tipos de valores vacíos/nulos
             df_clean[col] = df_clean[col].fillna(replacement)
             df_clean[col] = df_clean[col].replace(
-                ["", "nan", "NaN", "null", "NULL", "None", "NONE", "na", "NA"], 
-                replacement
+                ["", "nan", "NaN", "null", "NULL", "None", "NONE", "na", "NA"],
+                replacement,
             )
-            
+
             # Limpiar espacios en blanco que podrían considerarse como vacíos
             df_clean[col] = df_clean[col].apply(
                 lambda x: replacement if str(x).strip() == "" else x
             )
-    
+
     return df_clean
 
 
 def normalize_age_groups(df, age_column, age_group_column=None):
     """
     Normaliza los grupos de edad basándose en la edad numérica.
-    
+    ACTUALIZADO: Nuevos rangos de edad epidemiológicos
+
     Args:
         df (pd.DataFrame): DataFrame con datos de edad
         age_column (str): Nombre de la columna con las edades numéricas
         age_group_column (str): Nombre de la columna donde guardar los grupos (opcional)
-        
+
     Returns:
         pd.DataFrame: DataFrame con grupos de edad normalizados
     """
     df_clean = df.copy()
-    
+
     if age_group_column is None:
         age_group_column = f"{age_column}_group"
-    
-    def categorize_age(age):
-        """Categoriza la edad en grupos estándar"""
+
+    def categorize_age_updated(age):
+        """
+        Categoriza la edad en grupos epidemiológicos estándar
+        Rangos: Menor de 1 año, 1 a 4 años, 5 a 9 años, 10 a 19 años,
+               20 a 29 años, 30 a 39 años, 40 a 49 años, 50 a 59 años,
+               60 a 69 años, 70 años o más
+        """
         try:
             age_num = float(age)
             if pd.isna(age_num):
                 return "Sin dato"
+            elif age_num < 1:
+                return "Menor de 1 año"
             elif age_num < 5:
-                return "0-4"
-            elif age_num < 15:
-                return "5-14"
+                return "1 a 4 años"
+            elif age_num < 10:
+                return "5 a 9 años"
             elif age_num < 20:
-                return "15-19"
+                return "10 a 19 años"
             elif age_num < 30:
-                return "20-29"
+                return "20 a 29 años"
             elif age_num < 40:
-                return "30-39"
+                return "30 a 39 años"
             elif age_num < 50:
-                return "40-49"
+                return "40 a 49 años"
             elif age_num < 60:
-                return "50-59"
+                return "50 a 59 años"
             elif age_num < 70:
-                return "60-69"
-            elif age_num < 80:
-                return "70-79"
-            else:
-                return "80+"
+                return "60 a 69 años"
+            else:  # 70 años o más
+                return "70 años o más"
         except (ValueError, TypeError):
             return "Sin dato"
-    
+
     # Aplicar la categorización
-    df_clean[age_group_column] = df_clean[age_column].apply(categorize_age)
-    
+    df_clean[age_group_column] = df_clean[age_column].apply(categorize_age_updated)
+
     return df_clean
 
 
 def comprehensive_data_normalization(df):
     """
     Aplica todas las normalizaciones necesarias a un DataFrame de manera integral.
-    
+
     Args:
         df (pd.DataFrame): DataFrame a normalizar
-        
+
     Returns:
         pd.DataFrame: DataFrame completamente normalizado
     """
     df_normalized = df.copy()
-    
+
     # 1. Normalizar valores NaN en columnas categóricas comunes
     categorical_columns = [
-        'GrupoEtnico', 'RegimenAfiliacion', 'NombreAseguradora', 
-        'NombreMunicipioResidencia', 'NombreDptoResidencia',
-        'Desplazado', 'Discapacitado', 'TipoIdentificacion'
+        "GrupoEtnico",
+        "RegimenAfiliacion",
+        "NombreAseguradora",
+        "NombreMunicipioResidencia",
+        "NombreDptoResidencia",
+        "Desplazado",
+        "Discapacitado",
+        "TipoIdentificacion",
     ]
-    
-    existing_categorical = [col for col in categorical_columns if col in df_normalized.columns]
+
+    existing_categorical = [
+        col for col in categorical_columns if col in df_normalized.columns
+    ]
     if existing_categorical:
         df_normalized = normalize_nan_values(df_normalized, existing_categorical)
-    
+
     # 2. Normalizar géneros si existe la columna
-    gender_columns = ['Sexo', 'Genero']
+    gender_columns = ["Sexo", "Genero"]
     for gender_col in gender_columns:
         if gender_col in df_normalized.columns:
             df_normalized = normalize_gender_values(df_normalized, gender_col)
@@ -221,40 +244,75 @@ def comprehensive_data_normalization(df):
             df_normalized[gender_col] = df_normalized[f"{gender_col}_normalized"]
             df_normalized = df_normalized.drop(f"{gender_col}_normalized", axis=1)
             break
-    
+
     # 3. Normalizar grupos de edad si existe la columna de edad
-    if 'Edad_Vacunacion' in df_normalized.columns:
-        if 'Grupo_Edad' not in df_normalized.columns:
-            df_normalized = normalize_age_groups(df_normalized, 'Edad_Vacunacion', 'Grupo_Edad')
+    if "Edad_Vacunacion" in df_normalized.columns:
+        if "Grupo_Edad" not in df_normalized.columns:
+            df_normalized = normalize_age_groups(
+                df_normalized, "Edad_Vacunacion", "Grupo_Edad"
+            )
         else:
             # Si ya existe Grupo_Edad pero tiene valores inconsistentes, regenerar
-            df_normalized = normalize_age_groups(df_normalized, 'Edad_Vacunacion', 'Grupo_Edad_New')
+            df_normalized = normalize_age_groups(
+                df_normalized, "Edad_Vacunacion", "Grupo_Edad_New"
+            )
             # Reemplazar solo si la nueva versión tiene menos "Sin dato"
-            if (df_normalized['Grupo_Edad_New'] == 'Sin dato').sum() < (df_normalized['Grupo_Edad'] == 'Sin dato').sum():
-                df_normalized['Grupo_Edad'] = df_normalized['Grupo_Edad_New']
-            df_normalized = df_normalized.drop('Grupo_Edad_New', axis=1)
-    
+            if (df_normalized["Grupo_Edad_New"] == "Sin dato").sum() < (
+                df_normalized["Grupo_Edad"] == "Sin dato"
+            ).sum():
+                df_normalized["Grupo_Edad"] = df_normalized["Grupo_Edad_New"]
+            df_normalized = df_normalized.drop("Grupo_Edad_New", axis=1)
+
     # 4. Normalizar nombres de municipios si existe la columna
-    if 'NombreMunicipioResidencia' in df_normalized.columns:
-        df_normalized = normalize_municipality_names(df_normalized, 'NombreMunicipioResidencia')
-    
+    if "NombreMunicipioResidencia" in df_normalized.columns:
+        df_normalized = normalize_municipality_names(
+            df_normalized, "NombreMunicipioResidencia"
+        )
+
     return df_normalized
 
 
 def get_standardized_categories():
     """
     Retorna las categorías estandarizadas para cada tipo de variable demográfica.
-    
+    ACTUALIZADO: Nuevos rangos de edad
+
     Returns:
         dict: Diccionario con las categorías estándar para cada variable
     """
     return {
-        'genero': ['Masculino', 'Femenino', 'No Binario', 'Sin dato'],
-        'grupos_edad': ['0-4', '5-14', '15-19', '20-29', '30-39', '40-49', 
-                       '50-59', '60-69', '70-79', '80+', 'Sin dato'],
-        'regimen': ['Contributivo', 'Subsidiado', 'Especial', 'No asegurado', 'Sin dato'],
-        'grupo_etnico': ['Mestizo', 'Afrodescendiente', 'Indígena', 'Blanco', 
-                        'Gitano', 'Palenquero', 'Raizal', 'Otro', 'Sin dato'],
-        'desplazado': ['Sí', 'No', 'Sin dato'],
-        'discapacitado': ['Sí', 'No', 'Sin dato']
+        "genero": ["Masculino", "Femenino", "No Binario", "Sin dato"],
+        "grupos_edad": [
+            "Menor de 1 año",
+            "1 a 4 años",
+            "5 a 9 años",
+            "10 a 19 años",
+            "20 a 29 años",
+            "30 a 39 años",
+            "40 a 49 años",
+            "50 a 59 años",
+            "60 a 69 años",
+            "70 años o más",
+            "Sin dato",
+        ],
+        "regimen": [
+            "Contributivo",
+            "Subsidiado",
+            "Especial",
+            "No asegurado",
+            "Sin dato",
+        ],
+        "grupo_etnico": [
+            "Mestizo",
+            "Afrodescendiente",
+            "Indígena",
+            "Blanco",
+            "Gitano",
+            "Palenquero",
+            "Raizal",
+            "Otro",
+            "Sin dato",
+        ],
+        "desplazado": ["Sí", "No", "Sin dato"],
+        "discapacitado": ["Sí", "No", "Sin dato"],
     }

@@ -16,11 +16,11 @@ def format_responsive_number(number, is_small_screen=False):
     # Manejar valores nulos o no numéricos
     if pd.isna(number):
         return "N/A"
-    
+
     try:
         # Convertir a float para manejar cualquier entrada numérica
         number = float(number)
-        
+
         # Formato normal con puntos como separador de miles - SIN ABREVIACIONES
         return f"{number:,.0f}".replace(",", ".")
     except (ValueError, TypeError):
@@ -30,14 +30,14 @@ def format_responsive_number(number, is_small_screen=False):
 
 def normalize_gender(value):
     """Normaliza los valores de género a las tres categorías estándar"""
-    if pd.isna(value) or str(value).lower() in ['nan', '', 'none', 'null']:
+    if pd.isna(value) or str(value).lower() in ["nan", "", "none", "null"]:
         return "Sin dato"
-    
+
     value_str = str(value).lower().strip()
-    
-    if value_str in ['masculino', 'm', 'masc', 'hombre', 'h', 'male', '1']:
+
+    if value_str in ["masculino", "m", "masc", "hombre", "h", "male", "1"]:
         return "Masculino"
-    elif value_str in ['femenino', 'f', 'fem', 'mujer', 'female', '2']:
+    elif value_str in ["femenino", "f", "fem", "mujer", "female", "2"]:
         return "Femenino"
     else:
         # Todas las demás clasificaciones van a "No Binario"
@@ -46,29 +46,31 @@ def normalize_gender(value):
 
 def create_improved_bar_chart_with_hover(data, x_col, y_col, title, color, height=400):
     """
-    Crea un gráfico de barras mejorado que siempre muestra porcentajes 
+    Crea un gráfico de barras mejorado que siempre muestra porcentajes
     y cantidad en hover
     """
     fig = go.Figure()
-    
+
     # Calcular porcentajes
     total = data[y_col].sum()
     percentages = (data[y_col] / total * 100).round(1)
-    
-    fig.add_trace(go.Bar(
-        x=data[x_col],
-        y=percentages,
-        text=[f"{p}%" for p in percentages],
-        textposition='outside',
-        hovertemplate='<b>%{x}</b><br>' +
-                      'Porcentaje: %{y}%<br>' +
-                      'Cantidad: %{customdata:,}<br>' +
-                      '<extra></extra>',
-        customdata=data[y_col],
-        marker_color=color,
-        name=''
-    ))
-    
+
+    fig.add_trace(
+        go.Bar(
+            x=data[x_col],
+            y=percentages,
+            text=[f"{p}%" for p in percentages],
+            textposition="outside",
+            hovertemplate="<b>%{x}</b><br>"
+            + "Porcentaje: %{y}%<br>"
+            + "Cantidad: %{customdata:,}<br>"
+            + "<extra></extra>",
+            customdata=data[y_col],
+            marker_color=color,
+            name="",
+        )
+    )
+
     fig.update_layout(
         title=title,
         title_x=0.5,
@@ -78,9 +80,9 @@ def create_improved_bar_chart_with_hover(data, x_col, y_col, title, color, heigh
         paper_bgcolor="white",
         height=height,
         margin=dict(l=10, r=10, t=40, b=10),
-        showlegend=False
+        showlegend=False,
     )
-    
+
     return fig
 
 
@@ -116,7 +118,9 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
     # =====================================================================
     # SECCIÓN 1: MÉTRICAS PRINCIPALES (OCUPAN TODO EL ANCHO HORIZONTAL)
     # =====================================================================
-    st.subheader(f"Resumen de Vacunación - Fiebre Amarilla (Población {fuente_poblacion})")
+    st.subheader(
+        f"Resumen de Vacunación - Fiebre Amarilla (Población {fuente_poblacion})"
+    )
 
     # Calcular métricas
     if any(filters[k] != "Todos" for k in filters):
@@ -139,8 +143,7 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
                 ]
             elif filters["municipio"] == "Armero" and len(municipio_data) == 0:
                 municipio_data = filtered_data["metricas"][
-                    filtered_data["metricas"]["DPMP"].str.lower()
-                    == "armero guayabal"
+                    filtered_data["metricas"]["DPMP"].str.lower() == "armero guayabal"
                 ]
 
             if len(municipio_data) > 0:
@@ -165,7 +168,8 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
     is_very_small_screen = screen_width < 768
 
     # CSS mejorado para las métricas que ocupan todo el ancho horizontal
-    st.markdown("""
+    st.markdown(
+        """
     <style>
     .metrics-container {
         display: flex;
@@ -222,7 +226,9 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
         }
     }
     </style>
-    """, unsafe_allow_html=True)
+    """,
+        unsafe_allow_html=True,
+    )
 
     # Crear métricas que ocupan todo el ancho horizontal
     poblacion_display = format_responsive_number(total_poblacion)
@@ -230,7 +236,8 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
     cobertura_formatted = f"{cobertura:.1f}"
     susceptibles_display = format_responsive_number(susceptibles)
 
-    st.markdown(f"""
+    st.markdown(
+        f"""
     <div class="metrics-container">
         <div class="metric-card-full metric-poblacion">
             <div class="metric-title-full">Población Total</div>
@@ -249,7 +256,9 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
             <div class="metric-value-full">{susceptibles_display}</div>
         </div>
     </div>
-    """, unsafe_allow_html=True)
+    """,
+        unsafe_allow_html=True,
+    )
 
     # =====================================================================
     # SECCIÓN 2: COMPARATIVA DANE vs SISBEN (SOLO GRÁFICO DE BARRAS)
@@ -304,14 +313,16 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
             vacunados_total = filtered_data["metricas"]["Vacunados"].sum()
 
         # Crear DataFrame para el gráfico mejorado
-        comparativa_data = pd.DataFrame({
-            "Fuente": ["DANE", "SISBEN"],
-            "Poblacion": [dane_total, sisben_total],
-            "Cobertura": [
-                (vacunados_total / dane_total * 100) if dane_total > 0 else 0,
-                (vacunados_total / sisben_total * 100) if sisben_total > 0 else 0,
-            ],
-        })
+        comparativa_data = pd.DataFrame(
+            {
+                "Fuente": ["DANE", "SISBEN"],
+                "Poblacion": [dane_total, sisben_total],
+                "Cobertura": [
+                    (vacunados_total / dane_total * 100) if dane_total > 0 else 0,
+                    (vacunados_total / sisben_total * 100) if sisben_total > 0 else 0,
+                ],
+            }
+        )
 
         # Crear gráfico mejorado que muestra porcentaje y hover con cantidad
         fig_comparativa = create_improved_bar_chart_with_hover(
@@ -320,7 +331,7 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
             y_col="Poblacion",
             title="Cobertura según fuente de población",
             color=colors["primary"],
-            height=350
+            height=350,
         )
 
         st.plotly_chart(fig_comparativa, use_container_width=True)
@@ -394,15 +405,26 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
                 # Ordenar por grupos de edad
                 try:
                     orden_grupos = [
-                        "0-4", "5-14", "15-19", "20-29", "30-39", 
-                        "40-49", "50-59", "60-69", "70-79", "80+", "Sin dato"
+                        "Menor de 1 año",
+                        "1 a 4 años",
+                        "5 a 9 años",
+                        "10 a 19 años",
+                        "20 a 29 años",
+                        "30 a 39 años",
+                        "40 a 49 años",
+                        "50 a 59 años",
+                        "60 a 69 años",
+                        "70 años o más",
+                        "Sin dato",
                     ]
                     # Verificar si tenemos estos grupos en nuestros datos
                     grupos_presentes = set(edad_counts["Grupo_Edad"])
                     grupos_orden = [g for g in orden_grupos if g in grupos_presentes]
 
                     # Añadir grupos no contemplados al final
-                    grupos_orden.extend([g for g in grupos_presentes if g not in grupos_orden])
+                    grupos_orden.extend(
+                        [g for g in grupos_presentes if g not in grupos_orden]
+                    )
 
                     # Si hay grupos en el orden predefinido, usarlos
                     if grupos_orden:
@@ -483,7 +505,9 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
         if genero_col:
             try:
                 # Normalizar géneros usando la nueva función
-                filtered_data["vacunacion"]["Genero_Normalizado"] = filtered_data["vacunacion"][genero_col].apply(normalize_gender)
+                filtered_data["vacunacion"]["Genero_Normalizado"] = filtered_data[
+                    "vacunacion"
+                ][genero_col].apply(normalize_gender)
 
                 # Agrupar por género normalizado
                 genero_counts = (
@@ -512,9 +536,13 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
     with col2:
         if "GrupoEtnico" in filtered_data["vacunacion"].columns:
             # Normalizar valores NaN a "Sin dato"
-            filtered_data["vacunacion"]["GrupoEtnico_clean"] = filtered_data["vacunacion"]["GrupoEtnico"].fillna("Sin dato")
-            filtered_data["vacunacion"]["GrupoEtnico_clean"] = filtered_data["vacunacion"]["GrupoEtnico_clean"].replace(["", "nan", "NaN"], "Sin dato")
-            
+            filtered_data["vacunacion"]["GrupoEtnico_clean"] = filtered_data[
+                "vacunacion"
+            ]["GrupoEtnico"].fillna("Sin dato")
+            filtered_data["vacunacion"]["GrupoEtnico_clean"] = filtered_data[
+                "vacunacion"
+            ]["GrupoEtnico_clean"].replace(["", "nan", "NaN"], "Sin dato")
+
             # Agrupar por grupo étnico
             etnia_counts = (
                 filtered_data["vacunacion"]["GrupoEtnico_clean"]
@@ -541,9 +569,13 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
     with col3:
         if "RegimenAfiliacion" in filtered_data["vacunacion"].columns:
             # Normalizar valores NaN a "Sin dato"
-            filtered_data["vacunacion"]["RegimenAfiliacion_clean"] = filtered_data["vacunacion"]["RegimenAfiliacion"].fillna("Sin dato")
-            filtered_data["vacunacion"]["RegimenAfiliacion_clean"] = filtered_data["vacunacion"]["RegimenAfiliacion_clean"].replace(["", "nan", "NaN"], "Sin dato")
-            
+            filtered_data["vacunacion"]["RegimenAfiliacion_clean"] = filtered_data[
+                "vacunacion"
+            ]["RegimenAfiliacion"].fillna("Sin dato")
+            filtered_data["vacunacion"]["RegimenAfiliacion_clean"] = filtered_data[
+                "vacunacion"
+            ]["RegimenAfiliacion_clean"].replace(["", "nan", "NaN"], "Sin dato")
+
             # Agrupar por régimen
             regimen_counts = (
                 filtered_data["vacunacion"]["RegimenAfiliacion_clean"]

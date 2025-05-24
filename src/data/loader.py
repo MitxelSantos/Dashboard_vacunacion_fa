@@ -40,14 +40,20 @@ def normalize_gender_comprehensive(value):
     """
     Normaliza los valores de género de manera comprehensiva
     """
-    if pd.isna(value) or str(value).lower().strip() in ['nan', '', 'none', 'null', 'na']:
+    if pd.isna(value) or str(value).lower().strip() in [
+        "nan",
+        "",
+        "none",
+        "null",
+        "na",
+    ]:
         return "Sin dato"
-    
+
     value_str = str(value).lower().strip()
-    
-    if value_str in ['masculino', 'm', 'masc', 'hombre', 'h', 'male', '1']:
+
+    if value_str in ["masculino", "m", "masc", "hombre", "h", "male", "1"]:
         return "Masculino"
-    elif value_str in ['femenino', 'f', 'fem', 'mujer', 'female', '2']:
+    elif value_str in ["femenino", "f", "fem", "mujer", "female", "2"]:
         return "Femenino"
     else:
         # Todas las demás clasificaciones van a "No Binario"
@@ -59,46 +65,59 @@ def comprehensive_nan_normalization(df):
     Normaliza todos los valores NaN/vacíos a "Sin dato" de manera comprehensiva
     """
     df_clean = df.copy()
-    
+
     # Lista de columnas categóricas comunes que deben ser normalizadas
     categorical_columns = [
-        'GrupoEtnico', 'RegimenAfiliacion', 'NombreAseguradora', 
-        'NombreMunicipioResidencia', 'NombreDptoResidencia',
-        'Desplazado', 'Discapacitado', 'TipoIdentificacion',
-        'PrimerNombre', 'PrimerApellido', 'NombreMunicipioNacimiento',
-        'NombreDptoNacimiento'
+        "GrupoEtnico",
+        "RegimenAfiliacion",
+        "NombreAseguradora",
+        "NombreMunicipioResidencia",
+        "NombreDptoResidencia",
+        "Desplazado",
+        "Discapacitado",
+        "TipoIdentificacion",
+        "PrimerNombre",
+        "PrimerApellido",
+        "NombreMunicipioNacimiento",
+        "NombreDptoNacimiento",
     ]
-    
+
     # Identificar columnas categóricas existentes
-    existing_categorical = [col for col in categorical_columns if col in df_clean.columns]
-    
+    existing_categorical = [
+        col for col in categorical_columns if col in df_clean.columns
+    ]
+
     # También incluir columnas de tipo object que no estén en la lista
-    object_columns = df_clean.select_dtypes(include=['object', 'string']).columns.tolist()
+    object_columns = df_clean.select_dtypes(
+        include=["object", "string"]
+    ).columns.tolist()
     all_columns_to_clean = list(set(existing_categorical + object_columns))
-    
+
     # Excluir columnas numéricas importantes y fechas
-    exclude_columns = ['Documento', 'Edad_Vacunacion', 'FA UNICA', 'FechaNacimiento']
-    columns_to_clean = [col for col in all_columns_to_clean if col not in exclude_columns]
-    
+    exclude_columns = ["Documento", "Edad_Vacunacion", "FA UNICA", "FechaNacimiento"]
+    columns_to_clean = [
+        col for col in all_columns_to_clean if col not in exclude_columns
+    ]
+
     # Normalizar cada columna
     for col in columns_to_clean:
         if col in df_clean.columns:
             # Convertir a string si es categórica
             if pd.api.types.is_categorical_dtype(df_clean[col]):
                 df_clean[col] = df_clean[col].astype(str)
-            
+
             # Reemplazar diversos tipos de valores vacíos/nulos
             df_clean[col] = df_clean[col].fillna("Sin dato")
             df_clean[col] = df_clean[col].replace(
-                ["", "nan", "NaN", "null", "NULL", "None", "NONE", "na", "NA", "#N/A"], 
-                "Sin dato"
+                ["", "nan", "NaN", "null", "NULL", "None", "NONE", "na", "NA", "#N/A"],
+                "Sin dato",
             )
-            
+
             # Limpiar espacios en blanco que podrían considerarse como vacíos
             df_clean[col] = df_clean[col].apply(
                 lambda x: "Sin dato" if str(x).strip() == "" else str(x).strip()
             )
-    
+
     return df_clean
 
 
@@ -331,7 +350,7 @@ def download_file(drive_service, file_id, destination_path):
 def load_datasets():
     """
     Carga los datasets necesarios para la aplicación.
-    VERSIÓN MEJORADA: Incluye normalización comprehensiva de datos.
+    VERSIÓN MEJORADA: Incluye normalización comprehensiva de datos y normalización de EAPB.
     """
     with st.spinner("Cargando datos..."):
         # Verificar archivos
@@ -367,7 +386,7 @@ def load_datasets():
                 "IdPaciente",
                 "TipoIdentificacion",
                 "Documento",
-                "PrimerNombre", 
+                "PrimerNombre",
                 "PrimerApellido",
                 "Sexo",
                 "FechaNacimiento",
@@ -395,7 +414,7 @@ def load_datasets():
                 "TipoIdentificacion": "category",
                 "Documento": "str",
                 "PrimerNombre": "str",
-                "PrimerApellido": "str", 
+                "PrimerApellido": "str",
                 "Sexo": "category",
                 "GrupoEtnico": "category",
                 "RegimenAfiliacion": "category",
@@ -434,13 +453,43 @@ def load_datasets():
         # =====================================================================
         # NORMALIZACIÓN COMPREHENSIVA DE DATOS
         # =====================================================================
-        
+
         # 1. Normalizar valores NaN/vacíos a "Sin dato"
         vacunacion_df = comprehensive_nan_normalization(vacunacion_df)
-        
+
         # 2. Normalizar DataFrame con funciones mejoradas
         vacunacion_df = normalize_dataframe_improved(vacunacion_df)
 
+        # =====================================================================
+        # NUEVA SECCIÓN: NORMALIZACIÓN DE EAPB
+        # =====================================================================
+        try:
+            print("🔧 Aplicando normalización de EAPB...")
+            from .eapb_normalizer import normalize_eapb_names
+            from .eapb_mappings import ALL_EAPB_MAPPINGS
+
+            # Aplicar normalización de EAPB
+            vacunacion_df = normalize_eapb_names(
+                vacunacion_df,
+                "NombreAseguradora",
+                ALL_EAPB_MAPPINGS,
+                create_backup=True,  # Crear respaldo para auditoría
+            )
+
+            print("✅ Normalización de EAPB completada exitosamente")
+
+        except ImportError:
+            print(
+                "⚠️ Módulo de normalización EAPB no disponible - continuando sin normalización"
+            )
+        except Exception as e:
+            print(
+                f"⚠️ Error en normalización EAPB: {str(e)} - continuando sin normalización"
+            )
+
+        # =====================================================================
+        # CALCULAR MÉTRICAS
+        # =====================================================================
         # 3. Calcular métricas
         metricas_df = calculate_metrics(municipios_df, vacunacion_df)
 
@@ -536,25 +585,27 @@ def normalize_dataframe_improved(df):
     # NORMALIZACIÓN DE GÉNEROS
     # =====================================================================
     # Manejar columnas de género/sexo
-    gender_columns = ['Sexo', 'Genero']
+    gender_columns = ["Sexo", "Genero"]
     gender_col_found = None
-    
+
     for col in gender_columns:
         if col in df.columns:
             gender_col_found = col
             break
-    
+
     if gender_col_found:
         # Aplicar normalización comprehensiva de géneros
-        df[gender_col_found] = df[gender_col_found].apply(normalize_gender_comprehensive)
-        
+        df[gender_col_found] = df[gender_col_found].apply(
+            normalize_gender_comprehensive
+        )
+
         # Si encontramos Sexo pero no Genero, crear Genero
-        if gender_col_found == 'Sexo' and 'Genero' not in df.columns:
-            df['Genero'] = df['Sexo'].copy()
+        if gender_col_found == "Sexo" and "Genero" not in df.columns:
+            df["Genero"] = df["Sexo"].copy()
     else:
         # Si no existe ninguna columna de género, crear una
-        df['Sexo'] = "Sin dato"
-        df['Genero'] = "Sin dato"
+        df["Sexo"] = "Sin dato"
+        df["Genero"] = "Sin dato"
 
     # =====================================================================
     # BÚSQUEDA Y NORMALIZACIÓN DE COLUMNAS
@@ -571,7 +622,7 @@ def normalize_dataframe_improved(df):
         "FA UNICA",
         "NombreMunicipioResidencia",
         "Desplazado",
-        "Discapacitado"
+        "Discapacitado",
     ]
 
     for req_col in required_columns:
@@ -626,33 +677,41 @@ def normalize_dataframe_improved(df):
 
                     # Crear grupos de edad basados en valores numéricos
                     def categorize_age(age):
-                        if pd.isna(age):
-                            return "Sin dato"
-                        elif age < 5:
-                            return "0-4"
-                        elif age < 15:
-                            return "5-14"
-                        elif age < 20:
-                            return "15-19"
-                        elif age < 30:
-                            return "20-29"
-                        elif age < 40:
-                            return "30-39"
-                        elif age < 50:
-                            return "40-49"
-                        elif age < 60:
-                            return "50-59"
-                        elif age < 70:
-                            return "60-69"
-                        elif age < 80:
-                            return "70-79"
-                        elif age >= 80:
-                            return "80+"
-                        else:
+                        """
+                        Categoriza la edad en grupos estándar actualizados
+                        Rangos: Menor de 1 año, 1 a 4 años, 5 a 9 años, 10 a 19 años,
+                            20 a 29 años, 30 a 39 años, 40 a 49 años, 50 a 59 años,
+                            60 a 69 años, 70 años o más
+                        """
+                        try:
+                            age_num = float(age)
+                            if pd.isna(age_num):
+                                return "Sin dato"
+                            elif age_num < 1:
+                                return "Menor de 1 año"
+                            elif age_num < 5:
+                                return "1 a 4 años"
+                            elif age_num < 10:
+                                return "5 a 9 años"
+                            elif age_num < 20:
+                                return "10 a 19 años"
+                            elif age_num < 30:
+                                return "20 a 29 años"
+                            elif age_num < 40:
+                                return "30 a 39 años"
+                            elif age_num < 50:
+                                return "40 a 49 años"
+                            elif age_num < 60:
+                                return "50 a 59 años"
+                            elif age_num < 70:
+                                return "60 a 69 años"
+                            else:  # 70 años o más
+                                return "70 años o más"
+                        except (ValueError, TypeError):
                             return "Sin dato"
 
                     df[req_col] = edad_numerica.apply(categorize_age)
-                    
+
                 except Exception as e:
                     # En caso de error, mantener el valor predeterminado
                     df[req_col] = "Sin dato"
@@ -661,22 +720,28 @@ def normalize_dataframe_improved(df):
     # NORMALIZACIÓN FINAL DE VALORES BOOLEANOS
     # =====================================================================
     # Normalizar columnas booleanas especiales
-    boolean_columns = ['Desplazado', 'Discapacitado']
+    boolean_columns = ["Desplazado", "Discapacitado"]
     for col in boolean_columns:
         if col in df.columns:
             # Convertir valores booleanos y strings a formato estándar
             def normalize_boolean(value):
-                if pd.isna(value) or str(value).lower().strip() in ['nan', '', 'none', 'null', 'na']:
+                if pd.isna(value) or str(value).lower().strip() in [
+                    "nan",
+                    "",
+                    "none",
+                    "null",
+                    "na",
+                ]:
                     return "Sin dato"
-                
+
                 value_str = str(value).lower().strip()
-                if value_str in ['true', '1', 'si', 'sí', 'yes', 'y']:
+                if value_str in ["true", "1", "si", "sí", "yes", "y"]:
                     return "Sí"
-                elif value_str in ['false', '0', 'no', 'n']:
+                elif value_str in ["false", "0", "no", "n"]:
                     return "No"
                 else:
                     return "Sin dato"
-            
+
             df[col] = df[col].apply(normalize_boolean)
 
     return df
