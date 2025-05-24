@@ -252,6 +252,19 @@ def main():
             with st.spinner("Cargando y normalizando datos..."):
                 data = load_data_with_fallback()
 
+                if data is not None:
+                    # Validar estructura de datos
+                    required_keys = ["municipios", "vacunacion", "metricas"]
+                    all_keys_valid = all(
+                        key in data
+                        and data[key] is not None
+                        and isinstance(data[key], pd.DataFrame)
+                        for key in required_keys
+                    )
+
+                    if all_keys_valid and len(data["vacunacion"]) > 0:
+                        data_loaded_successfully = True
+
         except Exception as e:
             st.error(f"❌ Error crítico cargando datos: {str(e)}")
             st.markdown("### 🚨 Error Crítico")
@@ -295,7 +308,9 @@ def main():
             # Logo de la Gobernación
             logo_path = IMAGES_DIR / "logo_gobernacion.png"
             if logo_path.exists():
-                st.image(str(logo_path), width=150)
+                st.image(
+                    str(logo_path), width=150, caption="Secretaría de Salud del Tolima"
+                )
             else:
                 st.info("💡 Logo no encontrado en assets/images/logo_gobernacion.png")
 
@@ -692,9 +707,9 @@ def main():
             st.markdown("### ℹ️ Soporte")
             st.markdown(
                 """
-            - **Desarrollador:** Ing. José Miguel Santos
-            - **Email:** [Contacto](mailto:mitxelsk811@gmail.com)
-            - **Versión:** 1.1.0
+            - **Desarrollador:** José Miguel Santos
+            - **Email:** [Contacto](mailto:contacto@example.com)
+            - **Versión:** 2.1.0 (Robusta)
             """
             )
 
