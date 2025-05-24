@@ -88,8 +88,6 @@ def load_data_with_fallback():
     Carga los datos con múltiples niveles de fallback para mayor robustez
     """
     try:
-        st.info("🔄 Cargando datos del sistema...")
-
         # Intento 1: Cargar datos normalmente
         try:
             data = load_datasets()
@@ -117,7 +115,6 @@ def load_data_with_fallback():
             if len(data["municipios"]) == 0:
                 st.warning("⚠️ No se encontraron datos de municipios")
 
-            st.success("✅ Datos cargados exitosamente")
             return data
 
         except FileNotFoundError as e:
@@ -177,8 +174,6 @@ def safe_import_vistas():
                 from vistas import trends
 
                 vistas_modules["trends"] = trends
-
-            st.success(f"✅ Módulo {vista_name} cargado correctamente")
 
         except ImportError as e:
             st.error(f"❌ No se pudo importar el módulo {vista_name}: {str(e)}")
@@ -724,9 +719,9 @@ def main():
             st.markdown("### ℹ️ Soporte")
             st.markdown(
                 """
-            - **Desarrollador:** José Miguel Santos
-            - **Email:** [Contacto](mailto:contacto@example.com)
-            - **Versión:** 2.1.0 (Robusta)
+            - **Desarrollador:** Ing. José Miguel Santos
+            - **Email:** [Contacto](mailto:mitxelsk811@gmail.com)
+            - **Versión:** 1.1.0
             """
             )
 

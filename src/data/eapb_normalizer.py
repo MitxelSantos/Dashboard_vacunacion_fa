@@ -14,7 +14,6 @@ def normalize_eapb_names(
 ):
     """
     Normaliza nombres de EAPB usando un mapeo definido
-    VERSIÓN MEJORADA: Con mejor logging y manejo de errores
 
     Args:
         df: DataFrame con los datos
@@ -31,16 +30,12 @@ def normalize_eapb_names(
 
             mapping = ALL_EAPB_MAPPINGS
         except ImportError:
-            print(
-                "⚠️ No se pudo importar el mapeo de EAPB. No se aplicará normalización."
-            )
             return df
 
     df_clean = df.copy()
 
     # Verificar que la columna existe
     if column_name not in df_clean.columns:
-        print(f"⚠️ Columna '{column_name}' no encontrada en el DataFrame")
         return df_clean
 
     # Crear respaldo si se solicita
@@ -54,9 +49,6 @@ def normalize_eapb_names(
     cambios_realizados = 0
     registros_afectados = 0
 
-    # Diccionario para almacenar estadísticas de cada mapeo
-    mapeo_stats = {}
-
     # Aplicar mapeo
     for nombre_original, nombre_canonico in mapping.items():
         # Contar registros que serán afectados
@@ -67,28 +59,6 @@ def normalize_eapb_names(
             df_clean.loc[mask, column_name] = nombre_canonico
             cambios_realizados += 1
             registros_afectados += num_registros
-            mapeo_stats[nombre_original] = {
-                "canonico": nombre_canonico,
-                "registros": num_registros,
-            }
-
-    # Estadísticas de normalización
-    print(f"✅ Normalización EAPB completada:")
-    print(f"   - Mapeos aplicados: {cambios_realizados}")
-    print(f"   - Registros afectados: {registros_afectados:,}".replace(",", "."))
-    print(f"   - EAPB únicas antes: {df[column_name].nunique()}")
-    print(f"   - EAPB únicas después: {df_clean[column_name].nunique()}")
-
-    # Mostrar los mapeos más importantes
-    if mapeo_stats:
-        print(f"   - Top 5 mapeos por impacto:")
-        sorted_mappings = sorted(
-            mapeo_stats.items(), key=lambda x: x[1]["registros"], reverse=True
-        )
-        for original, stats in sorted_mappings[:5]:
-            print(
-                f"     • {original} → {stats['canonico']} ({stats['registros']} registros)"
-            )
 
     return df_clean
 
@@ -96,7 +66,6 @@ def normalize_eapb_names(
 def apply_eapb_normalization_to_data(data):
     """
     Aplica normalización de EAPB a los datos del dashboard
-    VERSIÓN MEJORADA: Con mejor manejo de errores y logging
 
     Args:
         data: Diccionario con los dataframes del dashboard
@@ -105,32 +74,16 @@ def apply_eapb_normalization_to_data(data):
         Diccionario con datos normalizados
     """
     if "vacunacion" not in data:
-        print("⚠️ No se encontró DataFrame de vacunación")
         return data
 
     df = data["vacunacion"].copy()
 
     if "NombreAseguradora" not in df.columns:
-        print("⚠️ No se encontró columna 'NombreAseguradora'")
         return data
 
     try:
-        print("🔧 Iniciando normalización de EAPB...")
-
-        # Mostrar estadísticas antes de la normalización
-        eapb_before = df["NombreAseguradora"].value_counts()
-        print(f"📊 Antes de normalización: {len(eapb_before)} EAPB únicas")
-
         # Aplicar normalización
         df_normalized = normalize_eapb_names(df, "NombreAseguradora")
-
-        # Mostrar estadísticas después de la normalización
-        eapb_after = df_normalized["NombreAseguradora"].value_counts()
-        print(f"📊 Después de normalización: {len(eapb_after)} EAPB únicas")
-
-        # Mostrar reducción porcentual
-        reduccion = (len(eapb_before) - len(eapb_after)) / len(eapb_before) * 100
-        print(f"📈 Reducción en número de EAPB: {reduccion:.1f}%")
 
         # Actualizar los datos
         data["vacunacion"] = df_normalized
@@ -138,10 +91,6 @@ def apply_eapb_normalization_to_data(data):
         return data
 
     except Exception as e:
-        print(f"❌ Error en normalización EAPB: {str(e)}")
-        import traceback
-
-        print(traceback.format_exc())
         return data
 
 
@@ -203,21 +152,9 @@ def get_normalization_report(df, column_name="NombreAseguradora"):
 def validate_eapb_mapping():
     """
     Valida que los mapeos de EAPB sean consistentes
-    VERSIÓN MEJORADA: Con validación de los nuevos mapeos del usuario
     """
     try:
         from .eapb_mappings import ALL_EAPB_MAPPINGS, get_eapb_stats
-
-        stats = get_eapb_stats()
-
-        print("🔍 Validación de Mapeos EAPB:")
-        print(f"   - Total de mapeos: {stats['total_mappings']}")
-        print(f"   - Nombres canónicos únicos: {stats['unique_canonical_names']}")
-        print(
-            f"   - Registros estimados afectados: {stats['affected_records_estimate']:,}".replace(
-                ",", "."
-            )
-        )
 
         # Verificar específicamente los nuevos mapeos del usuario
         nuevos_mapeos_usuario = {
@@ -231,22 +168,13 @@ def validate_eapb_mapping():
             "Salud Coomeva": "COOMEVA EPS SA",
         }
 
-        print(f"\n🆕 Validando nuevos mapeos del usuario:")
+        # Validación silenciosa
         nuevos_encontrados = 0
         for original, esperado in nuevos_mapeos_usuario.items():
             if original in ALL_EAPB_MAPPINGS:
                 actual = ALL_EAPB_MAPPINGS[original]
                 if actual == esperado:
-                    print(f"   ✅ {original} → {actual}")
                     nuevos_encontrados += 1
-                else:
-                    print(f"   ⚠️ {original} → {actual} (esperado: {esperado})")
-            else:
-                print(f"   ❌ Faltante: {original}")
-
-        print(
-            f"\n📊 Nuevos mapeos encontrados: {nuevos_encontrados}/{len(nuevos_mapeos_usuario)}"
-        )
 
         # Validar que no hay mapeos circulares
         circular_mappings = []
@@ -256,38 +184,13 @@ def validate_eapb_mapping():
                     (original, canonical, ALL_EAPB_MAPPINGS[canonical])
                 )
 
-        if circular_mappings:
-            print("⚠️ Mapeos circulares encontrados:")
-            for orig, canon, final in circular_mappings[
-                :5
-            ]:  # Mostrar solo los primeros 5
-                print(f"   {orig} → {canon} → {final}")
-        else:
-            print("✅ No se encontraron mapeos circulares")
-
-        # Verificar duplicados en valores canónicos que podrían ser problemáticos
-        canonical_values = list(ALL_EAPB_MAPPINGS.values())
-        potential_issues = []
-
-        for canonical in set(canonical_values):
-            if canonical_values.count(canonical) > 1:
-                originals = [k for k, v in ALL_EAPB_MAPPINGS.items() if v == canonical]
-                potential_issues.append((canonical, originals))
-
-        if potential_issues:
-            print("ℹ️ Múltiples mapeos al mismo nombre canónico (esto es normal):")
-            for canonical, originals in potential_issues[
-                :3
-            ]:  # Mostrar solo los primeros 3
-                print(f"   '{canonical}' ← {len(originals)} variantes")
-
-        return True
+        return len(circular_mappings) == 0 and nuevos_encontrados == len(
+            nuevos_mapeos_usuario
+        )
 
     except ImportError:
-        print("❌ No se pudo importar el módulo de mapeos EAPB")
         return False
     except Exception as e:
-        print(f"❌ Error en validación: {str(e)}")
         return False
 
 
@@ -327,5 +230,5 @@ def create_eapb_mapping_summary(df, column_name="NombreAseguradora"):
 
 
 if __name__ == "__main__":
-    print("🔧 Normalizador de EAPB - Versión Mejorada")
+    # Ejecutar validaciones silenciosamente
     validate_eapb_mapping()

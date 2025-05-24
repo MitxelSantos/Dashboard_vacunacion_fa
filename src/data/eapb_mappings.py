@@ -181,13 +181,5 @@ def validate_new_mappings():
 
 
 if __name__ == "__main__":
-    stats = get_eapb_stats()
-    print("📊 Estadísticas de Mapeos EAPB Actualizadas:")
-    for key, value in stats.items():
-        print(f"  - {key}: {value:,}".replace(",", "."))
-
-    print("\n🔍 Validando nuevos mapeos añadidos por el usuario...")
+    # Ejecutar validaciones silenciosamente
     validate_new_mappings()
-
-    print(f"\n📈 Total de mapeos: {len(ALL_EAPB_MAPPINGS)}")
-    print(f"📈 Nombres canónicos únicos: {len(set(ALL_EAPB_MAPPINGS.values()))}")

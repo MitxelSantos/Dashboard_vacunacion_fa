@@ -177,7 +177,6 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
 
     # Intentar aplicar filtros con manejo de errores
     try:
-        st.info("🔄 Aplicando filtros a los datos...")
 
         # Aplicar filtros a los datos
         from src.data.preprocessor import apply_filters
@@ -846,7 +845,6 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
     # =====================================================================
     # MENSAJE FINAL DE ESTADO
     # =====================================================================
-    st.success("✅ Visión general cargada correctamente")
 
     # Información adicional para debugging si es necesario
     if st.checkbox("🔍 Mostrar información técnica"):
