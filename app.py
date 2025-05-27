@@ -24,6 +24,7 @@ sys.path.insert(0, str(ROOT_DIR))
 
 from src.data.loader import load_datasets
 from src.utils.helpers import configure_page
+from vistas import brigadas
 
 # Configuración de la página
 configure_page(
@@ -150,30 +151,28 @@ def safe_import_vistas():
     Importa las vistas de manera segura con manejo de errores
     """
     vistas_modules = {}
-    vista_names = ["overview", "geographic", "demographic", "insurance", "trends"]
+    vista_names = ["overview", "geographic", "demographic", "insurance", "trends", "brigadas"]  # ← AÑADIDO "brigadas"
 
     for vista_name in vista_names:
         try:
             if vista_name == "overview":
                 from vistas import overview
-
                 vistas_modules["overview"] = overview
             elif vista_name == "geographic":
                 from vistas import geographic
-
                 vistas_modules["geographic"] = geographic
             elif vista_name == "demographic":
                 from vistas import demographic
-
                 vistas_modules["demographic"] = demographic
             elif vista_name == "insurance":
                 from vistas import insurance
-
                 vistas_modules["insurance"] = insurance
             elif vista_name == "trends":
                 from vistas import trends
-
                 vistas_modules["trends"] = trends
+            elif vista_name == "brigadas":  # ← AÑADIR ESTA SECCIÓN COMPLETA
+                from vistas import brigadas
+                vistas_modules["brigadas"] = brigadas
 
         except ImportError as e:
             st.error(f"❌ No se pudo importar el módulo {vista_name}: {str(e)}")
@@ -561,15 +560,14 @@ def main():
         # =====================================================================
         # PESTAÑAS DE NAVEGACIÓN
         # =====================================================================
-        tab1, tab2, tab3, tab4, tab5 = st.tabs(
-            [
-                "📊 Visión General",
-                "🗺️ Distribución Geográfica",
-                "👥 Perfil Demográfico",
-                "🏥 Aseguramiento",
-                "📈 Tendencias",
-            ]
-        )
+        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([  # ← AÑADIR tab6
+            "📊 Visión General",
+            "🗺️ Distribución Geográfica",
+            "👥 Perfil Demográfico",
+            "🏥 Aseguramiento",
+            "📈 Tendencias",
+            "📍 Brigadas Territoriales"  # ← AÑADIR ESTA LÍNEA
+        ])
 
         # =====================================================================
         # CONTENIDO DE CADA PESTAÑA CON MANEJO DE ERRORES
@@ -667,11 +665,29 @@ def main():
                 with st.expander("🔍 Detalles del error"):
                     st.code(traceback.format_exc())
 
+        with tab6:  # ← AÑADIR TODO ESTE BLOQUE
+            try:
+                if vistas_modules.get("brigadas") is not None:
+                    vistas_modules["brigadas"].show(
+                        data,
+                        st.session_state.filters,
+                        COLORS,
+                        st.session_state.fuente_poblacion,
+                    )
+                else:
+                    show_error_view(
+                        "El módulo de brigadas territoriales no está disponible", "brigadas"
+                    )
+            except Exception as e:
+                st.error(f"❌ Error en Brigadas Territoriales: {str(e)}")
+                with st.expander("🔍 Detalles del error"):
+                    st.code(traceback.format_exc())
+
         # =====================================================================
         # FOOTER CON INFORMACIÓN ADICIONAL
         # =====================================================================
         st.markdown("---")
-        col_footer1, col_footer2, col_footer3 = st.columns(3)
+        col_footer1, col_footer2, col_footer3, col_footer4 = st.columns(4)
 
         with col_footer1:
             st.markdown("### 📊 Dashboard Info")
@@ -712,6 +728,24 @@ def main():
             - **Versión:** 2.1.0 (Robusta)
             """
             )
+
+        with col_footer4:  # ← AÑADIR ESTA SECCIÓN
+            st.markdown("### 📍 Brigadas Info")
+            try:
+                from src.data.brigadas_loader import load_brigadas_for_dashboard
+                brigadas_result = load_brigadas_for_dashboard()
+                if brigadas_result:
+                    total_brigadas = len(brigadas_result['brigadas_data'])
+                    st.markdown(f"""
+                    - **Brigadas:** {total_brigadas}
+                    - **Estado:** Disponible
+                    - **Versión:** 1.0
+                    """)
+                else:
+                    st.markdown("- **Estado:** Sin datos")
+            except:
+                st.markdown("- **Estado:** Módulo no disponible")
+
 
     except Exception as e:
         # Último nivel de manejo de errores - nunca debería llegar aquí
