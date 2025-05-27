@@ -151,27 +151,40 @@ def safe_import_vistas():
     Importa las vistas de manera segura con manejo de errores
     """
     vistas_modules = {}
-    vista_names = ["overview", "geographic", "demographic", "insurance", "trends", "brigadas"]  # ← AÑADIDO "brigadas"
+    vista_names = [
+        "overview",
+        "geographic",
+        "demographic",
+        "insurance",
+        "trends",
+        "brigadas",
+    ]  # ← AÑADIDO "brigadas"
 
     for vista_name in vista_names:
         try:
             if vista_name == "overview":
                 from vistas import overview
+
                 vistas_modules["overview"] = overview
             elif vista_name == "geographic":
                 from vistas import geographic
+
                 vistas_modules["geographic"] = geographic
             elif vista_name == "demographic":
                 from vistas import demographic
+
                 vistas_modules["demographic"] = demographic
             elif vista_name == "insurance":
                 from vistas import insurance
+
                 vistas_modules["insurance"] = insurance
             elif vista_name == "trends":
                 from vistas import trends
+
                 vistas_modules["trends"] = trends
             elif vista_name == "brigadas":  # ← AÑADIR ESTA SECCIÓN COMPLETA
                 from vistas import brigadas
+
                 vistas_modules["brigadas"] = brigadas
 
         except ImportError as e:
@@ -560,14 +573,16 @@ def main():
         # =====================================================================
         # PESTAÑAS DE NAVEGACIÓN
         # =====================================================================
-        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([  # ← AÑADIR tab6
-            "📊 Visión General",
-            "🗺️ Distribución Geográfica",
-            "👥 Perfil Demográfico",
-            "🏥 Aseguramiento",
-            "📈 Tendencias",
-            "📍 Brigadas Territoriales"  # ← AÑADIR ESTA LÍNEA
-        ])
+        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
+            [  # ← AÑADIR tab6
+                "📊 Visión General",
+                "🗺️ Distribución Geográfica",
+                "👥 Perfil Demográfico",
+                "🏥 Aseguramiento",
+                "📈 Tendencias",
+                "📍 Brigadas Territoriales",  # ← AÑADIR ESTA LÍNEA
+            ]
+        )
 
         # =====================================================================
         # CONTENIDO DE CADA PESTAÑA CON MANEJO DE ERRORES
@@ -676,7 +691,8 @@ def main():
                     )
                 else:
                     show_error_view(
-                        "El módulo de brigadas territoriales no está disponible", "brigadas"
+                        "El módulo de brigadas territoriales no está disponible",
+                        "brigadas",
                     )
             except Exception as e:
                 st.error(f"❌ Error en Brigadas Territoriales: {str(e)}")
@@ -724,8 +740,8 @@ def main():
             st.markdown(
                 """
             - **Desarrollador:** José Miguel Santos
-            - **Email:** [Contacto](mailto:contacto@example.com)
-            - **Versión:** 2.1.0 (Robusta)
+            - **Email:** [Contacto](mailto:mitxelsk811@gmail.com)
+            - **Versión:** 1.1.0 (Robusta)
             """
             )
 
@@ -733,19 +749,21 @@ def main():
             st.markdown("### 📍 Brigadas Info")
             try:
                 from src.data.brigadas_loader import load_brigadas_for_dashboard
+
                 brigadas_result = load_brigadas_for_dashboard()
                 if brigadas_result:
-                    total_brigadas = len(brigadas_result['brigadas_data'])
-                    st.markdown(f"""
+                    total_brigadas = len(brigadas_result["brigadas_data"])
+                    st.markdown(
+                        f"""
                     - **Brigadas:** {total_brigadas}
                     - **Estado:** Disponible
                     - **Versión:** 1.0
-                    """)
+                    """
+                    )
                 else:
                     st.markdown("- **Estado:** Sin datos")
             except:
                 st.markdown("- **Estado:** Módulo no disponible")
-
 
     except Exception as e:
         # Último nivel de manejo de errores - nunca debería llegar aquí
