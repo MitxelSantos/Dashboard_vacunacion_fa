@@ -1,0 +1,12 @@
+Defaulting to user installation because normal site-packages is not writeable
+Requirement already satisfied: folium in c:\users\miguelsantos\appdata\roaming\python\python313\site-packages (0.19.6)
+Requirement already satisfied: branca>=0.6.0 in c:\users\miguelsantos\appdata\roaming\python\python313\site-packages (from folium) (0.8.1)
+Requirement already satisfied: jinja2>=2.9 in c:\users\miguelsantos\appdata\roaming\python\python313\site-packages (from folium) (3.1.6)
+Requirement already satisfied: numpy in c:\users\miguelsantos\appdata\roaming\python\python313\site-packages (from folium) (2.2.5)
+Requirement already satisfied: requests in c:\users\miguelsantos\appdata\roaming\python\python313\site-packages (from folium) (2.32.3)
+Requirement already satisfied: xyzservices in c:\users\miguelsantos\appdata\roaming\python\python313\site-packages (from folium) (2025.4.0)
+Requirement already satisfied: MarkupSafe>=2.0 in c:\users\miguelsantos\appdata\roaming\python\python313\site-packages (from jinja2>=2.9->folium) (3.0.2)
+Requirement already satisfied: charset-normalizer<4,>=2 in c:\users\miguelsantos\appdata\roaming\python\python313\site-packages (from requests->folium) (3.4.2)
+Requirement already satisfied: idna<4,>=2.5 in c:\users\miguelsantos\appdata\roaming\python\python313\site-packages (from requests->folium) (3.10)
+Requirement already satisfied: urllib3<3,>=1.21.1 in c:\users\miguelsantos\appdata\roaming\python\python313\site-packages (from requests->folium) (2.4.0)
+Requirement already satisfied: certifi>=2017.4.17 in c:\users\miguelsantos\appdata\roaming\python\python313\site-packages (from requests->folium) (2025.4.26)

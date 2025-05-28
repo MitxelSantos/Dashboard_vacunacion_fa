@@ -158,7 +158,8 @@ def safe_import_vistas():
         "insurance",
         "trends",
         "brigadas",
-    ]  # ← AÑADIDO "brigadas"
+        "maps",
+    ]
 
     for vista_name in vista_names:
         try:
@@ -182,10 +183,15 @@ def safe_import_vistas():
                 from vistas import trends
 
                 vistas_modules["trends"] = trends
-            elif vista_name == "brigadas":  # ← AÑADIR ESTA SECCIÓN COMPLETA
+            elif vista_name == "brigadas":
                 from vistas import brigadas
 
                 vistas_modules["brigadas"] = brigadas
+
+            elif vista_name == "maps":
+                from vistas import maps
+
+                vistas_modules["maps"] = maps
 
         except ImportError as e:
             st.error(f"❌ No se pudo importar el módulo {vista_name}: {str(e)}")
@@ -574,13 +580,14 @@ def main():
         # PESTAÑAS DE NAVEGACIÓN
         # =====================================================================
         tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
-            [  # ← AÑADIR tab6
+            [
                 "📊 Visión General",
                 "🗺️ Distribución Geográfica",
                 "👥 Perfil Demográfico",
                 "🏥 Aseguramiento",
                 "📈 Tendencias",
-                "📍 Brigadas Territoriales",  # ← AÑADIR ESTA LÍNEA
+                "📍 Brigadas Territoriales",
+                "🌍 Mapas Interactivos",
             ]
         )
 
@@ -680,7 +687,7 @@ def main():
                 with st.expander("🔍 Detalles del error"):
                     st.code(traceback.format_exc())
 
-        with tab6:  # ← AÑADIR TODO ESTE BLOQUE
+        with tab6:
             try:
                 if vistas_modules.get("brigadas") is not None:
                     vistas_modules["brigadas"].show(
@@ -698,7 +705,24 @@ def main():
                 st.error(f"❌ Error en Brigadas Territoriales: {str(e)}")
                 with st.expander("🔍 Detalles del error"):
                     st.code(traceback.format_exc())
-
+        with tab7:
+            try:
+                if vistas_modules.get("maps") is not None:
+                    vistas_modules["maps"].show(
+                        data,
+                        st.session_state.filters,
+                        COLORS,
+                        st.session_state.fuente_poblacion,
+                    )
+                else:
+                    show_error_view(
+                        "El módulo de mapas interactivos no está disponible",
+                        "maps",
+                    )
+            except Exception as e:
+                st.error(f"❌ Error en Mapas Interactivos: {str(e)}")
+                with st.expander("🔍 Detalles del error"):
+                    st.code(traceback.format_exc())
         # =====================================================================
         # FOOTER CON INFORMACIÓN ADICIONAL
         # =====================================================================
@@ -745,23 +769,25 @@ def main():
             """
             )
 
-        with col_footer4:  # ← AÑADIR ESTA SECCIÓN
-            st.markdown("### 📍 Brigadas Info")
+        with col_footer4:  # ← ACTUALIZAR ESTA SECCIÓN
+            st.markdown("### 🗺️ Mapas Info")
             try:
-                from src.data.brigadas_loader import load_brigadas_for_dashboard
+                from src.visualization.geo_loader import get_geo_loader
 
-                brigadas_result = load_brigadas_for_dashboard()
-                if brigadas_result:
-                    total_brigadas = len(brigadas_result["brigadas_data"])
-                    st.markdown(
-                        f"""
-                    - **Brigadas:** {total_brigadas}
-                    - **Estado:** Disponible
-                    - **Versión:** 1.0
-                    """
-                    )
-                else:
-                    st.markdown("- **Estado:** Sin datos")
+                geo_loader = get_geo_loader()
+                available_shapefiles = geo_loader.list_available_shapefiles()
+
+                total_shapefiles = sum(
+                    len(files) for files in available_shapefiles.values()
+                )
+
+                st.markdown(
+                    f"""
+                - **Shapefiles:** {total_shapefiles}
+                - **Estado:** {'Disponible' if total_shapefiles > 0 else 'No disponible'}
+                - **Niveles:** {'Dept+Mun+Ver' if total_shapefiles >= 3 else 'Parcial'}
+                """
+                )
             except:
                 st.markdown("- **Estado:** Módulo no disponible")
 
