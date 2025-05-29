@@ -1,816 +1,820 @@
+"""
+app.py - Dashboard de Vacunación Fiebre Amarilla - Tolima
+VERSIÓN UNIFICADA con sistema integrado de datos y división temporal automática
+
+Desarrollado para la Secretaría de Salud del Tolima
+Autor: Ing. José Miguel Santos
+"""
+
 import os
+import sys
 import streamlit as st
 import pandas as pd
+import numpy as np
 from pathlib import Path
-import sys
 import traceback
+import warnings
+from datetime import datetime
 
-# Deshabilitar detección automática de páginas de Streamlit
-os.environ["STREAMLIT_PAGES_ENABLED"] = "false"
+# Suprimir warnings innecesarios
+warnings.filterwarnings("ignore")
 
-# Definir rutas
+# Configuración de rutas
 ROOT_DIR = Path(__file__).resolve().parent
 DATA_DIR = ROOT_DIR / "data"
-ASSETS_DIR = ROOT_DIR / "assets"
-IMAGES_DIR = ASSETS_DIR / "images"
+SRC_DIR = ROOT_DIR / "src"
 
 # Asegurar que las carpetas existan
 DATA_DIR.mkdir(exist_ok=True)
-ASSETS_DIR.mkdir(exist_ok=True)
-IMAGES_DIR.mkdir(exist_ok=True)
+(ROOT_DIR / "assets" / "images").mkdir(parents=True, exist_ok=True)
 
 # Agregar rutas al path para importar módulos
 sys.path.insert(0, str(ROOT_DIR))
+sys.path.insert(0, str(SRC_DIR))
 
-from src.data.loader import load_datasets
-from src.utils.helpers import configure_page
-from vistas import brigadas
+# Importar componentes del sistema unificado
+try:
+    from src.data.unified_loader import UnifiedDataLoader
+    from src.data.population_processor import PopulationEAPBProcessor
+    from src.data.vaccination_combiner import VaccinationCombiner
+    from src.data.age_calculator import AgeCalculator
+    from src.data.data_cleaner import UnifiedDataCleaner
+    from src.utils.date_utils import date_utils, format_date, get_vaccination_summary
+    from src.utils.helpers import (
+        dashboard_helpers,
+        configure_page,
+        format_number,
+        get_colors,
+        create_alert,
+    )
 
-# Configuración de la página
-configure_page(
-    page_title="Dashboard Vacunación Fiebre Amarilla - Tolima",
-    page_icon="💉",
-    layout="wide",
-)
+    SYSTEM_COMPONENTS_LOADED = True
 
-# Colores institucionales según la Secretaría de Salud del Tolima
-COLORS = {
-    "primary": "#7D0F2B",  # Vinotinto
-    "secondary": "#F2A900",  # Amarillo dorado
-    "accent": "#5A4214",  # Marrón dorado oscuro
-    "background": "#F5F5F5",  # Fondo gris claro
-    "success": "#509E2F",  # Verde
-    "warning": "#F7941D",  # Naranja
-    "danger": "#E51937",  # Rojo brillante
+except ImportError as e:
+    st.error(f"❌ Error importando componentes del sistema: {str(e)}")
+    SYSTEM_COMPONENTS_LOADED = False
+
+# Importar vistas con manejo de errores
+AVAILABLE_VIEWS = {}
+view_modules = [
+    "overview",
+    "geographic",
+    "demographic",
+    "insurance",
+    "trends",
+    "brigadas",
+]
+
+for view_name in view_modules:
+    try:
+        module = __import__(f"vistas.{view_name}", fromlist=[view_name])
+        AVAILABLE_VIEWS[view_name] = module
+    except ImportError as e:
+        st.warning(f"⚠️ Vista {view_name} no disponible: {str(e)}")
+        AVAILABLE_VIEWS[view_name] = None
+
+# Configuración institucional
+INSTITUTIONAL_CONFIG = {
+    "title": "Dashboard Vacunación Fiebre Amarilla - Tolima",
+    "subtitle": "Secretaría de Salud del Tolima - Vigilancia Epidemiológica",
+    "version": "2.0.0 - Sistema Unificado",
+    "author": "Ing. José Miguel Santos",
+    "institution": "Secretaría de Salud del Tolima",
+    "year": "2025",
 }
 
 
-def create_empty_safe_data():
+class UnifiedDashboardApp:
     """
-    Crea una estructura de datos segura y vacía para casos de emergencia
+    Aplicación principal del dashboard con sistema unificado
     """
-    return {
-        "municipios": pd.DataFrame(
-            {
-                "DPMP": ["Ibagué", "Espinal", "Honda"],
-                "DANE": [1000, 800, 600],
-                "SISBEN": [1100, 850, 650],
-            }
-        ),
-        "vacunacion": pd.DataFrame(
-            {
-                "IdPaciente": ["001", "002", "003"],
-                "Sexo": ["Masculino", "Femenino", "Masculino"],
-                "Grupo_Edad": ["20 a 29 años", "30 a 39 años", "40 a 49 años"],
-                "GrupoEtnico": ["Mestizo", "Mestizo", "Afrodescendiente"],
-                "RegimenAfiliacion": ["Contributivo", "Subsidiado", "Contributivo"],
-                "NombreMunicipioResidencia": ["Ibagué", "Espinal", "Honda"],
-                "NombreAseguradora": ["NUEVA EPS", "SALUD TOTAL", "MEDIMAS"],
-                "FA UNICA": ["2024-01-15", "2024-01-16", "2024-01-17"],
-            }
-        ),
-        "metricas": pd.DataFrame(
-            {
-                "DPMP": ["Ibagué", "Espinal", "Honda"],
-                "DANE": [1000, 800, 600],
-                "SISBEN": [1100, 850, 650],
-                "Vacunados": [1, 1, 1],
-                "Cobertura_DANE": [0.1, 0.125, 0.167],
-                "Cobertura_SISBEN": [0.091, 0.118, 0.154],
-                "Pendientes_DANE": [999, 799, 599],
-                "Pendientes_SISBEN": [1099, 849, 649],
-            }
-        ),
-    }
 
+    def __init__(self):
+        self.data_loader = None
+        self.unified_data = None
+        self.processing_metadata = {}
+        self.colors = (
+            get_colors() if SYSTEM_COMPONENTS_LOADED else self._get_default_colors()
+        )
+        self.current_date_info = None
 
-def load_data_with_fallback():
-    """
-    Carga los datos con múltiples niveles de fallback para mayor robustez
-    """
-    try:
-        # Intento 1: Cargar datos normalmente
-        try:
-            data = load_datasets()
+        # Estado de la aplicación
+        self.app_state = {
+            "data_loaded": False,
+            "loading_errors": [],
+            "cutoff_date": None,
+            "last_update": None,
+            "total_records": 0,
+        }
 
-            # Validar que los datos cargados sean válidos
-            if data is None:
-                raise ValueError("load_datasets() devolvió None")
+    def _get_default_colors(self):
+        """Colores por defecto si no se cargan las utilidades"""
+        return {
+            "primary": "#7D0F2B",
+            "secondary": "#F2A900",
+            "accent": "#5A4214",
+            "success": "#509E2F",
+            "warning": "#F7941D",
+            "danger": "#E51937",
+        }
 
-            if not isinstance(data, dict):
-                raise ValueError("load_datasets() no devolvió un diccionario")
-
-            required_keys = ["municipios", "vacunacion", "metricas"]
-            for key in required_keys:
-                if key not in data:
-                    raise ValueError(f"Falta la clave '{key}' en los datos")
-                if data[key] is None:
-                    raise ValueError(f"La clave '{key}' es None")
-                if not isinstance(data[key], pd.DataFrame):
-                    raise ValueError(f"La clave '{key}' no es un DataFrame")
-
-            # Verificar que haya al menos algunos datos
-            if len(data["vacunacion"]) == 0:
-                st.warning("⚠️ No se encontraron datos de vacunación")
-
-            if len(data["municipios"]) == 0:
-                st.warning("⚠️ No se encontraron datos de municipios")
-
-            return data
-
-        except FileNotFoundError as e:
-            st.error(f"❌ Archivos de datos no encontrados: {str(e)}")
-            st.info("💡 Asegúrate de que los archivos estén en la carpeta 'data/'")
-            raise
-
-        except Exception as e:
-            st.error(f"❌ Error cargando datos: {str(e)}")
-            raise
-
-    except Exception as e:
-        st.error("❌ No se pudieron cargar los datos del sistema")
-
-        # Intento 2: Usar datos de emergencia
-        st.warning("⚠️ Usando datos de demostración para evitar fallos críticos")
-        st.markdown(
-            """
-        **Modo de Emergencia Activado**
-        
-        Los datos mostrados son solo para demostración. Para usar datos reales:
-        1. Verifica que los archivos estén en la carpeta `data/`
-        2. Asegúrate de que tengas conexión a Google Drive (si corresponde)
-        3. Reinicia la aplicación
+    def initialize_app(self):
         """
-        )
+        Inicializa la aplicación con configuración institucional
+        """
+        # Configurar página
+        if SYSTEM_COMPONENTS_LOADED:
+            configure_page(INSTITUTIONAL_CONFIG["title"], "💉", "wide")
+        else:
+            st.set_page_config(
+                page_title=INSTITUTIONAL_CONFIG["title"], page_icon="💉", layout="wide"
+            )
 
-        return create_empty_safe_data()
+        # Información de fecha actual
+        if SYSTEM_COMPONENTS_LOADED:
+            self.current_date_info = date_utils.get_current_date_info()
 
+    def load_unified_data(self):
+        """
+        Carga datos usando el sistema unificado
+        """
+        if not SYSTEM_COMPONENTS_LOADED:
+            st.error("❌ Sistema de componentes no disponible")
+            return False
 
-def safe_import_vistas():
-    """
-    Importa las vistas de manera segura con manejo de errores
-    """
-    vistas_modules = {}
-    vista_names = [
-        "overview",
-        "geographic",
-        "demographic",
-        "insurance",
-        "trends",
-        "brigadas",
-        "maps",
-    ]
-
-    for vista_name in vista_names:
-        try:
-            if vista_name == "overview":
-                from vistas import overview
-
-                vistas_modules["overview"] = overview
-            elif vista_name == "geographic":
-                from vistas import geographic
-
-                vistas_modules["geographic"] = geographic
-            elif vista_name == "demographic":
-                from vistas import demographic
-
-                vistas_modules["demographic"] = demographic
-            elif vista_name == "insurance":
-                from vistas import insurance
-
-                vistas_modules["insurance"] = insurance
-            elif vista_name == "trends":
-                from vistas import trends
-
-                vistas_modules["trends"] = trends
-            elif vista_name == "brigadas":
-                from vistas import brigadas
-
-                vistas_modules["brigadas"] = brigadas
-
-            elif vista_name == "maps":
-                from vistas import maps
-
-                vistas_modules["maps"] = maps
-
-        except ImportError as e:
-            st.error(f"❌ No se pudo importar el módulo {vista_name}: {str(e)}")
-            vistas_modules[vista_name] = None
-        except Exception as e:
-            st.error(f"❌ Error inesperado cargando {vista_name}: {str(e)}")
-            vistas_modules[vista_name] = None
-
-    return vistas_modules
-
-
-def show_error_view(error_message, vista_name):
-    """
-    Muestra una vista de error cuando una vista específica falla
-    """
-    st.title(f"Error en {vista_name.title()}")
-    st.error(f"❌ {error_message}")
-
-    st.markdown(
-        f"""
-    ### Soluciones posibles:
-    
-    1. **Reinicia la aplicación** - Usa Ctrl+R o F5
-    2. **Verifica los datos** - Asegúrate de que los archivos estén disponibles
-    3. **Cambia de pestaña** - Prueba otra sección del dashboard
-    4. **Contacta soporte** - Si el problema persiste
-    
-    ### Información técnica:
-    - Vista afectada: `{vista_name}`
-    - Error: `{error_message}`
-    """
-    )
-
-
-def main():
-    """
-    Aplicación principal del dashboard mejorado con manejo robusto de errores.
-    NUNCA debería fallar completamente - siempre muestra algo útil al usuario.
-    """
-
-    try:
-        # Detectar tamaño de pantalla con JavaScript
-        st.markdown(
-            """
-        <script>
-            // Detectar tamaño de pantalla
-            var updateScreenSize = function() {
-                var width = window.innerWidth;
-                var isSmall = width < 1200;
-                
-                // Almacenar en sessionStorage para que Streamlit pueda acceder
-                sessionStorage.setItem('_screen_width', width);
-                sessionStorage.setItem('_is_small_screen', isSmall);
-            };
-            
-            // Actualizar inmediatamente y al cambiar tamaño
-            updateScreenSize();
-            window.addEventListener('resize', updateScreenSize);
-        </script>
-        """,
-            unsafe_allow_html=True,
-        )
-
-        # Intentar recuperar el tamaño de pantalla
-        screen_width = st.session_state.get("_screen_width", 1200)
-        st.session_state["_is_small_screen"] = screen_width < 1200
-
-        # =====================================================================
-        # CARGA Y VALIDACIÓN DE DATOS CON MANEJO ROBUSTO DE ERRORES
-        # =====================================================================
-
-        data = None
-        data_loaded_successfully = False
+        st.info("🔄 **Iniciando carga del sistema unificado...**")
 
         try:
-            with st.spinner("Cargando y normalizando datos..."):
-                data = load_data_with_fallback()
+            # PASO 1: Cargar y procesar población por EAPB
+            st.info("📊 **PASO 1:** Procesando población por EAPB...")
+            population_processor = PopulationEAPBProcessor(str(DATA_DIR))
+            population_data = population_processor.load_population_data()
 
-                if data is not None:
-                    # Validar estructura de datos
-                    required_keys = ["municipios", "vacunacion", "metricas"]
-                    all_keys_valid = all(
-                        key in data
-                        and data[key] is not None
-                        and isinstance(data[key], pd.DataFrame)
-                        for key in required_keys
-                    )
+            if population_data is None:
+                st.error("❌ No se pudo cargar población por EAPB")
+                return False
 
-                    if all_keys_valid and len(data["vacunacion"]) > 0:
-                        data_loaded_successfully = True
+            # PASO 2: Combinar datos de vacunación con fecha de corte automática
+            st.info("🔗 **PASO 2:** Combinando datos de vacunación...")
+            combiner = VaccinationCombiner(str(DATA_DIR))
+            combined_vaccination = combiner.load_and_combine_data()
+
+            if combined_vaccination is None:
+                st.error("❌ No se pudo combinar datos de vacunación")
+                return False
+
+            # PASO 3: Calcular edades actuales
+            st.info("🎂 **PASO 3:** Calculando edades actuales...")
+            if "fecha_nacimiento" in combined_vaccination.columns:
+                age_calculator = AgeCalculator()
+                combined_vaccination = age_calculator.calculate_ages_for_dataframe(
+                    combined_vaccination,
+                    birth_date_column="fecha_nacimiento",
+                    target_age_column="edad_actual",
+                    target_group_column="grupo_edad_actual",
+                )
+
+            # PASO 4: Aplicar limpieza unificada
+            st.info("🧹 **PASO 4:** Aplicando limpieza unificada...")
+            cleaner = UnifiedDataCleaner()
+
+            clean_data = cleaner.clean_all_data(
+                {"population": population_data, "vaccination": combined_vaccination}
+            )
+
+            # PASO 5: Crear estructura de datos unificada
+            st.info("📋 **PASO 5:** Creando estructura unificada...")
+            self.unified_data = self._create_unified_structure(
+                clean_data["population"],
+                clean_data["vaccination"],
+                population_processor,
+                combiner,
+            )
+
+            # Actualizar estado de la aplicación
+            self.app_state.update(
+                {
+                    "data_loaded": True,
+                    "cutoff_date": combiner.cutoff_date,
+                    "last_update": self.unified_data["metadata"]["last_update"],
+                    "total_records": len(clean_data["vaccination"]),
+                }
+            )
+
+            st.success("✅ **Sistema unificado cargado exitosamente**")
+            self._show_loading_summary()
+
+            return True
 
         except Exception as e:
-            st.error(f"❌ Error crítico cargando datos: {str(e)}")
-            st.markdown("### 🚨 Error Crítico")
-            st.markdown(
-                """
-            No se pudieron cargar los datos necesarios para el dashboard.
-            
-            **Posibles causas:**
-            - Los archivos de datos no están disponibles
-            - Error de conexión a Google Drive
-            - Corrupción en los archivos de datos
-            - Error en la configuración del sistema
+            st.error(f"❌ **Error crítico en carga unificada:** {str(e)}")
+
+            with st.expander("🔍 Detalles del error"):
+                st.code(traceback.format_exc())
+
+            self.app_state["loading_errors"].append(str(e))
+            return False
+
+    def _create_unified_structure(
+        self, population_data, vaccination_data, population_processor, combiner
+    ):
+        """
+        Crea estructura de datos unificada compatible con vistas existentes
+        """
+        try:
+            # Obtener metadatos
+            population_metadata = population_processor.get_processing_info()
+            vaccination_metadata = combiner.get_processing_info()
+
+            # Crear estructura compatible
+            unified_structure = {
+                # Datos de población (nueva referencia)
+                "poblacion_eapb": population_data,
+                # Datos de vacunación combinados
+                "vacunacion_unificada": vaccination_data,
+                # Separar por períodos para análisis específicos
+                "vacunacion_historica": (
+                    vaccination_data[vaccination_data["periodo"] == "pre_emergencia"]
+                    if "periodo" in vaccination_data.columns
+                    else pd.DataFrame()
+                ),
+                "vacunacion_emergencia": (
+                    vaccination_data[vaccination_data["periodo"] == "emergencia"]
+                    if "periodo" in vaccination_data.columns
+                    else pd.DataFrame()
+                ),
+                # Crear métricas por municipio (compatible con vistas existentes)
+                "metricas": self._calculate_municipality_metrics(
+                    population_data, vaccination_data
+                ),
+                # Metadatos del sistema
+                "metadata": {
+                    "processing_date": datetime.now(),
+                    "cutoff_date": vaccination_metadata.get("cutoff_date"),
+                    "last_update": self._get_last_update_date(vaccination_data),
+                    "population_reference_date": population_metadata.get(
+                        "reference_month", "Abril 2025"
+                    ),
+                    "total_vaccination_records": len(vaccination_data),
+                    "total_population_records": len(population_data),
+                    "system_version": INSTITUTIONAL_CONFIG["version"],
+                },
+            }
+
+            return unified_structure
+
+        except Exception as e:
+            st.error(f"❌ Error creando estructura unificada: {str(e)}")
+            return None
+
+    def _calculate_municipality_metrics(self, population_data, vaccination_data):
+        """
+        Calcula métricas por municipio compatibles con el sistema existente
+        """
+        try:
+            # Obtener población por municipio desde EAPB
+            if "nombre_municipio_norm" in population_data.columns:
+                population_by_mun = (
+                    population_data.groupby(
+                        ["nombre_municipio", "nombre_municipio_norm"]
+                    )["total"]
+                    .sum()
+                    .reset_index()
+                )
+                population_by_mun.columns = ["DPMP", "DPMP_norm", "POBLACION_EAPB"]
+            else:
+                st.warning("⚠️ Estructura de población no reconocida")
+                return pd.DataFrame()
+
+            # Contar vacunados por municipio
+            if "municipio_residencia" in vaccination_data.columns:
+                vaccination_by_mun = (
+                    vaccination_data.groupby("municipio_residencia")
+                    .size()
+                    .reset_index()
+                )
+                vaccination_by_mun.columns = ["municipio", "Vacunados"]
+
+                # Normalizar nombres para matching
+                vaccination_by_mun["municipio_norm"] = (
+                    vaccination_by_mun["municipio"].str.lower().str.strip()
+                )
+            else:
+                st.warning("⚠️ Columna de municipio no encontrada en vacunación")
+                vaccination_by_mun = pd.DataFrame()
+
+            # Combinar población y vacunación
+            if not vaccination_by_mun.empty:
+                metrics = pd.merge(
+                    population_by_mun,
+                    vaccination_by_mun,
+                    left_on="DPMP_norm",
+                    right_on="municipio_norm",
+                    how="left",
+                )
+
+                # Llenar vacunados faltantes con 0
+                metrics["Vacunados"] = metrics["Vacunados"].fillna(0)
+
+                # Calcular coberturas
+                metrics["Cobertura_EAPB"] = (
+                    metrics["Vacunados"] / metrics["POBLACION_EAPB"] * 100
+                ).round(2)
+
+                # Calcular pendientes
+                metrics["Pendientes_EAPB"] = (
+                    metrics["POBLACION_EAPB"] - metrics["Vacunados"]
+                )
+
+                # Mantener compatibilidad con nombres existentes
+                metrics["DANE"] = metrics["POBLACION_EAPB"]  # Para compatibilidad
+                metrics["SISBEN"] = metrics["POBLACION_EAPB"]  # Para compatibilidad
+                metrics["Cobertura_DANE"] = metrics["Cobertura_EAPB"]
+                metrics["Cobertura_SISBEN"] = metrics["Cobertura_EAPB"]
+                metrics["Pendientes_DANE"] = metrics["Pendientes_EAPB"]
+                metrics["Pendientes_SISBEN"] = metrics["Pendientes_EAPB"]
+
+                # Limpiar y seleccionar columnas finales
+                final_columns = [
+                    "DPMP",
+                    "DANE",
+                    "SISBEN",
+                    "Vacunados",
+                    "Cobertura_DANE",
+                    "Cobertura_SISBEN",
+                    "Pendientes_DANE",
+                    "Pendientes_SISBEN",
+                    "POBLACION_EAPB",
+                    "Cobertura_EAPB",
+                    "Pendientes_EAPB",
+                ]
+
+                return metrics[final_columns].fillna(0)
+            else:
+                return pd.DataFrame()
+
+        except Exception as e:
+            st.error(f"❌ Error calculando métricas municipales: {str(e)}")
+            return pd.DataFrame()
+
+    def _get_last_update_date(self, vaccination_data):
+        """
+        Obtiene la fecha de última actualización de los datos
+        """
+        try:
+            if "fecha_vacunacion" in vaccination_data.columns:
+                dates = pd.to_datetime(
+                    vaccination_data["fecha_vacunacion"], errors="coerce"
+                )
+                return dates.max() if len(dates.dropna()) > 0 else None
+            else:
+                return None
+        except:
+            return None
+
+    def _show_loading_summary(self):
+        """
+        Muestra resumen de la carga del sistema unificado
+        """
+        st.markdown("---")
+        st.subheader("📊 Resumen del Sistema Unificado")
+
+        if self.unified_data and self.app_state["data_loaded"]:
+            metadata = self.unified_data["metadata"]
+
+            col1, col2, col3, col4 = st.columns(4)
+
+            with col1:
+                st.metric(
+                    "Total Registros Vacunación",
+                    format_number(metadata["total_vaccination_records"]),
+                )
+
+            with col2:
+                st.metric(
+                    "Registros Población EAPB",
+                    format_number(metadata["total_population_records"]),
+                )
+
+            with col3:
+                cutoff_date = metadata.get("cutoff_date")
+                if cutoff_date:
+                    cutoff_formatted = format_date(cutoff_date, "short")
+                    st.metric("Fecha de Corte", cutoff_formatted)
+                else:
+                    st.metric("Fecha de Corte", "No determinada")
+
+            with col4:
+                last_update = metadata.get("last_update")
+                if last_update:
+                    update_formatted = format_date(last_update, "short")
+                    st.metric("Última Actualización", update_formatted)
+                else:
+                    st.metric("Última Actualización", "N/A")
+
+            # Información adicional
+            st.info(
+                f"""
+            ✅ **Sistema Unificado Activo**
+            - **Referencia Población:** {metadata.get('population_reference_date', 'Abril 2025')} (EAPB)
+            - **División Temporal:** Automática basada en brigadas
+            - **Edades:** Calculadas a fecha actual (no momento vacunación)
+            - **Versión:** {metadata.get('system_version', '2.0.0')}
             """
             )
 
-            # Ofrecer reiniciar o usar datos de demostración
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("🔄 Reintentar Carga"):
-                    st.rerun()
-            with col2:
-                if st.button("🎬 Usar Datos de Demo"):
-                    data = create_empty_safe_data()
-                    data_loaded_successfully = True
-                    st.rerun()
-
-            if not data_loaded_successfully:
-                return  # Salir si no se pudieron cargar datos
-
-        # Si llegamos aquí, tenemos datos válidos (reales o de demostración)
-        if data is None:
-            st.error("❌ Error crítico: No hay datos disponibles")
-            return
-
-        # =====================================================================
-        # CONFIGURACIÓN DE INTERFAZ DE USUARIO
-        # =====================================================================
-
-        # Barra lateral con logo y filtros
+    def create_sidebar_filters(self):
+        """
+        Crea filtros en la barra lateral adaptados al sistema unificado
+        """
         with st.sidebar:
-            # Logo de la Gobernación
-            logo_path = IMAGES_DIR / "logo_gobernacion.png"
+            # Logo institucional
+            logo_path = ROOT_DIR / "assets" / "images" / "logo_gobernacion.png"
             if logo_path.exists():
                 st.image(
                     str(logo_path), width=150, caption="Secretaría de Salud del Tolima"
                 )
-            else:
-                st.info("💡 Logo no encontrado en assets/images/logo_gobernacion.png")
 
             st.title("Dashboard Vacunación")
             st.subheader("Fiebre Amarilla")
 
-            # Selector de fuente de datos de población
-            st.subheader("Fuente de datos")
+            # Información del sistema unificado
+            if self.app_state["data_loaded"]:
+                st.success("✅ Sistema Unificado Activo")
 
-            if "fuente_radio" not in st.session_state:
-                st.session_state.fuente_radio = "DANE"  # Valor predeterminado
+                cutoff_date = self.app_state.get("cutoff_date")
+                if cutoff_date:
+                    st.info(f"📅 Corte: {format_date(cutoff_date, 'short')}")
+            else:
+                st.error("❌ Sistema no inicializado")
 
-            def on_fuente_change():
-                st.session_state.fuente_poblacion = st.session_state.fuente_radio
-
-            fuente_poblacion = st.radio(
-                "Seleccione la fuente de datos de población:",
-                options=["DANE", "SISBEN"],
-                key="fuente_radio",
-                on_change=on_fuente_change,
-                help="DANE: Población según censo oficial | SISBEN: Población registrada en el SISBEN",
+            # Selector de fuente de población (ahora informativo)
+            st.subheader("Referencia Poblacional")
+            st.info(
+                """
+            **Nueva Referencia: EAPB**
+            - Fuente: Población_aseguramiento.xlsx
+            - Fecha: Abril 2025
+            - Incluye todas las aseguradoras
+            """
             )
 
-            # Inicializar la fuente seleccionada si no existe
-            if "fuente_poblacion" not in st.session_state:
-                st.session_state.fuente_poblacion = fuente_poblacion
+            # Filtros de datos
+            st.subheader("Filtros de Datos")
 
-            # FILTROS GLOBALES
-            st.subheader("Filtros")
+            filters = {}
 
-            # Función para aplicar filtros automáticamente
-            def on_filter_change():
-                st.session_state.filters = {
-                    "municipio": st.session_state.get("municipio_filter", "Todos"),
-                    "grupo_edad": st.session_state.get("grupo_edad_filter", "Todos"),
-                    "sexo": st.session_state.get("sexo_filter", "Todos"),
-                    "grupo_etnico": st.session_state.get(
-                        "grupo_etnico_filter", "Todos"
-                    ),
-                    "regimen": st.session_state.get("regimen_filter", "Todos"),
-                    "aseguradora": st.session_state.get("aseguradora_filter", "Todos"),
-                }
-
-            # Crear filtros seguros
-            try:
-                # Filtro de municipios
+            if self.unified_data and self.app_state["data_loaded"]:
+                # Filtro de municipio
                 municipios = ["Todos"]
-                if "municipios" in data and "DPMP" in data["municipios"].columns:
+                if "DPMP" in self.unified_data["metricas"].columns:
                     municipios_unicos = (
-                        data["municipios"]["DPMP"].dropna().unique().tolist()
+                        self.unified_data["metricas"]["DPMP"].dropna().unique()
                     )
-                    municipios.extend(
-                        sorted([str(m) for m in municipios_unicos if str(m) != "nan"])
-                    )
+                    municipios.extend(sorted(municipios_unicos))
 
-                municipio = st.selectbox(
-                    "Municipio",
-                    options=municipios,
-                    key="municipio_filter",
-                    on_change=on_filter_change,
+                filters["municipio"] = st.selectbox("Municipio", municipios)
+
+                # Filtro de período (nuevo)
+                periodos = ["Todos", "Pre-emergencia", "Emergencia"]
+                filters["periodo"] = st.selectbox(
+                    "Período de Análisis",
+                    periodos,
+                    help="Pre-emergencia: antes de brigadas | Emergencia: desde brigadas",
                 )
 
-                # Filtro de grupos de edad
-                grupos_edad = ["Todos"]
-                if "vacunacion" in data and "Grupo_Edad" in data["vacunacion"].columns:
-                    grupos_unicos = (
-                        data["vacunacion"]["Grupo_Edad"].dropna().unique().tolist()
-                    )
-                    grupos_clean = sorted(
-                        [
-                            str(g)
-                            for g in grupos_unicos
-                            if str(g) not in ["nan", "Sin dato"]
-                        ]
-                    )
-                    grupos_edad.extend(grupos_clean)
+                # Filtros demográficos
+                if "vacunacion_unificada" in self.unified_data:
+                    df_vac = self.unified_data["vacunacion_unificada"]
 
-                grupo_edad = st.selectbox(
-                    "Grupo de Edad",
-                    options=grupos_edad,
-                    key="grupo_edad_filter",
-                    on_change=on_filter_change,
-                )
+                    # Género
+                    if "sexo" in df_vac.columns:
+                        generos = ["Todos"] + sorted(df_vac["sexo"].dropna().unique())
+                        filters["sexo"] = st.selectbox("Género", generos)
 
-                # Filtro de género
-                generos = ["Todos", "Masculino", "Femenino", "No Binario"]
-                genero = st.selectbox(
-                    "Género",
-                    options=generos,
-                    key="sexo_filter",
-                    on_change=on_filter_change,
-                )
+                    # Grupo de edad actual
+                    if "grupo_edad_actual" in df_vac.columns:
+                        grupos_edad = ["Todos"] + sorted(
+                            df_vac["grupo_edad_actual"].dropna().unique()
+                        )
+                        filters["grupo_edad"] = st.selectbox(
+                            "Grupo de Edad Actual", grupos_edad
+                        )
 
-                # Filtro de grupos étnicos
-                grupos_etnicos = ["Todos"]
-                if "vacunacion" in data and "GrupoEtnico" in data["vacunacion"].columns:
-                    etnicos_unicos = (
-                        data["vacunacion"]["GrupoEtnico"].dropna().unique().tolist()
-                    )
-                    etnicos_clean = sorted(
-                        [
-                            str(e)
-                            for e in etnicos_unicos
-                            if str(e) not in ["nan", "Sin dato"]
-                        ]
-                    )
-                    grupos_etnicos.extend(etnicos_clean[:20])  # Limitar para UX
+                    # Régimen
+                    if "regimen_afiliacion" in df_vac.columns:
+                        regimenes = ["Todos"] + sorted(
+                            df_vac["regimen_afiliacion"].dropna().unique()
+                        )
+                        filters["regimen"] = st.selectbox("Régimen", regimenes)
 
-                grupo_etnico = st.selectbox(
-                    "Grupo Étnico",
-                    options=grupos_etnicos,
-                    key="grupo_etnico_filter",
-                    on_change=on_filter_change,
-                )
+                    # EAPB/Aseguradora
+                    if "nombre_aseguradora" in df_vac.columns:
+                        aseguradoras = ["Todos"] + list(
+                            df_vac["nombre_aseguradora"].value_counts().head(15).index
+                        )
+                        filters["aseguradora"] = st.selectbox(
+                            "EAPB/Aseguradora", aseguradoras
+                        )
 
-                # Filtro de regímenes
-                regimenes = ["Todos"]
-                if (
-                    "vacunacion" in data
-                    and "RegimenAfiliacion" in data["vacunacion"].columns
-                ):
-                    regimenes_unicos = (
-                        data["vacunacion"]["RegimenAfiliacion"]
-                        .dropna()
-                        .unique()
-                        .tolist()
-                    )
-                    regimenes_clean = sorted(
-                        [
-                            str(r)
-                            for r in regimenes_unicos
-                            if str(r) not in ["nan", "Sin dato"]
-                        ]
-                    )
-                    regimenes.extend(regimenes_clean)
-
-                regimen = st.selectbox(
-                    "Régimen",
-                    options=regimenes,
-                    key="regimen_filter",
-                    on_change=on_filter_change,
-                )
-
-                # Filtro de aseguradoras
-                aseguradoras = ["Todos"]
-                if (
-                    "vacunacion" in data
-                    and "NombreAseguradora" in data["vacunacion"].columns
-                ):
-                    aseguradoras_unicos = (
-                        data["vacunacion"]["NombreAseguradora"]
-                        .value_counts()
-                        .head(20)
-                        .index.tolist()
-                    )
-                    aseguradoras_clean = [
-                        str(a)
-                        for a in aseguradoras_unicos
-                        if str(a) not in ["nan", "Sin dato"]
-                    ]
-                    aseguradoras.extend(aseguradoras_clean)
-
-                aseguradora = st.selectbox(
-                    "EAPB/Aseguradora",
-                    options=aseguradoras,
-                    key="aseguradora_filter",
-                    on_change=on_filter_change,
-                )
-
-            except Exception as e:
-                st.sidebar.error(f"❌ Error creando filtros: {str(e)}")
-                # Usar filtros básicos por defecto
-                municipio = "Todos"
-                grupo_edad = "Todos"
-                genero = "Todos"
-                grupo_etnico = "Todos"
-                regimen = "Todos"
-                aseguradora = "Todos"
-
-            # Inicializar filtros si no existen
-            if "filters" not in st.session_state:
-                st.session_state.filters = {
-                    "municipio": "Todos",
-                    "grupo_edad": "Todos",
-                    "sexo": "Todos",
-                    "grupo_etnico": "Todos",
-                    "regimen": "Todos",
-                    "aseguradora": "Todos",
-                }
-
-            # Función para resetear filtros
-            def reset_filters():
-                for key in [
-                    "municipio_filter",
-                    "grupo_edad_filter",
-                    "sexo_filter",
-                    "grupo_etnico_filter",
-                    "regimen_filter",
-                    "aseguradora_filter",
-                ]:
-                    st.session_state[key] = "Todos"
-                on_filter_change()
-
-            if st.button("🔄 Restablecer Filtros", on_click=reset_filters):
-                pass
+            # Botón para resetear filtros
+            if st.button("🔄 Restablecer Filtros"):
+                for key in filters.keys():
+                    if key in st.session_state:
+                        del st.session_state[key]
+                st.rerun()
 
             # Información del desarrollador
-            st.sidebar.markdown("---")
-            st.sidebar.caption("Desarrollado por: Ing. José Miguel Santos")
-            st.sidebar.caption("Secretaría de Salud del Tolima © 2025")
+            st.markdown("---")
+            st.caption(f"**{INSTITUTIONAL_CONFIG['author']}**")
+            st.caption(f"{INSTITUTIONAL_CONFIG['institution']}")
+            st.caption(
+                f"© {INSTITUTIONAL_CONFIG['year']} - {INSTITUTIONAL_CONFIG['version']}"
+            )
 
-        # =====================================================================
-        # BANNER PRINCIPAL
-        # =====================================================================
+            return filters
+
+    def apply_filters_to_data(self, filters):
+        """
+        Aplica filtros a los datos unificados
+        """
+        if not self.unified_data or not self.app_state["data_loaded"]:
+            return self.unified_data
+
+        try:
+            filtered_data = self.unified_data.copy()
+
+            # Aplicar filtros a datos de vacunación
+            df_vac = filtered_data["vacunacion_unificada"].copy()
+
+            # Filtro de período
+            if filters.get("periodo") != "Todos":
+                if (
+                    filters["periodo"] == "Pre-emergencia"
+                    and "periodo" in df_vac.columns
+                ):
+                    df_vac = df_vac[df_vac["periodo"] == "pre_emergencia"]
+                elif filters["periodo"] == "Emergencia" and "periodo" in df_vac.columns:
+                    df_vac = df_vac[df_vac["periodo"] == "emergencia"]
+
+            # Filtro de municipio
+            if (
+                filters.get("municipio") != "Todos"
+                and "municipio_residencia" in df_vac.columns
+            ):
+                df_vac = df_vac[
+                    df_vac["municipio_residencia"].str.contains(
+                        filters["municipio"], case=False, na=False
+                    )
+                ]
+
+            # Filtros demográficos
+            demographic_filters = {
+                "sexo": "sexo",
+                "grupo_edad": "grupo_edad_actual",
+                "regimen": "regimen_afiliacion",
+                "aseguradora": "nombre_aseguradora",
+            }
+
+            for filter_key, column_name in demographic_filters.items():
+                if (
+                    filters.get(filter_key) != "Todos"
+                    and filters.get(filter_key) is not None
+                    and column_name in df_vac.columns
+                ):
+                    df_vac = df_vac[df_vac[column_name] == filters[filter_key]]
+
+            # Actualizar datos filtrados
+            filtered_data["vacunacion_unificada"] = df_vac
+
+            # Recalcular métricas si hay filtros aplicados
+            if any(v != "Todos" for v in filters.values() if v is not None):
+                filtered_data["metricas"] = self._calculate_municipality_metrics(
+                    filtered_data["poblacion_eapb"], df_vac
+                )
+
+            return filtered_data
+
+        except Exception as e:
+            st.error(f"❌ Error aplicando filtros: {str(e)}")
+            return self.unified_data
+
+    def show_main_content(self, filtered_data, filters):
+        """
+        Muestra el contenido principal con pestañas
+        """
+        # Banner principal
         col1, col2 = st.columns([3, 1])
 
         with col1:
-            st.title("Dashboard Vacunación Fiebre Amarilla - Tolima")
-            st.write("Secretaría de Salud del Tolima - Vigilancia Epidemiológica")
+            st.title(INSTITUTIONAL_CONFIG["title"])
+            st.write(INSTITUTIONAL_CONFIG["subtitle"])
+
+        with col2:
+            if self.current_date_info:
+                st.info(f"📅 {self.current_date_info['formatted_full']}")
 
         # Banner de filtros activos
         active_filters = [
             f"{k.replace('_', ' ').title()}: {v}"
-            for k, v in st.session_state.filters.items()
-            if v != "Todos"
+            for k, v in filters.items()
+            if v != "Todos" and v is not None
         ]
+
         if active_filters:
-            st.markdown(
-                f"""
-                <div style="background: linear-gradient(90deg, {COLORS['primary']}, {COLORS['accent']}); 
-                            color: white; padding: 12px; border-radius: 8px; margin-bottom: 20px;
-                            box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                    <strong>🔍 Filtros aplicados:</strong> {' | '.join(active_filters)}
-                    <small style="float: right; opacity: 0.8;">
-                        Mostrando datos filtrados de {fuente_poblacion}
-                    </small>
-                </div>
-                """,
-                unsafe_allow_html=True,
+            filter_text = " | ".join(active_filters)
+            alert_html = create_alert(
+                f"🔍 **Filtros aplicados:** {filter_text}", "warning"
             )
+            st.markdown(alert_html, unsafe_allow_html=True)
 
-        # =====================================================================
-        # IMPORTAR Y CONFIGURAR VISTAS
-        # =====================================================================
-
-        vistas_modules = safe_import_vistas()
-
-        # =====================================================================
-        # PESTAÑAS DE NAVEGACIÓN
-        # =====================================================================
-        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
+        # Pestañas principales
+        tabs = st.tabs(
             [
                 "📊 Visión General",
                 "🗺️ Distribución Geográfica",
                 "👥 Perfil Demográfico",
                 "🏥 Aseguramiento",
-                "📈 Tendencias",
+                "📈 Tendencias Temporales",
                 "📍 Brigadas Territoriales",
-                "🌍 Mapas Interactivos",
             ]
         )
 
-        # =====================================================================
-        # CONTENIDO DE CADA PESTAÑA CON MANEJO DE ERRORES
-        # =====================================================================
+        # Contenido de cada pestaña
+        tab_configs = [
+            ("overview", tabs[0]),
+            ("geographic", tabs[1]),
+            ("demographic", tabs[2]),
+            ("insurance", tabs[3]),
+            ("trends", tabs[4]),
+            ("brigadas", tabs[5]),
+        ]
 
-        with tab1:
-            try:
-                if vistas_modules.get("overview") is not None:
-                    vistas_modules["overview"].show(
-                        data,
-                        st.session_state.filters,
-                        COLORS,
-                        st.session_state.fuente_poblacion,
-                    )
-                else:
-                    show_error_view(
-                        "El módulo de visión general no está disponible", "overview"
-                    )
-            except Exception as e:
-                st.error(f"❌ Error en Visión General: {str(e)}")
-                with st.expander("🔍 Detalles del error"):
-                    st.code(traceback.format_exc())
+        for view_name, tab in tab_configs:
+            with tab:
+                self._render_view(view_name, filtered_data, filters)
 
-        with tab2:
-            try:
-                if vistas_modules.get("geographic") is not None:
-                    vistas_modules["geographic"].show(
-                        data,
-                        st.session_state.filters,
-                        COLORS,
-                        st.session_state.fuente_poblacion,
-                    )
-                else:
-                    show_error_view(
-                        "El módulo de distribución geográfica no está disponible",
-                        "geographic",
-                    )
-            except Exception as e:
-                st.error(f"❌ Error en Distribución Geográfica: {str(e)}")
-                with st.expander("🔍 Detalles del error"):
-                    st.code(traceback.format_exc())
+    def _render_view(self, view_name, filtered_data, filters):
+        """
+        Renderiza una vista específica con manejo de errores
+        """
+        try:
+            if view_name in AVAILABLE_VIEWS and AVAILABLE_VIEWS[view_name] is not None:
+                # Adaptar datos para compatibilidad con vistas existentes
+                adapted_data = self._adapt_data_for_view(filtered_data)
 
-        with tab3:
-            try:
-                if vistas_modules.get("demographic") is not None:
-                    vistas_modules["demographic"].show(
-                        data,
-                        st.session_state.filters,
-                        COLORS,
-                        st.session_state.fuente_poblacion,
-                    )
-                else:
-                    show_error_view(
-                        "El módulo de perfil demográfico no está disponible",
-                        "demographic",
-                    )
-            except Exception as e:
-                st.error(f"❌ Error en Perfil Demográfico: {str(e)}")
-                with st.expander("🔍 Detalles del error"):
-                    st.code(traceback.format_exc())
+                # Llamar a la vista
+                AVAILABLE_VIEWS[view_name].show(
+                    adapted_data,
+                    filters,
+                    self.colors,
+                    "EAPB",  # Nueva fuente de población
+                )
+            else:
+                st.error(f"❌ Vista '{view_name}' no disponible")
+                st.info(
+                    "🔧 Esta vista necesita ser actualizada para el sistema unificado"
+                )
 
-        with tab4:
-            try:
-                if vistas_modules.get("insurance") is not None:
-                    vistas_modules["insurance"].show(
-                        data,
-                        st.session_state.filters,
-                        COLORS,
-                        st.session_state.fuente_poblacion,
-                    )
-                else:
-                    show_error_view(
-                        "El módulo de aseguramiento no está disponible", "insurance"
-                    )
-            except Exception as e:
-                st.error(f"❌ Error en Aseguramiento: {str(e)}")
-                with st.expander("🔍 Detalles del error"):
-                    st.code(traceback.format_exc())
+        except Exception as e:
+            st.error(f"❌ Error en vista '{view_name}': {str(e)}")
 
-        with tab5:
-            try:
-                if vistas_modules.get("trends") is not None:
-                    vistas_modules["trends"].show(
-                        data,
-                        st.session_state.filters,
-                        COLORS,
-                        st.session_state.fuente_poblacion,
-                    )
-                else:
-                    show_error_view(
-                        "El módulo de tendencias no está disponible", "trends"
-                    )
-            except Exception as e:
-                st.error(f"❌ Error en Tendencias: {str(e)}")
-                with st.expander("🔍 Detalles del error"):
-                    st.code(traceback.format_exc())
+            with st.expander("🔍 Detalles del error"):
+                st.code(traceback.format_exc())
 
-        with tab6:
-            try:
-                if vistas_modules.get("brigadas") is not None:
-                    vistas_modules["brigadas"].show(
-                        data,
-                        st.session_state.filters,
-                        COLORS,
-                        st.session_state.fuente_poblacion,
-                    )
-                else:
-                    show_error_view(
-                        "El módulo de brigadas territoriales no está disponible",
-                        "brigadas",
-                    )
-            except Exception as e:
-                st.error(f"❌ Error en Brigadas Territoriales: {str(e)}")
-                with st.expander("🔍 Detalles del error"):
-                    st.code(traceback.format_exc())
-        with tab7:
-            try:
-                if vistas_modules.get("maps") is not None:
-                    vistas_modules["maps"].show(
-                        data,
-                        st.session_state.filters,
-                        COLORS,
-                        st.session_state.fuente_poblacion,
-                    )
-                else:
-                    show_error_view(
-                        "El módulo de mapas interactivos no está disponible",
-                        "maps",
-                    )
-            except Exception as e:
-                st.error(f"❌ Error en Mapas Interactivos: {str(e)}")
-                with st.expander("🔍 Detalles del error"):
-                    st.code(traceback.format_exc())
-        # =====================================================================
-        # FOOTER CON INFORMACIÓN ADICIONAL
-        # =====================================================================
+    def _adapt_data_for_view(self, unified_data):
+        """
+        Adapta datos unificados para compatibilidad con vistas existentes
+        """
+        return {
+            # Datos principales
+            "vacunacion": unified_data.get("vacunacion_unificada", pd.DataFrame()),
+            "metricas": unified_data.get("metricas", pd.DataFrame()),
+            "municipios": unified_data.get(
+                "metricas", pd.DataFrame()
+            ),  # Compatibilidad
+            # Datos adicionales del sistema unificado
+            "poblacion_eapb": unified_data.get("poblacion_eapb", pd.DataFrame()),
+            "vacunacion_historica": unified_data.get(
+                "vacunacion_historica", pd.DataFrame()
+            ),
+            "vacunacion_emergencia": unified_data.get(
+                "vacunacion_emergencia", pd.DataFrame()
+            ),
+            # Metadatos
+            "metadata": unified_data.get("metadata", {}),
+        }
+
+    def show_footer(self):
+        """
+        Muestra pie de página con información del sistema
+        """
         st.markdown("---")
-        col_footer1, col_footer2, col_footer3, col_footer4 = st.columns(4)
 
-        with col_footer1:
-            st.markdown("### 📊 Dashboard Info")
-            try:
-                total_records = len(data.get("vacunacion", pd.DataFrame()))
-                total_municipios = len(data.get("municipios", pd.DataFrame()))
-                st.markdown(
-                    f"""
-                - **Registros totales:** {total_records:,}
-                - **Municipios:** {total_municipios}
-                - **Fuente población:** {st.session_state.fuente_poblacion}
-                """.replace(
-                        ",", "."
-                    )
+        col1, col2, col3, col4 = st.columns(4)
+
+        with col1:
+            st.markdown("### 📊 Sistema Unificado")
+            if self.app_state["data_loaded"]:
+                st.write(
+                    f"✅ **Activo** - {format_number(self.app_state['total_records'])} registros"
                 )
-            except:
-                st.markdown("- **Estado:** Datos cargados")
+                st.write(
+                    f"📅 Actualización: {format_date(self.app_state['last_update'], 'short') if self.app_state['last_update'] else 'N/A'}"
+                )
+            else:
+                st.write("❌ **No inicializado**")
 
-        with col_footer2:
+        with col2:
             st.markdown("### 🎯 Estado del Sistema")
-            system_status = (
-                "🟢 Operativo" if data_loaded_successfully else "🔴 Modo Emergencia"
+            st.write(
+                f"🔗 **Componentes:** {'✅ Cargados' if SYSTEM_COMPONENTS_LOADED else '❌ Error'}"
             )
-            st.markdown(
-                f"""
-            - **Estado:** {system_status}
-            - **Vistas cargadas:** {sum(1 for v in vistas_modules.values() if v is not None)}/5
-            - **Filtros activos:** {len(active_filters)}
-            """
+            st.write(
+                f"📋 **Vistas:** {len([v for v in AVAILABLE_VIEWS.values() if v is not None])}/6 disponibles"
             )
 
-        with col_footer3:
-            st.markdown("### ℹ️ Soporte")
-            st.markdown(
-                """
-            - **Desarrollador:** José Miguel Santos
-            - **Email:** [Contacto](mailto:mitxelsk811@gmail.com)
-            - **Versión:** 1.1.0 (Robusta)
-            """
+        with col3:
+            st.markdown("### ℹ️ Información")
+            st.write(f"**Versión:** {INSTITUTIONAL_CONFIG['version']}")
+            st.write(f"**Desarrollador:** {INSTITUTIONAL_CONFIG['author']}")
+
+        with col4:
+            st.markdown("### 🏥 Referencia")
+            st.write("**Población:** EAPB (Abril 2025)")
+            st.write("**División:** Automática por brigadas")
+            st.write("**Edades:** Actuales (no momento vacunación)")
+
+    def run(self):
+        """
+        Ejecuta la aplicación completa
+        """
+        try:
+            # Inicializar aplicación
+            self.initialize_app()
+
+            # Cargar datos unificados
+            if not self.app_state["data_loaded"]:
+                data_loaded = self.load_unified_data()
+                if not data_loaded:
+                    st.error("❌ **No se pudo inicializar el sistema unificado**")
+                    st.info(
+                        "🔄 **Reinicia la aplicación o verifica los archivos de datos**"
+                    )
+                    return
+
+            # Crear filtros en sidebar
+            filters = self.create_sidebar_filters()
+
+            # Aplicar filtros a datos
+            filtered_data = self.apply_filters_to_data(filters)
+
+            # Mostrar contenido principal
+            self.show_main_content(filtered_data, filters)
+
+            # Mostrar pie de página
+            self.show_footer()
+
+        except Exception as e:
+            st.error("❌ **Error crítico en la aplicación**")
+            st.error(f"**Error:** {str(e)}")
+
+            with st.expander("🔍 Información técnica"):
+                st.code(traceback.format_exc())
+
+            st.info(
+                "🔄 **Reinicia la aplicación (Ctrl+R) o contacta al administrador**"
             )
 
-        with col_footer4:  # ← ACTUALIZAR ESTA SECCIÓN
-            st.markdown("### 🗺️ Mapas Info")
-            try:
-                from src.visualization.geo_loader import get_geo_loader
 
-                geo_loader = get_geo_loader()
-                available_shapefiles = geo_loader.list_available_shapefiles()
-
-                total_shapefiles = sum(
-                    len(files) for files in available_shapefiles.values()
-                )
-
-                st.markdown(
-                    f"""
-                - **Shapefiles:** {total_shapefiles}
-                - **Estado:** {'Disponible' if total_shapefiles > 0 else 'No disponible'}
-                - **Niveles:** {'Dept+Mun+Ver' if total_shapefiles >= 3 else 'Parcial'}
-                """
-                )
-            except:
-                st.markdown("- **Estado:** Módulo no disponible")
+def main():
+    """
+    Función principal de la aplicación
+    """
+    try:
+        # Crear y ejecutar aplicación
+        app = UnifiedDashboardApp()
+        app.run()
 
     except Exception as e:
-        # Último nivel de manejo de errores - nunca debería llegar aquí
-        st.error("❌ Error crítico en la aplicación principal")
+        st.error("❌ **Error crítico al inicializar la aplicación**")
+        st.error(f"**Error:** {str(e)}")
+
         st.markdown(
-            f"""
+            """
         ### 🚨 Error Crítico del Sistema
         
-        Ha ocurrido un error inesperado en el sistema principal.
-        
-        **Error:** `{str(e)}`
+        No se pudo inicializar la aplicación principal.
         
         **Acciones recomendadas:**
-        1. Refresca la página (F5 o Ctrl+R)
-        2. Limpia la caché del navegador
-        3. Contacta al administrador del sistema
+        1. Verifica que todos los archivos estén en su lugar
+        2. Reinicia la aplicación (Ctrl+R o F5)
+        3. Revisa los logs del sistema
+        4. Contacta al administrador técnico
         """
         )
 
-        # Mostrar detalles técnicos si el usuario los necesita
-        if st.checkbox("🔧 Mostrar detalles técnicos"):
+        with st.expander("🔧 Información técnica detallada"):
             st.code(traceback.format_exc())
 
 
