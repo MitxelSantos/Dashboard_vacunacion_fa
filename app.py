@@ -17,6 +17,7 @@ import traceback
 import warnings
 from datetime import datetime
 import logging
+import time
 
 # Suprimir warnings innecesarios
 warnings.filterwarnings("ignore")
@@ -1317,82 +1318,169 @@ if __name__ == "__main__":
 import streamlit as st
 import sys
 from pathlib import Path
+import logging
 
-# Configure Streamlit
+# Configure Streamlit - THIS MUST BE THE FIRST ST COMMAND
 st.set_page_config(
     page_title="Dashboard Fiebre Amarilla",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler("dashboard.log", encoding="utf-8"),
+        logging.StreamHandler(sys.stdout),
+    ],
+)
+logger = logging.getLogger(__name__)
+
 # Add project root to path
 ROOT_PATH = Path(__file__).parent
 sys.path.append(str(ROOT_PATH))
 
+# Import data loading function
 from src.data import load_and_combine_data
 
-try:
-    # Initialize state
-    if "data_loaded" not in st.session_state:
-        st.session_state.data_loaded = False
-        st.session_state.loading_failed = False
 
-    if not st.session_state.data_loaded and not st.session_state.loading_failed:
-        try:
-            # Load data
-            df_combined, df_aseguramiento, fecha_corte = load_and_combine_data(
-                "data/Resumen.xlsx",
-                "data/vacunacion_fa.csv",
-                "data/Poblacion_aseguramiento.xlsx",
+def main():
+    try:
+        # Iniciar temporizador
+        start_time = time.time()
+
+        # Initialize session state if needed
+        if "init" not in st.session_state:
+            st.session_state.init = {
+                "data_loaded": False,
+                "loading_failed": False,
+                "data": None,
+                "filters": {},
+                "last_update": None,
+                "load_time": None,
+            }
+
+        # Load data only once
+        if (
+            not st.session_state.init["data_loaded"]
+            and not st.session_state.init["loading_failed"]
+        ):
+            try:
+                with st.spinner("🔄 Cargando datos..."):
+                    # Cache the data loading
+                    @st.cache_data(ttl=3600, show_spinner=False)
+                    def load_cached_data():
+                        load_start = time.time()
+                        data = load_and_combine_data(
+                            "data/Resumen.xlsx",
+                            "data/vacunacion_fa.csv",
+                            "data/Poblacion_aseguramiento.xlsx",
+                        )
+                        load_time = time.time() - load_start
+                        return data, load_time
+
+                    # Load data using cache
+                    (df_combined, df_aseguramiento, fecha_corte), load_time = (
+                        load_cached_data()
+                    )
+
+                    # Store in session state
+                    st.session_state.init["data"] = (
+                        df_combined,
+                        df_aseguramiento,
+                        fecha_corte,
+                    )
+                    st.session_state.init["data_loaded"] = True
+                    st.session_state.init["last_update"] = datetime.now()
+                    st.session_state.init["load_time"] = load_time
+
+                    # Mostrar tiempo de carga
+                    st.success(f"✅ Datos cargados en {load_time:.2f} segundos")
+
+                    # Rerun to refresh UI
+                    st.rerun()
+
+            except Exception as e:
+                end_time = time.time()
+                error_time = end_time - start_time
+                st.session_state.init["loading_failed"] = True
+                st.error(f"Error después de {error_time:.2f} segundos: {str(e)}")
+                st.stop()
+
+        # Show dashboard once data is loaded
+        if st.session_state.init["data_loaded"]:
+            df_combined, df_aseguramiento, fecha_corte = st.session_state.init["data"]
+
+            # Mostrar métricas de tiempo en el sidebar
+            with st.sidebar:
+                st.markdown("### ⏱️ Métricas de Rendimiento")
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric(
+                        "Tiempo de Carga",
+                        f"{st.session_state.init['load_time']:.2f}s",
+                        help="Tiempo total de carga de datos",
+                    )
+                with col2:
+                    if "last_update" in st.session_state.init:
+                        last_update = st.session_state.init["last_update"]
+                        st.metric(
+                            "Última Actualización",
+                            last_update.strftime("%H:%M:%S"),
+                            help="Hora de la última carga de datos",
+                        )
+
+            # Cache view rendering
+            @st.cache_data(ttl=3600)
+            def render_view(view_func, *args):
+                view_start = time.time()
+                result = view_func(*args)
+                view_time = time.time() - view_start
+                return result, view_time
+
+            # Create tabs
+            tabs = st.tabs(
+                [
+                    "Vista General",
+                    "Geográfico",
+                    "Demográfico",
+                    "Aseguramiento",
+                    "Tendencias",
+                    "Brigadas",
+                ]
             )
 
-            # Store in session state
-            st.session_state.data = (df_combined, df_aseguramiento, fecha_corte)
-            st.session_state.data_loaded = True
-            st.experimental_rerun()
-
-        except Exception as e:
-            st.session_state.loading_failed = True
-            st.error(f"Error cargando datos: {str(e)}")
-            st.stop()
-
-    # Once data is loaded, show dashboard
-    if st.session_state.data_loaded:
-        df_combined, df_aseguramiento, fecha_corte = st.session_state.data
-
-        # Create tabs
-        tabs = st.tabs(
-            [
-                "Vista General",
-                "Geográfico",
-                "Demográfico",
-                "Aseguramiento",
-                "Tendencias",
-                "Brigadas",
+            # Import and render views with caching and timing
+            views = [
+                (mostrar_overview, [df_combined, fecha_corte]),
+                (mostrar_geographic, [df_combined, df_aseguramiento]),
+                (mostrar_demographic, [df_combined, fecha_corte]),
+                (mostrar_insurance, [df_combined, df_aseguramiento]),
+                (mostrar_trends, [df_combined, fecha_corte]),
+                (mostrar_brigadas, [df_combined, df_aseguramiento, fecha_corte]),
             ]
+
+            for i, (view_func, args) in enumerate(views):
+                with tabs[i]:
+                    view_start = time.time()
+                    _, view_time = render_view(view_func, *args)
+                    st.caption(f"⏱️ Vista cargada en {view_time:.2f} segundos")
+
+        # Calcular tiempo total
+        total_time = time.time() - start_time
+        if "total_time" not in st.session_state:
+            st.session_state.total_time = total_time
+
+        # Mostrar tiempo total en el footer
+        st.markdown("---")
+        st.caption(
+            f"⏱️ Tiempo total de ejecución: {st.session_state.total_time:.2f} segundos"
         )
 
-        # Import and show views
-        from vistas.overview import mostrar_overview
-        from vistas.geographic import mostrar_geographic
-        from vistas.demographic import mostrar_demographic
-        from vistas.insurance import mostrar_insurance
-        from vistas.trends import mostrar_trends
-        from vistas.brigadas import mostrar_brigadas
-
-        with tabs[0]:
-            mostrar_overview(df_combined, fecha_corte)
-        with tabs[1]:
-            mostrar_geographic(df_combined, df_aseguramiento)
-        with tabs[2]:
-            mostrar_demographic(df_combined, fecha_corte)
-        with tabs[3]:
-            mostrar_insurance(df_combined, df_aseguramiento)
-        with tabs[4]:
-            mostrar_trends(df_combined, fecha_corte)
-        with tabs[5]:
-            mostrar_brigadas(df_combined, df_aseguramiento, fecha_corte)
-
-except Exception as e:
-    st.error(f"Error en el dashboard: {str(e)}")
-    st.stop()
+    except Exception as e:
+        end_time = time.time()
+        total_time = end_time - start_time
+        st.error(f"Error después de {total_time:.2f} segundos: {str(e)}")
+        st.stop()

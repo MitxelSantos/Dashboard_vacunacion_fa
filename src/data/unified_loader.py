@@ -487,20 +487,29 @@ def unify_vacunacion(resumen_path, historica_path):
     return df_unificada, fecha_actualizacion, fecha_corte
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False)  # Cache por 1 hora
 def load_and_combine_data(resumen_path, historico_path, aseguramiento_path):
-    """Carga y combina los datos de vacunación de manera optimizada"""
+    """Carga y combina los datos de manera optimizada"""
     try:
         progress_text = st.empty()
         progress_bar = st.progress(0)
 
-        # 1. Load aseguramiento data
-        progress_text.text("🔄 Cargando datos de aseguramiento...")
-        df_aseguramiento = pd.read_excel(aseguramiento_path)
+        # 1. Cargar datos de aseguramiento (archivo pequeño)
+        progress_text.text("🔄 Cargando aseguramiento...")
+        df_aseguramiento = pd.read_excel(
+            aseguramiento_path,
+            usecols=[
+                "Municipio",
+                "Nombre Entidad",
+                "CONTRIBUTIVO",
+                "SUBSIDIADO",
+                "Total general",
+            ],
+        )
         progress_bar.progress(20)
 
-        # 2. Load historical data
-        progress_text.text("🔄 Cargando datos históricos...")
+        # 2. Cargar datos históricos (archivo grande) con optimizaciones
+        progress_text.text("🔄 Cargando históricos...")
         df_historico = pd.read_csv(
             historico_path,
             usecols=[
@@ -513,32 +522,39 @@ def load_and_combine_data(resumen_path, historico_path, aseguramiento_path):
                 "NombreAseguradora",
                 "FA UNICA",
             ],
+            dtype={
+                "IdPaciente": "str",
+                "TipoIdentificacion": "category",
+                "Documento": "str",
+                "NombreMunicipioResidencia": "category",
+                "RegimenAfiliacion": "category",
+                "NombreAseguradora": "category",
+            },
+            parse_dates=["FechaNacimiento"],
         )
-        progress_bar.progress(50)
+        progress_bar.progress(60)
 
-        # 3. Load brigades data
-        progress_text.text("🔄 Cargando datos de brigadas...")
+        # 3. Cargar datos de brigadas
+        progress_text.text("🔄 Cargando brigadas...")
         df_brigadas = pd.read_excel(
             resumen_path,
             sheet_name="Vacunacion",
             usecols=["FECHA", "MUNICIPIO", "TPE", "TPVP"],
         )
-        progress_bar.progress(70)
+        progress_bar.progress(80)
 
-        # 4. Get cutoff date
+        # 4. Determinar fecha de corte
         fecha_corte = df_brigadas["FECHA"].min()
 
-        # 5. Clean and combine data
-        progress_text.text("🔄 Procesando y combinando datos...")
-        df_combined = combine_vaccination_data(
-            clean_data(df_historico), clean_data(df_brigadas), fecha_corte
-        )
+        # 5. Limpiar y combinar datos
+        progress_text.text("🔄 Procesando...")
+        df_combined = combine_vaccination_data(df_historico, df_brigadas, fecha_corte)
 
         progress_bar.progress(100)
-        progress_text.text("✅ Carga de datos completada")
+        progress_text.text("✅ Datos cargados")
 
         return df_combined, df_aseguramiento, fecha_corte
 
     except Exception as e:
-        st.error(f"❌ Error en la carga de datos: {str(e)}")
+        st.error(f"Error en carga de datos: {str(e)}")
         raise e
