@@ -354,54 +354,21 @@ def load_brigadas_data(file_path="data/Resumen.xlsx"):
     y normalización completa de columnas
     """
     try:
-        # Verificar si el archivo existe
         if not Path(file_path).exists():
-            st.warning(f"⚠️ Archivo no encontrado: {file_path}")
-            st.info("💡 Usando datos de ejemplo para demostración")
-            return create_sample_brigadas_data(), False
+            st.warning(f"⚠️ File not found: {file_path}")
+            return None
 
-        # Intentar leer el archivo
-        st.info(f"📄 **Archivo encontrado:** `{file_path}`")
+        df = pd.read_excel(
+            file_path,
+            sheet_name="Vacunacion",
+            usecols=lambda x: "fecha" in x.lower() or "municipio" in x.lower(),
+        )
 
-        # Verificar hojas disponibles
-        with pd.ExcelFile(file_path) as excel_file:
-            available_sheets = excel_file.sheet_names
-            st.write(f"**Hojas disponibles:** {', '.join(available_sheets)}")
-
-            # Intentar leer la hoja 'Vacunacion'
-            if "Vacunacion" in available_sheets:
-                df = pd.read_excel(file_path, sheet_name="Vacunacion")
-                st.success(
-                    f"✅ **Datos reales cargados** - {len(df)} filas, {len(df.columns)} columnas"
-                )
-            else:
-                st.warning(
-                    "⚠️ Hoja 'Vacunacion' no encontrada. Intentando con la primera hoja..."
-                )
-                df = pd.read_excel(file_path, sheet_name=available_sheets[0])
-                st.info(f"📄 Usando hoja: '{available_sheets[0]}'")
-
-        if df.empty:
-            st.warning("⚠️ El archivo está vacío. Usando datos de ejemplo.")
-            return create_sample_brigadas_data(), False
-
-        # Normalizar columnas
-        df_normalized, column_mapping = normalize_dataframe_columns(df)
-
-        if column_mapping:
-            st.info("🔄 **Columnas mapeadas:**")
-            for standard, actual in column_mapping.items():
-                st.write(f"  • {standard} → '{actual}'")
-
-        # Procesar datos reales
-        df_processed = process_real_brigadas_data(df_normalized)
-
-        return df_processed, True  # True indica que son datos reales
+        return df if len(df) > 0 else None
 
     except Exception as e:
-        st.error(f"❌ Error leyendo archivo: {str(e)}")
-        st.info("💡 Usando datos de ejemplo como respaldo")
-        return create_sample_brigadas_data(), False
+        st.error(f"Error loading data: {e}")
+        return None
 
 
 def process_real_brigadas_data(df):
