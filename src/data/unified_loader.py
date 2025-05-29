@@ -489,27 +489,18 @@ def unify_vacunacion(resumen_path, historica_path):
 
 @st.cache_data(ttl=3600, show_spinner=False)  # Cache por 1 hora
 def load_and_combine_data(resumen_path, historico_path, aseguramiento_path):
-    """Carga y combina los datos de manera optimizada"""
+    """Carga y combina los datos con validación mejorada"""
     try:
         progress_text = st.empty()
         progress_bar = st.progress(0)
 
         # 1. Cargar datos de aseguramiento (archivo pequeño)
-        progress_text.text("🔄 Cargando aseguramiento...")
-        df_aseguramiento = pd.read_excel(
-            aseguramiento_path,
-            usecols=[
-                "Municipio",
-                "Nombre Entidad",
-                "CONTRIBUTIVO",
-                "SUBSIDIADO",
-                "Total general",
-            ],
-        )
+        progress_text.text("🔄 Cargando datos de aseguramiento...")
+        df_aseguramiento = pd.read_excel(aseguramiento_path)
         progress_bar.progress(20)
 
         # 2. Cargar datos históricos (archivo grande) con optimizaciones
-        progress_text.text("🔄 Cargando históricos...")
+        progress_text.text("🔄 Cargando datos históricos...")
         df_historico = pd.read_csv(
             historico_path,
             usecols=[
@@ -530,31 +521,57 @@ def load_and_combine_data(resumen_path, historico_path, aseguramiento_path):
                 "RegimenAfiliacion": "category",
                 "NombreAseguradora": "category",
             },
-            parse_dates=["FechaNacimiento"],
+            parse_dates=["FechaNacimiento", "FA UNICA"],
+            date_parser=lambda x: pd.to_datetime(x, errors="coerce"),
         )
-        progress_bar.progress(60)
+        progress_bar.progress(50)
+
+        # Validar y limpiar fechas
+        invalid_dates = df_historico["FA UNICA"].isna().sum()
+        total_records = len(df_historico)
+        invalid_percent = (invalid_dates / total_records) * 100
+
+        if invalid_percent > 5:  # More than 5% invalid dates
+            st.warning(f"⚠️ Alto porcentaje de fechas inválidas: {invalid_percent:.1f}%")
+            df_historico = df_historico.dropna(subset=["FA UNICA"])
+            st.info(f"ℹ️ Se removieron {invalid_dates} registros con fechas inválidas")
+
+        progress_text.text("🔄 Procesando datos históricos...")
+        df_historico = clean_data(df_historico)
+        progress_bar.progress(70)
 
         # 3. Cargar datos de brigadas
-        progress_text.text("🔄 Cargando brigadas...")
+        progress_text.text("🔄 Cargando datos de brigadas...")
         df_brigadas = pd.read_excel(
             resumen_path,
             sheet_name="Vacunacion",
             usecols=["FECHA", "MUNICIPIO", "TPE", "TPVP"],
+            parse_dates=["FECHA"],
         )
-        progress_bar.progress(80)
 
-        # 4. Determinar fecha de corte
+        # Limpiar datos de brigadas
+        df_brigadas = clean_data(df_brigadas)
+        progress_bar.progress(90)
+
+        # 4. Determinar fecha de corte y combinar datos
         fecha_corte = df_brigadas["FECHA"].min()
 
-        # 5. Limpiar y combinar datos
-        progress_text.text("🔄 Procesando...")
+        # 5. Combinar datos usando vaccination_combiner
+        progress_text.text("🔄 Combinando datos...")
         df_combined = combine_vaccination_data(df_historico, df_brigadas, fecha_corte)
 
         progress_bar.progress(100)
-        progress_text.text("✅ Datos cargados")
+        progress_text.text("✅ Datos cargados y combinados exitosamente")
 
         return df_combined, df_aseguramiento, fecha_corte
 
     except Exception as e:
-        st.error(f"Error en carga de datos: {str(e)}")
+        st.error(f"Error cargando datos: {str(e)}")
         raise e
+    finally:
+        # Limpiar elementos de progreso
+        try:
+            progress_text.empty()
+            progress_bar.empty()
+        except:
+            pass

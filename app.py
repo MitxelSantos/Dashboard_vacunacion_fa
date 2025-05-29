@@ -7,9 +7,17 @@ Autor: Ing. José Miguel Santos
 Versión: 3.0.0 - Sistema Unificado Completo
 """
 
-import os
-import sys
 import streamlit as st
+
+# THIS MUST BE THE FIRST STREAMLIT COMMAND
+st.set_page_config(
+    page_title="Dashboard Fiebre Amarilla",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# Rest of imports
+import sys
 import pandas as pd
 import numpy as np
 from pathlib import Path
