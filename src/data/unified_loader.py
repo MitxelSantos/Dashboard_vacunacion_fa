@@ -14,6 +14,8 @@ import traceback
 from .preprocessor import clean_dates, clean_age, normalize_municipality_names
 from .data_cleaner import clean_data, calculate_current_age
 from .vaccination_combiner import combine_vaccination_data
+import os
+from typing import Union, Optional
 
 # Configuración de rutas
 DATA_DIR = Path(__file__).parent.parent.parent / "data"
@@ -575,3 +577,32 @@ def load_and_combine_data(resumen_path, historico_path, aseguramiento_path):
             progress_bar.empty()
         except:
             pass
+
+
+def load_and_combine_data(file_path: Union[str, Path]) -> Optional[pd.DataFrame]:
+    """
+    Load and combine vaccination data from CSV file
+
+    Args:
+        file_path (Union[str, Path]): Path to the CSV file
+
+    Returns:
+        Optional[pd.DataFrame]: Combined DataFrame or None if error occurs
+    """
+    try:
+        if not isinstance(file_path, (str, os.PathLike)):
+            raise TypeError("El archivo debe ser una ruta válida (string o PathLike)")
+
+        # Convert to Path object for better path handling
+        file_path = Path(file_path)
+
+        if not file_path.exists():
+            raise FileNotFoundError(f"No se encontró el archivo: {file_path}")
+
+        # Read the CSV file
+        df = pd.read_csv(file_path)
+        return df
+
+    except Exception as e:
+        print(f"Error cargando datos: {str(e)}")
+        return None

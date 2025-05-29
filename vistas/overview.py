@@ -66,3 +66,23 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
                 color_map={},
             )
             st.plotly_chart(fig, use_container_width=True)
+
+
+def mostrar_overview(data):
+    """
+    Display overview statistics and visualizations for the vaccination dashboard
+
+    Args:
+        data (pd.DataFrame): DataFrame containing vaccination data
+    """
+    st.header("Overview del Dashboard de Vacunación")
+
+    # Basic statistics
+    if not data.empty:
+        total_vacunados = len(data)
+        st.metric("Total de Vacunados", f"{total_vacunados:,}")
+
+        # Add more overview statistics and visualizations as needed
+        # You can customize this function based on your specific requirements
+    else:
+        st.warning("No hay datos disponibles para mostrar")

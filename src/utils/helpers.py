@@ -69,3 +69,22 @@ def create_metric(title, value, delta=None):
 def get_colors():
     """Función de conveniencia para obtener colores institucionales"""
     return dashboard_helpers.get_institutional_colors()
+
+
+def get_image_as_base64(image_path):
+    """
+    Convert an image file to base64 string
+
+    Args:
+        image_path (str): Path to the image file
+
+    Returns:
+        str: Base64 encoded string of the image
+    """
+    try:
+        with open(image_path, "rb") as image_file:
+            encoded_string = base64.b64encode(image_file.read()).decode("utf-8")
+            return encoded_string
+    except Exception as e:
+        print(f"Error converting image to base64: {e}")
+        return ""
