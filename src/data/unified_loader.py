@@ -2,6 +2,7 @@
 src/data/unified_loader.py
 Cargador unificado para todas las fuentes de datos del dashboard.
 Maneja población por EAPB, vacunación histórica y brigadas de emergencia.
+VERSIÓN CORREGIDA - Eliminadas definiciones conflictivas
 """
 
 import pandas as pd
@@ -491,76 +492,149 @@ def unify_vacunacion(resumen_path, historica_path):
 
 @st.cache_data(ttl=3600, show_spinner=False)  # Cache por 1 hora
 def load_and_combine_data(resumen_path, historico_path, aseguramiento_path):
-    """Carga y combina los datos con validación mejorada"""
+    """
+    Carga y combina los datos con validación mejorada
+    FUNCIÓN PRINCIPAL - CORREGIDA para manejar 3 parámetros
+    """
     try:
         progress_text = st.empty()
         progress_bar = st.progress(0)
 
         # 1. Cargar datos de aseguramiento (archivo pequeño)
         progress_text.text("🔄 Cargando datos de aseguramiento...")
+
+        # Verificar si el archivo existe
+        if not os.path.exists(aseguramiento_path):
+            st.error(f"❌ Archivo no encontrado: {aseguramiento_path}")
+            return None, None, None
+
         df_aseguramiento = pd.read_excel(aseguramiento_path)
         progress_bar.progress(20)
 
         # 2. Cargar datos históricos (archivo grande) con optimizaciones
         progress_text.text("🔄 Cargando datos históricos...")
-        df_historico = pd.read_csv(
-            historico_path,
-            usecols=[
-                "IdPaciente",
-                "TipoIdentificacion",
-                "Documento",
-                "FechaNacimiento",
-                "NombreMunicipioResidencia",
-                "RegimenAfiliacion",
-                "NombreAseguradora",
-                "FA UNICA",
-            ],
-            dtype={
-                "IdPaciente": "str",
-                "TipoIdentificacion": "category",
-                "Documento": "str",
-                "NombreMunicipioResidencia": "category",
-                "RegimenAfiliacion": "category",
-                "NombreAseguradora": "category",
-            },
-            parse_dates=["FechaNacimiento", "FA UNICA"],
-            date_parser=lambda x: pd.to_datetime(x, errors="coerce"),
-        )
+
+        if not os.path.exists(historico_path):
+            st.warning(f"⚠️ Archivo histórico no encontrado: {historico_path}")
+            df_historico = pd.DataFrame()
+        else:
+            try:
+                df_historico = pd.read_csv(
+                    historico_path,
+                    usecols=[
+                        "IdPaciente",
+                        "TipoIdentificacion",
+                        "Documento",
+                        "FechaNacimiento",
+                        "NombreMunicipioResidencia",
+                        "RegimenAfiliacion",
+                        "NombreAseguradora",
+                        "FA UNICA",
+                    ],
+                    dtype={
+                        "IdPaciente": "str",
+                        "TipoIdentificacion": "category",
+                        "Documento": "str",
+                        "NombreMunicipioResidencia": "category",
+                        "RegimenAfiliacion": "category",
+                        "NombreAseguradora": "category",
+                    },
+                    parse_dates=["FechaNacimiento", "FA UNICA"],
+                    date_parser=lambda x: pd.to_datetime(x, errors="coerce"),
+                )
+            except Exception as e:
+                st.warning(f"⚠️ Error cargando datos históricos: {str(e)}")
+                df_historico = pd.DataFrame()
+
         progress_bar.progress(50)
 
-        # Validar y limpiar fechas
-        invalid_dates = df_historico["FA UNICA"].isna().sum()
-        total_records = len(df_historico)
-        invalid_percent = (invalid_dates / total_records) * 100
+        # Validar y limpiar fechas si hay datos históricos
+        if not df_historico.empty:
+            invalid_dates = df_historico["FA UNICA"].isna().sum()
+            total_records = len(df_historico)
+            invalid_percent = (invalid_dates / total_records) * 100
 
-        if invalid_percent > 5:  # More than 5% invalid dates
-            st.warning(f"⚠️ Alto porcentaje de fechas inválidas: {invalid_percent:.1f}%")
-            df_historico = df_historico.dropna(subset=["FA UNICA"])
-            st.info(f"ℹ️ Se removieron {invalid_dates} registros con fechas inválidas")
+            if invalid_percent > 5:  # More than 5% invalid dates
+                st.warning(
+                    f"⚠️ Alto porcentaje de fechas inválidas: {invalid_percent:.1f}%"
+                )
+                df_historico = df_historico.dropna(subset=["FA UNICA"])
+                st.info(
+                    f"ℹ️ Se removieron {invalid_dates} registros con fechas inválidas"
+                )
 
-        progress_text.text("🔄 Procesando datos históricos...")
-        df_historico = clean_data(df_historico)
+            progress_text.text("🔄 Procesando datos históricos...")
+            df_historico = clean_data(df_historico)
+
         progress_bar.progress(70)
 
         # 3. Cargar datos de brigadas
         progress_text.text("🔄 Cargando datos de brigadas...")
-        df_brigadas = pd.read_excel(
-            resumen_path,
-            sheet_name="Vacunacion",
-            usecols=["FECHA", "MUNICIPIO", "TPE", "TPVP"],
-            parse_dates=["FECHA"],
-        )
 
-        # Limpiar datos de brigadas
-        df_brigadas = clean_data(df_brigadas)
+        if not os.path.exists(resumen_path):
+            st.warning(f"⚠️ Archivo de brigadas no encontrado: {resumen_path}")
+            df_brigadas = pd.DataFrame()
+            fecha_corte = pd.Timestamp.now()
+        else:
+            try:
+                df_brigadas = pd.read_excel(
+                    resumen_path,
+                    sheet_name="Vacunacion",
+                    usecols=["FECHA", "MUNICIPIO", "TPE", "TPVP"],
+                    parse_dates=["FECHA"],
+                )
+
+                # Limpiar datos de brigadas
+                df_brigadas = clean_data(df_brigadas)
+
+                # Determinar fecha de corte
+                fecha_corte = (
+                    df_brigadas["FECHA"].min()
+                    if not df_brigadas.empty
+                    else pd.Timestamp.now()
+                )
+            except Exception as e:
+                st.warning(f"⚠️ Error cargando datos de brigadas: {str(e)}")
+                df_brigadas = pd.DataFrame()
+                fecha_corte = pd.Timestamp.now()
+
         progress_bar.progress(90)
 
-        # 4. Determinar fecha de corte y combinar datos
-        fecha_corte = df_brigadas["FECHA"].min()
-
-        # 5. Combinar datos usando vaccination_combiner
+        # 4. Combinar datos - combinación simple sin vaccination_combiner
         progress_text.text("🔄 Combinando datos...")
-        df_combined = combine_vaccination_data(df_historico, df_brigadas, fecha_corte)
+
+        if not df_historico.empty and not df_brigadas.empty:
+            try:
+                # Combinar datos de manera simple
+                # Agregar marcador de período a cada DataFrame
+                df_historico_marked = df_historico.copy()
+                df_historico_marked["periodo"] = "historico"
+                df_historico_marked["tipo_registro"] = "individual"
+
+                # Para brigadas, crear registros sintéticos si es necesario
+                # Por ahora, usar los datos tal como están
+                df_brigadas_marked = df_brigadas.copy()
+                df_brigadas_marked["periodo"] = "emergencia"
+                df_brigadas_marked["tipo_registro"] = "brigada"
+
+                # Combinar DataFrames
+                df_combined = pd.concat(
+                    [df_historico_marked, df_brigadas_marked],
+                    ignore_index=True,
+                    sort=False,
+                )
+
+            except Exception as e:
+                st.warning(f"⚠️ Error combinando datos: {str(e)}")
+                # Fallback: usar datos históricos solamente
+                df_combined = df_historico
+        elif not df_historico.empty:
+            df_combined = df_historico
+        elif not df_brigadas.empty:
+            df_combined = df_brigadas
+        else:
+            st.error("❌ No se pudieron cargar datos de ninguna fuente")
+            return None, None, None
 
         progress_bar.progress(100)
         progress_text.text("✅ Datos cargados y combinados exitosamente")
@@ -569,7 +643,8 @@ def load_and_combine_data(resumen_path, historico_path, aseguramiento_path):
 
     except Exception as e:
         st.error(f"Error cargando datos: {str(e)}")
-        raise e
+        st.error(f"Traceback: {traceback.format_exc()}")
+        return None, None, None
     finally:
         # Limpiar elementos de progreso
         try:
@@ -579,15 +654,11 @@ def load_and_combine_data(resumen_path, historico_path, aseguramiento_path):
             pass
 
 
-def load_and_combine_data(file_path: Union[str, Path]) -> Optional[pd.DataFrame]:
+# Función auxiliar para cargar un solo archivo CSV (mantenida para compatibilidad)
+def load_single_csv_file(file_path: Union[str, Path]) -> Optional[pd.DataFrame]:
     """
-    Load and combine vaccination data from CSV file
-
-    Args:
-        file_path (Union[str, Path]): Path to the CSV file
-
-    Returns:
-        Optional[pd.DataFrame]: Combined DataFrame or None if error occurs
+    Load a single CSV file
+    Función auxiliar para compatibilidad
     """
     try:
         if not isinstance(file_path, (str, os.PathLike)):
