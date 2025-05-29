@@ -8,6 +8,7 @@ from src.visualization.charts import (
     create_pie_chart,
     create_scatter_plot,
 )
+from src.data.unified_loader import load_and_combine_data
 
 
 # Función auxiliar para formatear números grandes de manera responsiva
@@ -143,6 +144,73 @@ def validate_filtered_data(filtered_data):
             return False
 
     return True
+
+
+def mostrar_overview(df, fecha_corte):
+    """Muestra la vista general del dashboard"""
+
+    # Contenedor principal
+    with st.container():
+        # Métricas principales
+        col1, col2, col3, col4 = st.columns(4)
+
+        with col1:
+            total_vacunados = len(df)
+            st.metric("Total Vacunados", f"{total_vacunados:,}")
+
+        with col2:
+            total_pre = len(df[df["Fecha_Aplicacion"] < fecha_corte])
+            st.metric("Pre-Emergencia", f"{total_pre:,}")
+
+        with col3:
+            total_post = len(df[df["Fecha_Aplicacion"] >= fecha_corte])
+            st.metric("Durante Emergencia", f"{total_post:,}")
+
+        with col4:
+            meta = 500000
+            avance = (total_vacunados / meta) * 100
+            st.metric("Avance Meta", f"{avance:.1f}%")
+
+        # Gráficos
+        col1, col2 = st.columns(2)
+
+        with col1:
+            # Evolución diaria
+            daily_vac = (
+                df.groupby("Fecha_Aplicacion").size().reset_index(name="Vacunados")
+            )
+            fig = px.line(
+                daily_vac,
+                x="Fecha_Aplicacion",
+                y="Vacunados",
+                title="Evolución Diaria de Vacunación",
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+        with col2:
+            # Top 10 municipios
+            top_mun = df["Municipio"].value_counts().head(10)
+            fig = px.bar(
+                top_mun,
+                title="Top 10 Municipios por Vacunación",
+                labels={"index": "Municipio", "value": "Vacunados"},
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+        # Tabla resumen
+        st.subheader("Resumen por Municipio")
+        resumen = (
+            df.groupby("Municipio")
+            .agg(
+                {
+                    "Fecha_Aplicacion": "count",
+                }
+            )
+            .reset_index()
+        )
+        resumen.columns = ["Municipio", "Total Vacunados"]
+        resumen = resumen.sort_values("Total Vacunados", ascending=False)
+        st.dataframe(resumen, use_container_width=True)
 
 
 def show(data, filters, colors, fuente_poblacion="DANE"):
@@ -858,3 +926,7 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
         st.write(
             f"- Filtros activos: {sum(1 for v in filters.values() if v != 'Todos')}"
         )
+
+    # Mostrar la nueva sección de overview
+    st.sidebar.header("Resumen General")
+    mostrar_overview()

@@ -1,16 +1,14 @@
 """
-Módulos para carga y procesamiento de datos del dashboard.
-Incluye funciones para cargar datos desde archivos, preprocesarlos y aplicar filtros.
+Data loading and processing modules
 """
 
-# Asegurar que calculate_metrics se importe correctamente
-from .loader import load_datasets, calculate_metrics
-from .preprocessor import apply_filters
-from .normalize import normalize_municipality_names
+from .unified_loader import load_and_combine_data
+from .data_cleaner import clean_data, calculate_current_age
+from .aseguramiento_loader import load_aseguramiento
 
 __all__ = [
-    "load_datasets",
-    "calculate_metrics",
-    "apply_filters",
-    "normalize_municipality_names",
+    "load_and_combine_data",
+    "clean_data",
+    "calculate_current_age",
+    "load_aseguramiento",
 ]

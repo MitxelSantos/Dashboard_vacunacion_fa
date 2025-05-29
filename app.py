@@ -40,7 +40,10 @@ sys.path.insert(0, str(SRC_DIR))
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[logging.FileHandler("dashboard.log"), logging.StreamHandler()],
+    handlers=[
+        logging.FileHandler("dashboard.log", encoding="utf-8"),
+        logging.StreamHandler(sys.stdout),
+    ],
 )
 logger = logging.getLogger(__name__)
 
@@ -68,6 +71,7 @@ try:
         create_alert,
         create_metric,
         validate_data,
+        get_image_as_base64,
     )
 
     SYSTEM_COMPONENTS_LOADED = True
@@ -90,6 +94,7 @@ view_modules = [
     "insurance",
     "trends",
     "brigadas",
+    "comparison",
 ]
 
 for view_name in view_modules:
@@ -961,6 +966,7 @@ class UnifiedDashboardApp:
                 "🏥 Aseguramiento EAPB",
                 "📈 Tendencias Temporales",
                 "📍 Brigadas Territoriales",
+                "📊 Comparación",
             ]
         )
 
@@ -988,6 +994,7 @@ class UnifiedDashboardApp:
                 "Tendencias temporales con división pre/post emergencia",
             ),
             ("brigadas", tabs[5], "Análisis de brigadas de emergencia territoriales"),
+            ("comparison", tabs[6], "Comparación entre municipios y EAPB"),
         ]
 
         # Renderizar cada pestaña
@@ -1306,3 +1313,86 @@ def main():
 # =====================================================================
 if __name__ == "__main__":
     main()
+
+import streamlit as st
+import sys
+from pathlib import Path
+
+# Configure Streamlit
+st.set_page_config(
+    page_title="Dashboard Fiebre Amarilla",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# Add project root to path
+ROOT_PATH = Path(__file__).parent
+sys.path.append(str(ROOT_PATH))
+
+from src.data import load_and_combine_data
+
+try:
+    # Initialize state
+    if "data_loaded" not in st.session_state:
+        st.session_state.data_loaded = False
+        st.session_state.loading_failed = False
+
+    if not st.session_state.data_loaded and not st.session_state.loading_failed:
+        try:
+            # Load data
+            df_combined, df_aseguramiento, fecha_corte = load_and_combine_data(
+                "data/Resumen.xlsx",
+                "data/vacunacion_fa.csv",
+                "data/Poblacion_aseguramiento.xlsx",
+            )
+
+            # Store in session state
+            st.session_state.data = (df_combined, df_aseguramiento, fecha_corte)
+            st.session_state.data_loaded = True
+            st.experimental_rerun()
+
+        except Exception as e:
+            st.session_state.loading_failed = True
+            st.error(f"Error cargando datos: {str(e)}")
+            st.stop()
+
+    # Once data is loaded, show dashboard
+    if st.session_state.data_loaded:
+        df_combined, df_aseguramiento, fecha_corte = st.session_state.data
+
+        # Create tabs
+        tabs = st.tabs(
+            [
+                "Vista General",
+                "Geográfico",
+                "Demográfico",
+                "Aseguramiento",
+                "Tendencias",
+                "Brigadas",
+            ]
+        )
+
+        # Import and show views
+        from vistas.overview import mostrar_overview
+        from vistas.geographic import mostrar_geographic
+        from vistas.demographic import mostrar_demographic
+        from vistas.insurance import mostrar_insurance
+        from vistas.trends import mostrar_trends
+        from vistas.brigadas import mostrar_brigadas
+
+        with tabs[0]:
+            mostrar_overview(df_combined, fecha_corte)
+        with tabs[1]:
+            mostrar_geographic(df_combined, df_aseguramiento)
+        with tabs[2]:
+            mostrar_demographic(df_combined, fecha_corte)
+        with tabs[3]:
+            mostrar_insurance(df_combined, df_aseguramiento)
+        with tabs[4]:
+            mostrar_trends(df_combined, fecha_corte)
+        with tabs[5]:
+            mostrar_brigadas(df_combined, df_aseguramiento, fecha_corte)
+
+except Exception as e:
+    st.error(f"Error en el dashboard: {str(e)}")
+    st.stop()

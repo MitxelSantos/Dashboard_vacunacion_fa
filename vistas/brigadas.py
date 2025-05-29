@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import re
 import unicodedata
+from src.data import load_and_combine_data
 
 
 def normalize_column_name(col_name):
@@ -1109,206 +1110,36 @@ def show_file_requirements():
     st.dataframe(required_structure, use_container_width=True)
 
 
-def show(data, filters, colors, fuente_poblacion="DANE"):
-    """
-    Vista principal de Brigadas Territoriales - VERSIÓN COMPLETA Y ROBUSTA
-    """
-    st.title("📍 Brigadas Territoriales")
-    st.markdown(
-        """
-    Esta vista analiza los datos de las brigadas de vacunación casa a casa,
-    mostrando efectividad, cobertura territorial y análisis demográfico.
-    
-    **✨ Incluye normalización automática de nombres de columnas**
-    """
+def mostrar_brigadas():
+    df_combined, df_aseguramiento, fecha_corte = load_and_combine_data(
+        "data/Resumen.xlsx",
+        "data/vacunacion_fa.csv",
+        "data/Poblacion_aseguramiento.xlsx",
     )
 
-    # Mostrar prueba de normalización si se solicita
-    if st.checkbox("🧪 Mostrar prueba de normalización de columnas"):
-        test_column_normalization()
-        st.markdown("---")
+    st.header("Análisis de Brigadas de Emergencia")
 
-    # Mostrar estado del archivo
-    file_path = "data/Resumen.xlsx"
-    file_exists = Path(file_path).exists()
+    # Solo datos post emergencia
+    df_brigadas = df_combined[df_combined["Fecha_Aplicacion"] >= fecha_corte]
 
-    if not file_exists:
-        st.warning("⚠️ Archivo de brigadas no encontrado")
+    # Métricas de brigadas
+    total_brigadas = len(df_brigadas)
+    cobertura_total = (total_brigadas / df_aseguramiento["Total"].sum() * 100).round(2)
 
-        col1, col2 = st.columns(2)
-        with col1:
-            st.info(
-                "💡 **Modo Demostración Activado**\nUsando datos de ejemplo para mostrar funcionalidad"
-            )
-        with col2:
-            if st.button("📋 Ver Requisitos del Archivo"):
-                show_file_requirements()
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("Total Vacunados en Brigadas", f"{total_brigadas:,}")
+    with col2:
+        st.metric("Cobertura Alcanzada", f"{cobertura_total}%")
 
-    # Cargar datos (reales o de ejemplo)
-    df_brigadas, is_real_data = load_brigadas_data(file_path)
-
-    if df_brigadas.empty:
-        st.error("❌ No se pudieron generar datos para análisis")
-        return
-
-    # Mostrar tipo de datos
-    if is_real_data:
-        st.success("✅ **Usando datos reales de tu archivo**")
-    else:
-        st.info(
-            "🎬 **Usando datos de demostración** - Coloca tu archivo Excel para análisis real"
-        )
-
-    # Mostrar información de columnas
-    with st.expander("📋 Información de Columnas Detectadas"):
-        st.write(f"**Total de columnas:** {len(df_brigadas.columns)}")
-        for i, col in enumerate(df_brigadas.columns, 1):
-            col_normalized = normalize_column_name(col)
-            st.write(f"{i:2d}. '{col}' → normalizado: '{col_normalized}'")
-
-    # Procesar datos con análisis de efectividad
-    df_brigadas = create_effectiveness_analysis(df_brigadas)
-
-    # Filtros específicos para brigadas
-    st.sidebar.subheader("Filtros de Brigadas")
-
-    # Filtro por municipio con acceso seguro
-    municipio_brigada = "Todos"
-    municipios = safe_column_access(
-        df_brigadas, ["MUNICIPIO", "Municipio"], "Sin dato"
-    ).unique()
-    if len(municipios) > 1:
-        municipios_clean = [
-            m for m in municipios if str(m) != "Sin dato" and str(m) != "nan"
-        ]
-        if municipios_clean:
-            municipios_brigadas = ["Todos"] + sorted(municipios_clean)
-            municipio_brigada = st.sidebar.selectbox(
-                "Municipio de Brigada:", municipios_brigadas
-            )
-
-    # Filtro por rango de fechas con acceso seguro
-    fecha_inicio = None
-    fecha_fin = None
-    fecha_series = safe_column_access(df_brigadas, ["FECHA", "Fecha", "DATE"], pd.NaT)
-    if not fecha_series.isna().all():
-        fecha_min = fecha_series.min().date()
-        fecha_max = fecha_series.max().date()
-
-        fecha_inicio = st.sidebar.date_input(
-            "Fecha inicio:", value=fecha_min, min_value=fecha_min, max_value=fecha_max
-        )
-
-        fecha_fin = st.sidebar.date_input(
-            "Fecha fin:", value=fecha_max, min_value=fecha_min, max_value=fecha_max
-        )
-    else:
-        st.sidebar.warning("Filtros de fecha no disponibles")
-
-    # Aplicar filtros
-    df_filtered = df_brigadas.copy()
-
-    if municipio_brigada != "Todos":
-        municipio_col = safe_column_access(
-            df_filtered, ["MUNICIPIO", "Municipio"], "Sin dato"
-        )
-        df_filtered = df_filtered[municipio_col == municipio_brigada]
-
-    if fecha_inicio and fecha_fin:
-        fecha_col = safe_column_access(df_filtered, ["FECHA", "Fecha", "DATE"], pd.NaT)
-        if not fecha_col.isna().all():
-            df_filtered = df_filtered[
-                (fecha_col.dt.date >= fecha_inicio) & (fecha_col.dt.date <= fecha_fin)
-            ]
-
-    if df_filtered.empty:
-        st.warning("⚠️ No hay datos con los filtros seleccionados")
-        return
-
-    st.success(f"✅ Datos cargados: {len(df_filtered)} brigadas")
-    if not is_real_data:
-        st.info(
-            "🎬 **Datos de demostración** - Coloca tu archivo real para análisis completo"
-        )
-
-    # Mostrar análisis
-    show_brigadas_overview(df_filtered, colors)
-
-    st.markdown("---")
-    show_temporal_brigadas_analysis(df_filtered, colors)
-
-    st.markdown("---")
-    show_territorial_analysis(df_filtered, colors)
-
-    st.markdown("---")
-    show_demographic_brigadas_analysis(df_filtered, colors)
-
-    # Tabla detallada básica
-    st.subheader("📋 Datos de Brigadas")
-
-    # Mostrar columnas disponibles
-    with st.expander("📝 Columnas disponibles en los datos"):
-        st.write(f"Total de columnas: {len(df_filtered.columns)}")
-        for i, col in enumerate(df_filtered.columns, 1):
-            st.write(f"{i:2d}. {col}")
-
-    # Mostrar tabla básica con columnas disponibles
-    display_columns = []
-    possible_display_cols = [
-        ["FECHA", "Fecha"],
-        ["MUNICIPIO", "Municipio"],
-        ["VEREDAS", "Veredas"],
-        ["Efectivas (E)", "EFECTIVAS"],
-        ["TPE"],
-        ["TPVB"],
-        ["tasa_efectividad"],
-    ]
-
-    for col_variations in possible_display_cols:
-        for col_name in col_variations:
-            if col_name in df_filtered.columns:
-                display_columns.append(col_name)
-                break
-
-    if display_columns:
-        st.dataframe(df_filtered[display_columns].head(20), use_container_width=True)
-    else:
-        st.dataframe(df_filtered.head(20), use_container_width=True)
-
-    # Insights finales
-    st.markdown("---")
-    st.subheader("💡 Insights de Brigadas")
-
-    insights = [
-        f"📊 **{len(df_filtered)} brigadas** analizadas con los filtros aplicados",
-        f"🗺️ **{safe_column_access(df_filtered, ['MUNICIPIO'], 'Sin dato').nunique()} municipios** diferentes visitados",
-        f"📅 **Tipo de datos**: {'Reales' if is_real_data else 'Simulados para demostración'}",
-        f"🔧 **Normalización**: Activa - maneja espacios y variaciones en nombres de columnas",
-    ]
-
-    # Añadir insight temporal si hay datos de fecha
-    fecha_col = safe_column_access(df_filtered, ["FECHA", "Fecha"], pd.NaT)
-    if not fecha_col.isna().all():
-        fecha_inicio_data = fecha_col.min().strftime("%d/%m/%Y")
-        fecha_fin_data = fecha_col.max().strftime("%d/%m/%Y")
-        insights.append(f"📅 **Período**: {fecha_inicio_data} - {fecha_fin_data}")
-
-    for insight in insights:
-        st.markdown(f"- {insight}")
-
-    # Información final sobre normalización
-    st.markdown("---")
-    st.info(
-        """
-    ✅ **Normalización de Columnas Activa:**
-    - Maneja espacios al principio y final de nombres de columnas
-    - Busca automáticamente variaciones de nombres (mayúsculas/minúsculas)
-    - Crea alias estándar para columnas comunes
-    - Funciona con cualquier formato de archivo Excel
-    
-    🔧 **Acceso Seguro a Datos:**
-    - Nunca falla por columnas faltantes
-    - Busca automáticamente nombres alternativos
-    - Proporciona valores por defecto seguros
-    """
+    # Avance por municipio
+    avance_municipal = (
+        df_brigadas.groupby("Municipio").size().reset_index(name="Vacunados")
     )
+    fig_avance = px.bar(
+        avance_municipal.sort_values("Vacunados", ascending=False),
+        x="Municipio",
+        y="Vacunados",
+        title="Avance por Municipio en Brigadas",
+    )
+    st.plotly_chart(fig_avance)

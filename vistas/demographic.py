@@ -849,3 +849,28 @@ def show(data, filters, colors, fuente_poblacion="DANE"):
 
     except Exception as e:
         st.warning(f"No se pudieron calcular todos los insights finales: {str(e)}")
+
+
+import streamlit as st
+import plotly.express as px
+
+
+def mostrar_demographic(df, fecha_corte):
+    """Muestra la vista demográfica del dashboard"""
+
+    st.header("Perfil Demográfico")
+    st.caption("Análisis de la población vacunada por edad y género")
+
+    # Gráfico por edad
+    fig_edad = px.histogram(df, x="Edad", title="Distribución por Edad", nbins=20)
+    st.plotly_chart(fig_edad, use_container_width=True)
+
+    # Gráfico por género
+    if "Sexo" in df.columns:
+        genero_count = df["Sexo"].value_counts()
+        fig_genero = px.pie(
+            values=genero_count.values,
+            names=genero_count.index,
+            title="Distribución por Género",
+        )
+        st.plotly_chart(fig_genero, use_container_width=True)

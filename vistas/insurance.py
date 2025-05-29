@@ -4,6 +4,7 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from src.visualization.charts import create_bar_chart, create_pie_chart
+from src.data import load_and_combine_data
 
 
 def normalize_insurance_data(df):
@@ -181,6 +182,36 @@ def create_eapb_coverage_by_municipality(data, metricas_data, fuente_poblacion, 
 
     except Exception as e:
         return None
+
+
+def mostrar_insurance():
+    df_combined, df_aseguramiento, _ = load_and_combine_data(
+        "data/Resumen.xlsx",
+        "data/vacunacion_fa.csv",
+        "data/Poblacion_aseguramiento.xlsx",
+    )
+
+    st.header("Análisis por EAPB")
+
+    # Distribución por tipo de aseguramiento
+    tipos_aseg = ["Subsidiado", "Contributivo", "Especial", "Excepcion"]
+    df_tipos = df_aseguramiento[tipos_aseg].sum()
+
+    fig_tipos = px.pie(
+        values=df_tipos.values,
+        names=df_tipos.index,
+        title="Distribución por Tipo de Aseguramiento",
+    )
+    st.plotly_chart(fig_tipos)
+
+    # Top EAPB por afiliados
+    top_eapb = (
+        df_aseguramiento.groupby("EAPB")["Total"].sum().sort_values(ascending=False)
+    )
+    fig_eapb = px.bar(
+        top_eapb.reset_index(), x="EAPB", y="Total", title="Afiliados por EAPB"
+    )
+    st.plotly_chart(fig_eapb)
 
 
 def show(data, filters, colors, fuente_poblacion="DANE"):

@@ -11,6 +11,9 @@ from pathlib import Path
 from datetime import datetime, date
 import warnings
 import traceback
+from .preprocessor import clean_dates, clean_age, normalize_municipality_names
+from .data_cleaner import clean_data, calculate_current_age
+from .vaccination_combiner import combine_vaccination_data
 
 # Configuración de rutas
 DATA_DIR = Path(__file__).parent.parent.parent / "data"
@@ -455,5 +458,87 @@ def test_unified_loader():
         st.error("❌ Prueba fallida")
 
 
-if __name__ == "__main__":
-    test_unified_loader()
+def load_vacunacion_resumen(path):
+    df = pd.read_csv(path)
+    df = clean_dates(df, ["Fecha_Aplicacion"])
+    df = normalize_municipality_names(df, "Municipio")
+    return df
+
+
+def load_vacunacion_historica(path):
+    df = pd.read_csv(path)
+    df = clean_dates(df, ["Fecha_Aplicacion", "Fecha_Nacimiento"])
+    df = normalize_municipality_names(df, "Municipio")
+    df = clean_age(df, "Fecha_Nacimiento")
+    return df
+
+
+def get_fecha_corte(df_resumen):
+    return df_resumen["Fecha_Aplicacion"].min()
+
+
+def unify_vacunacion(resumen_path, historica_path):
+    df_resumen = load_vacunacion_resumen(resumen_path)
+    fecha_corte = get_fecha_corte(df_resumen)
+    df_historica = load_vacunacion_historica(historica_path)
+    df_historica = df_historica[df_historica["Fecha_Aplicacion"] < fecha_corte]
+    df_unificada = pd.concat([df_historica, df_resumen], ignore_index=True)
+    fecha_actualizacion = df_unificada["Fecha_Aplicacion"].max()
+    return df_unificada, fecha_actualizacion, fecha_corte
+
+
+@st.cache_data(show_spinner=False)
+def load_and_combine_data(resumen_path, historico_path, aseguramiento_path):
+    """Carga y combina los datos de vacunación de manera optimizada"""
+    try:
+        progress_text = st.empty()
+        progress_bar = st.progress(0)
+
+        # 1. Load aseguramiento data
+        progress_text.text("🔄 Cargando datos de aseguramiento...")
+        df_aseguramiento = pd.read_excel(aseguramiento_path)
+        progress_bar.progress(20)
+
+        # 2. Load historical data
+        progress_text.text("🔄 Cargando datos históricos...")
+        df_historico = pd.read_csv(
+            historico_path,
+            usecols=[
+                "IdPaciente",
+                "TipoIdentificacion",
+                "Documento",
+                "FechaNacimiento",
+                "NombreMunicipioResidencia",
+                "RegimenAfiliacion",
+                "NombreAseguradora",
+                "FA UNICA",
+            ],
+        )
+        progress_bar.progress(50)
+
+        # 3. Load brigades data
+        progress_text.text("🔄 Cargando datos de brigadas...")
+        df_brigadas = pd.read_excel(
+            resumen_path,
+            sheet_name="Vacunacion",
+            usecols=["FECHA", "MUNICIPIO", "TPE", "TPVP"],
+        )
+        progress_bar.progress(70)
+
+        # 4. Get cutoff date
+        fecha_corte = df_brigadas["FECHA"].min()
+
+        # 5. Clean and combine data
+        progress_text.text("🔄 Procesando y combinando datos...")
+        df_combined = combine_vaccination_data(
+            clean_data(df_historico), clean_data(df_brigadas), fecha_corte
+        )
+
+        progress_bar.progress(100)
+        progress_text.text("✅ Carga de datos completada")
+
+        return df_combined, df_aseguramiento, fecha_corte
+
+    except Exception as e:
+        st.error(f"❌ Error en la carga de datos: {str(e)}")
+        raise e
