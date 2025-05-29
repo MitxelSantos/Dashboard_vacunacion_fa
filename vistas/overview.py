@@ -345,3 +345,17 @@ def mostrar_overview(data):
 
     except Exception as e:
         st.error(f"Error en overview básico: {str(e)}")
+
+
+# En cualquier vista, puedes mostrar esta información:
+def show_temporal_info(metadata):
+    if metadata and "cutoff_date" in metadata:
+        cutoff_date = metadata["cutoff_date"]
+        st.info(
+            f"""
+        📅 **División Temporal Automática:**
+        - **Fecha de corte:** {cutoff_date.strftime('%d de %B de %Y')}
+        - **Pre-emergencia:** Datos anteriores al {cutoff_date.strftime('%d/%m/%Y')}
+        - **Emergencia:** Brigadas desde el {cutoff_date.strftime('%d/%m/%Y')}
+        """
+        )

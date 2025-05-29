@@ -500,6 +500,25 @@ def load_and_combine_data(resumen_path, historico_path, aseguramiento_path):
         progress_text = st.empty()
         progress_bar = st.progress(0)
 
+        # 1. Verificar que las rutas son strings, no DataFrames
+        if not isinstance(resumen_path, (str, Path)):
+            st.error(
+                f"❌ resumen_path debe ser una ruta de archivo, no {type(resumen_path)}"
+            )
+            return None, None, None
+
+        if not isinstance(historico_path, (str, Path)):
+            st.error(
+                f"❌ historico_path debe ser una ruta de archivo, no {type(historico_path)}"
+            )
+            return None, None, None
+
+        if not isinstance(aseguramiento_path, (str, Path)):
+            st.error(
+                f"❌ aseguramiento_path debe ser una ruta de archivo, no {type(aseguramiento_path)}"
+            )
+            return None, None, None
+
         # 1. Cargar datos de aseguramiento (archivo pequeño)
         progress_text.text("🔄 Cargando datos de aseguramiento...")
 
