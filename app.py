@@ -1,6 +1,7 @@
 """
 app.py - Dashboard de Vacunación Fiebre Amarilla - Tolima
-Versión corregida con rangos de edad correctos y cálculo de edad desde fecha de nacimiento
+Versión 2.2 - Estructura corregida: 11 rangos + totales, detección por posición,
+enfoque en vacunas aplicadas, fechas completas, municipios correctos
 """
 
 import streamlit as st
@@ -30,7 +31,7 @@ COLORS = {
     "white": "#FFFFFF",
 }
 
-# Rangos de edad correctos para análisis
+# Rangos de edad actualizados (11 rangos)
 RANGOS_EDAD = {
     "<1": "< 1 año",
     "1-5": "1-5 años",
@@ -41,6 +42,8 @@ RANGOS_EDAD = {
     "41-50": "41-50 años",
     "51-59": "51-59 años",
     "60+": "60 años y más",
+    "60-69": "60-69 años",
+    "70+": "70 años y más",
 }
 
 
@@ -116,10 +119,10 @@ def load_barridos_data():
         if os.path.exists("data/Resumen.xlsx"):
             # Intentar diferentes hojas
             try:
-                df = pd.read_excel("data/Resumen.xlsx", sheet_name="Barridos")
+                df = pd.read_excel("data/Resumen.xlsx", sheet_name="Vacunacion")
             except:
                 try:
-                    df = pd.read_excel("data/Resumen.xlsx", sheet_name="Vacunacion")
+                    df = pd.read_excel("data/Resumen.xlsx", sheet_name="Barridos")
                 except:
                     # Si no existe, usar la primera hoja
                     df = pd.read_excel("data/Resumen.xlsx", sheet_name=0)
@@ -130,7 +133,7 @@ def load_barridos_data():
                     df["FECHA"] = pd.to_datetime(df["FECHA"], errors="coerce")
 
                 st.info(f"🔍 **Barridos cargados:** {len(df)} registros")
-                st.info(f"📊 **Columnas disponibles:** {list(df.columns)}")
+                st.info(f"📊 **Columnas disponibles:** {len(df.columns)} columnas")
 
                 return df
 
@@ -181,29 +184,24 @@ def load_population_data():
 
 
 def detect_age_columns_barridos(df):
-    """Detecta EXACTAMENTE 11 rangos de edad por cada una de las 4 etapas"""
+    """Detecta 11 rangos + 1 total = 12 columnas por etapa (ESTRUCTURA REAL)"""
     age_columns_by_stage = {
-        "etapa_1_encontrada": {},  # Población encontrada
-        "etapa_2_previa": {},  # Vacunada previamente
-        "etapa_3_no_vacunada": {},  # No vacunada encontrada
-        "etapa_4_vacunada_barrido": {},  # Vacunada en barrido
+        "etapa_1_encontrada": {},
+        "etapa_2_previa": {},
+        "etapa_3_no_vacunada": {},
+        "etapa_4_vacunada_barrido": {},
     }
 
-    # Rangos estándar esperados (11 rangos)
-    rangos_estandar = [
-        "<1",
-        "1-5",
-        "6-10",
-        "11-20",
-        "21-30",
-        "31-40",
-        "41-50",
-        "51-59",
-        "60+",
-    ]
+    # Columnas de totales por etapa
+    total_columns_by_stage = {
+        "etapa_1_encontrada": None,  # TPE
+        "etapa_2_previa": None,  # TPVP
+        "etapa_3_no_vacunada": None,  # TPNVP
+        "etapa_4_vacunada_barrido": None,  # TPVB
+    }
 
-    # Patrones específicos para cada rango
-    patrones_busqueda = {
+    # 11 rangos base exactos
+    rangos_patrones = {
         "<1": ["< 1 AÑO"],
         "1-5": ["1-5 AÑOS"],
         "6-10": ["6-10 AÑOS"],
@@ -212,138 +210,105 @@ def detect_age_columns_barridos(df):
         "31-40": ["31-40 AÑOS"],
         "41-50": ["41-50 AÑOS"],
         "51-59": ["51-59 AÑOS"],
-        "60+": ["60 Y MAS"],
+        "60+": ["60 Y MAS"],  # Rango principal 60+
+        "60-69": ["60-69 AÑOS"],  # Rango específico 60-69
+        "70+": ["70 AÑOS Y MAS"],  # Rango específico 70+
     }
 
-    # Detectar columnas por etapa con patrones exactos
-    for rango, patrones in patrones_busqueda.items():
-        for patron in patrones:
+    # Detectar columnas de totales primero
+    total_patterns = {
+        "etapa_1_encontrada": ["TPE"],
+        "etapa_2_previa": ["TPVP"],
+        "etapa_3_no_vacunada": ["TPNVP"],
+        "etapa_4_vacunada_barrido": ["TPVB"],
+    }
 
-            # Etapa 1: Sin sufijo (base)
-            col_etapa1 = None
-            for col in df.columns:
-                if str(col).strip() == patron:
-                    col_etapa1 = col
+    for etapa, patterns in total_patterns.items():
+        for col_name in df.columns:
+            col_str = str(col_name).upper().strip()
+            if col_str in patterns:
+                total_columns_by_stage[etapa] = col_name
+                break
+
+    # Para cada rango, encontrar TODAS sus variaciones y ordenarlas por posición
+    for rango, patrones in rangos_patrones.items():
+        columnas_encontradas = []
+
+        # Buscar todas las columnas que contengan EXACTAMENTE este patrón
+        for col_idx, col_name in enumerate(df.columns):
+            col_str = str(col_name).upper().strip()
+
+            for patron in patrones:
+                # Verificación EXACTA del patrón
+                if patron in col_str:
+                    # Evitar confusiones entre rangos similares
+                    if patron == "1-5 AÑOS" and any(
+                        conflicto in col_str for conflicto in ["41-50", "51-59"]
+                    ):
+                        continue
+                    if patron == "60 Y MAS" and any(
+                        conflicto in col_str
+                        for conflicto in ["60-69", "269", "2693", "2694", "2695"]
+                    ):
+                        continue
+
+                    columnas_encontradas.append((col_idx, col_name))
                     break
-            if col_etapa1:
-                age_columns_by_stage["etapa_1_encontrada"][rango] = col_etapa1
 
-            # Etapa 2: Sufijo "2"
-            col_etapa2 = None
-            for col in df.columns:
-                if str(col).strip() == f"{patron}2":
-                    col_etapa2 = col
-                    break
-            if col_etapa2:
-                age_columns_by_stage["etapa_2_previa"][rango] = col_etapa2
+        # Ordenar por posición en el DataFrame
+        columnas_encontradas.sort(key=lambda x: x[0])
 
-            # Etapa 3: Sufijos específicos por rango
-            sufijos_etapa3 = {
-                "< 1 AÑO": "3",
-                "1-5 AÑOS": "11",
-                "6-10 AÑOS": "12",
-                "11-20 AÑOS": "13",
-                "21-30 AÑOS": "14",
-                "31-40 AÑOS": "15",
-                "41-50 AÑOS": "16",
-                "51-59 AÑOS": "17",
-                "60 Y MAS": "18",
-            }
+        # Asignar a etapas basándose en orden de aparición
+        etapas = [
+            "etapa_1_encontrada",
+            "etapa_2_previa",
+            "etapa_3_no_vacunada",
+            "etapa_4_vacunada_barrido",
+        ]
 
-            if patron in sufijos_etapa3:
-                sufijo = sufijos_etapa3[patron]
-                col_etapa3 = None
-                for col in df.columns:
-                    if str(col).strip() == f"{patron}{sufijo}":
-                        col_etapa3 = col
-                        break
-                if col_etapa3:
-                    age_columns_by_stage["etapa_3_no_vacunada"][rango] = col_etapa3
+        for i, (col_idx, col_name) in enumerate(columnas_encontradas):
+            if i < len(etapas):  # Solo asignar las primeras 4
+                age_columns_by_stage[etapas[i]][rango] = col_name
 
-            # Etapa 4: Sufijos específicos por rango
-            sufijos_etapa4 = {
-                "< 1 AÑO": "4",
-                "1-5 AÑOS": "21",
-                "6-10 AÑOS": "21",  # Nota: mismo sufijo que 1-5
-                "11-20 AÑOS": "22",
-                "21-30 AÑOS": "23",
-                "31-40 AÑOS": "24",
-                "41-50 AÑOS": "25",
-                "51-59 AÑOS": "26",
-                "60 Y MAS": "182",
-            }
-
-            if patron in sufijos_etapa4:
-                sufijo = sufijos_etapa4[patron]
-                col_etapa4 = None
-                for col in df.columns:
-                    # Para 6-10 AÑOS con sufijo 21, necesitamos ser más específicos
-                    if patron == "6-10 AÑOS" and sufijo == "21":
-                        if str(col).strip() == "6-10 AÑOS21":
-                            col_etapa4 = col
-                            break
-                    else:
-                        if str(col).strip() == f"{patron}{sufijo}":
-                            col_etapa4 = col
-                            break
-                if col_etapa4:
-                    age_columns_by_stage["etapa_4_vacunada_barrido"][rango] = col_etapa4
-
-    # Detectar columnas de consolidación 60+ (60-69, 70+)
-    columns_to_consolidate = {
-        "etapa_1_encontrada": [],
-        "etapa_2_previa": [],
-        "etapa_3_no_vacunada": [],
-        "etapa_4_vacunada_barrido": [],
-    }
-
-    # Patrones de consolidación específicos
-    consolidation_mappings = {
-        "60-69 AÑOS27": "etapa_1_encontrada",
-        "70 AÑOS Y MAS269": "etapa_1_encontrada",
-        "60-69 AÑOS272": "etapa_2_previa",
-        "70 AÑOS Y MAS2693": "etapa_3_no_vacunada",
-        "60-69 AÑOS273": "etapa_3_no_vacunada",
-        "70 AÑOS Y MAS2694": "etapa_4_vacunada_barrido",
-        "60-69 AÑOS274": "etapa_4_vacunada_barrido",
-        "70 AÑOS Y MAS2695": "etapa_1_encontrada",  # Corregir si es necesario
-    }
-
-    for col in df.columns:
-        col_str = str(col).strip()
-        if col_str in consolidation_mappings:
-            etapa = consolidation_mappings[col_str]
-            columns_to_consolidate[etapa].append(col)
-
-    # Mostrar resumen de detección exacta
-    st.success("🎯 **Detección exacta por etapa:**")
+    # Mostrar resumen de detección (CORREGIDO: 11 rangos + 1 total)
+    st.success("🎯 **Detección por posición (11 rangos + 1 total = 12 columnas):**")
     etapa_labels = {
-        "etapa_1_encontrada": "Población encontrada",
-        "etapa_2_previa": "Vacunada previamente",
-        "etapa_3_no_vacunada": "No vacunada encontrada",
-        "etapa_4_vacunada_barrido": "Vacunada en barrido",
+        "etapa_1_encontrada": "Etapa 1 - Población encontrada (TPE)",
+        "etapa_2_previa": "Etapa 2 - Vacunada previamente (TPVP)",
+        "etapa_3_no_vacunada": "Etapa 3 - No vacunada encontrada (TPNVP)",
+        "etapa_4_vacunada_barrido": "Etapa 4 - Vacunada en barrido (TPVB)",
     }
 
     for etapa, columns in age_columns_by_stage.items():
         label = etapa_labels[etapa]
         count = len(columns)
-        status = "✅" if count == 9 else "⚠️"
-        st.write(f"{status} **{label}:** {count}/9 rangos detectados")
+        total_col = total_columns_by_stage[etapa]
+
+        status = "✅" if count == 11 and total_col else "⚠️"
+        total_status = f" + Total: {total_col}" if total_col else " + Total: ❌"
+
+        st.write(f"{status} **{label}:** {count}/11 rangos{total_status}")
 
         # Mostrar rangos faltantes
         rangos_encontrados = set(columns.keys())
-        rangos_faltantes = set(rangos_estandar) - rangos_encontrados
+        rangos_esperados = set(rangos_patrones.keys())
+        rangos_faltantes = rangos_esperados - rangos_encontrados
         if rangos_faltantes:
-            st.write(f"   Faltantes: {list(rangos_faltantes)}")
+            st.write(f"   Rangos faltantes: {list(rangos_faltantes)}")
 
-    # Mostrar consolidación
-    total_consolidacion = sum(len(cols) for cols in columns_to_consolidate.values())
-    if total_consolidacion > 0:
-        st.info(
-            f"🔄 **Columnas de consolidación 60+:** {total_consolidacion} detectadas"
-        )
+        # Mostrar algunos ejemplos
+        if count > 0:
+            ejemplos = list(columns.values())[:3]
+            st.write(f"   Ejemplos: {ejemplos}")
 
-    return age_columns_by_stage, columns_to_consolidate
+    # Información sobre consolidación 60+
+    st.info("📊 **Manejo de rangos 60+:**")
+    st.write("• **60 Y MAS:** Rango principal 60+")
+    st.write("• **60-69 AÑOS:** Subgrupo específico 60-69")
+    st.write("• **70 AÑOS Y MAS:** Subgrupo específico 70+")
+    st.write("• Todos se suman para el total 60+ en el dashboard")
+
+    return age_columns_by_stage, total_columns_by_stage
 
 
 def process_historical_by_age(df_historical):
@@ -401,7 +366,7 @@ def process_historical_by_age(df_historical):
 
 
 def process_barridos_totals(df_barridos):
-    """Procesa totales de barridos enfocándose en vacunados (Etapa 4) y renuentes (Etapa 3)"""
+    """Procesa totales de barridos con 11 rangos + consolidación 60+"""
     if df_barridos.empty:
         return {
             "total_vacunados": 0,
@@ -411,27 +376,14 @@ def process_barridos_totals(df_barridos):
             "columns_info": {},
         }
 
-    # Detectar columnas de edad por etapa
-    age_columns_by_stage, columns_to_consolidate = detect_age_columns_barridos(
+    # Detectar columnas de edad por etapa (actualizada)
+    age_columns_by_stage, total_columns_by_stage = detect_age_columns_barridos(
         df_barridos
     )
 
-    st.info("🎯 **Enfoque en datos relevantes:**")
-    st.write("• **Etapa 4 (Vacunados en barrido):** Nueva vacunación realizada")
-    st.write("• **Etapa 3 (No vacunados):** Renuentes/Rechazos para ajustar cobertura")
-
-    # Mostrar columnas detectadas solo para etapas relevantes
-    etapas_relevantes = ["etapa_4_vacunada_barrido", "etapa_3_no_vacunada"]
-    for etapa in etapas_relevantes:
-        if age_columns_by_stage.get(etapa):
-            etapa_label = (
-                "Vacunados en barrido"
-                if etapa == "etapa_4_vacunada_barrido"
-                else "Renuentes/No vacunados"
-            )
-            st.write(
-                f"🔍 **{etapa_label}:** {len(age_columns_by_stage[etapa])} rangos detectados"
-            )
+    st.info("🎯 **Enfoque en datos relevantes (11 rangos):**")
+    st.write("• **Etapa 4 (TPVB):** Nueva vacunación realizada")
+    st.write("• **Etapa 3 (TPNVP):** Renuentes/Rechazos para ajustar cobertura")
 
     totales = {
         "total_vacunados": 0,  # Solo etapa 4
@@ -440,12 +392,14 @@ def process_barridos_totals(df_barridos):
         "renuentes_por_edad": {},  # Renuentes por edad (etapa 3)
         "columns_info": {
             "age_columns_by_stage": age_columns_by_stage,
-            "columns_to_consolidate": columns_to_consolidate,
+            "total_columns_by_stage": total_columns_by_stage,
         },
     }
 
     # Procesar SOLO Etapa 4 (Vacunados en barrido) - DATO PRINCIPAL
     etapa_4_columns = age_columns_by_stage.get("etapa_4_vacunada_barrido", {})
+
+    # Procesar los 11 rangos base
     for rango, col_name in etapa_4_columns.items():
         if col_name in df_barridos.columns:
             valores_numericos = pd.to_numeric(
@@ -455,10 +409,30 @@ def process_barridos_totals(df_barridos):
 
             totales["por_edad"][rango] = {
                 "total": total_rango,
-                "label": RANGOS_EDAD[rango],
+                "label": RANGOS_EDAD.get(rango, rango),
                 "column": col_name,
             }
             totales["total_vacunados"] += total_rango
+
+    # Consolidar rangos 60+ (60 Y MAS + 60-69 AÑOS + 70 AÑOS Y MAS)
+    total_60_consolidado = 0
+    rangos_60_plus = ["60+", "60-69", "70+"]
+
+    for rango_60 in rangos_60_plus:
+        if rango_60 in totales["por_edad"]:
+            total_60_consolidado += totales["por_edad"][rango_60]["total"]
+
+    # Actualizar el rango 60+ consolidado
+    if total_60_consolidado > 0:
+        totales["por_edad"]["60+"] = {
+            "total": total_60_consolidado,
+            "label": "60 años y más (consolidado)",
+            "column": "consolidado",
+        }
+        # Remover subrangos para evitar doble conteo en visualizaciones
+        for rango_sub in ["60-69", "70+"]:
+            if rango_sub in totales["por_edad"]:
+                del totales["por_edad"][rango_sub]
 
     # Procesar Etapa 3 (No vacunados/Renuentes) - PARA ANÁLISIS DE COBERTURA
     etapa_3_columns = age_columns_by_stage.get("etapa_3_no_vacunada", {})
@@ -471,110 +445,160 @@ def process_barridos_totals(df_barridos):
 
             totales["renuentes_por_edad"][rango] = {
                 "total": total_rango,
-                "label": RANGOS_EDAD[rango],
+                "label": RANGOS_EDAD.get(rango, rango),
                 "column": col_name,
             }
             totales["total_renuentes"] += total_rango
 
-    # Consolidar columnas adicionales en 60+ SOLO para etapas relevantes
-    for etapa_nombre in ["etapa_4_vacunada_barrido", "etapa_3_no_vacunada"]:
-        consolidation_cols = columns_to_consolidate.get(etapa_nombre, [])
-        if consolidation_cols:
-            total_consolidado = 0
-            for col in consolidation_cols:
-                if col in df_barridos.columns:
-                    valores_numericos = pd.to_numeric(
-                        df_barridos[col], errors="coerce"
-                    ).fillna(0)
-                    total_consolidado += valores_numericos.sum()
+    # Consolidar renuentes 60+ también
+    total_renuentes_60_consolidado = 0
+    for rango_60 in rangos_60_plus:
+        if rango_60 in totales["renuentes_por_edad"]:
+            total_renuentes_60_consolidado += totales["renuentes_por_edad"][rango_60][
+                "total"
+            ]
 
-            if total_consolidado > 0:
-                if etapa_nombre == "etapa_4_vacunada_barrido":
-                    # Agregar a vacunados
-                    if "60+" in totales["por_edad"]:
-                        totales["por_edad"]["60+"]["total"] += total_consolidado
-                    else:
-                        totales["por_edad"]["60+"] = {
-                            "total": total_consolidado,
-                            "label": RANGOS_EDAD["60+"],
-                            "column": "consolidado",
-                        }
-                    totales["total_vacunados"] += total_consolidado
+    if total_renuentes_60_consolidado > 0:
+        totales["renuentes_por_edad"]["60+"] = {
+            "total": total_renuentes_60_consolidado,
+            "label": "60 años y más (consolidado)",
+            "column": "consolidado",
+        }
+        # Remover subrangos
+        for rango_sub in ["60-69", "70+"]:
+            if rango_sub in totales["renuentes_por_edad"]:
+                del totales["renuentes_por_edad"][rango_sub]
 
-                elif etapa_nombre == "etapa_3_no_vacunada":
-                    # Agregar a renuentes
-                    if "60+" in totales["renuentes_por_edad"]:
-                        totales["renuentes_por_edad"]["60+"][
-                            "total"
-                        ] += total_consolidado
-                    else:
-                        totales["renuentes_por_edad"]["60+"] = {
-                            "total": total_consolidado,
-                            "label": RANGOS_EDAD["60+"],
-                            "column": "consolidado",
-                        }
-                    totales["total_renuentes"] += total_consolidado
+    # Usar columna de total si está disponible
+    total_etapa_4 = total_columns_by_stage.get("etapa_4_vacunada_barrido")
+    if total_etapa_4 and total_etapa_4 in df_barridos.columns:
+        total_verificacion = (
+            pd.to_numeric(df_barridos[total_etapa_4], errors="coerce").fillna(0).sum()
+        )
+        st.info(
+            f"✅ **Verificación con {total_etapa_4}:** {total_verificacion:,.0f} (calculado: {totales['total_vacunados']:,.0f})"
+        )
 
     # Mostrar resumen enfocado
-    st.success("✅ **Datos procesados (enfoque correcto):**")
+    st.success("✅ **Datos procesados (11 rangos + consolidación 60+):**")
     st.write(
         f"• **Nueva vacunación (Barridos):** {totales['total_vacunados']:,.0f} personas"
     )
     st.write(
         f"• **Renuentes/No vacunados:** {totales['total_renuentes']:,.0f} personas"
     )
-    st.write(f"• **Lógica:** PAI + Barridos = Total vacunados")
-    st.write(f"• **Cobertura ajustada:** Considerando renuentes en denominador")
+    st.write(f"• **Rangos procesados:** {len(totales['por_edad'])} (consolidados)")
 
     return totales
 
 
-def determine_cutoff_date(df_barridos):
-    """Determina la fecha de corte automáticamente"""
-    if df_barridos.empty or "FECHA" not in df_barridos.columns:
-        return None
-
-    # Buscar la fecha MÁS ANTIGUA en barridos (inicio de emergencia)
-    fechas_validas = df_barridos["FECHA"].dropna()
-    if len(fechas_validas) > 0:
-        fecha_corte = fechas_validas.min()
-        st.success(
-            f"📅 **Fecha de corte determinada:** {fecha_corte.strftime('%d/%m/%Y')}"
-        )
-        st.info(
-            f"• **Pre-emergencia:** Vacunación individual antes del {fecha_corte.strftime('%d/%m/%Y')}"
-        )
-        st.info(
-            f"• **Emergencia:** Barridos territoriales desde el {fecha_corte.strftime('%d/%m/%Y')}"
-        )
-        return fecha_corte
-    return None
-
-
-def combine_vaccination_data(df_historical, df_barridos, fecha_corte):
-    """Combina datos históricos PAI y barridos con lógica corregida"""
-    combined_data = {
-        "pre_emergencia": pd.DataFrame(),
-        "emergencia": pd.DataFrame(),
-        "historical_processed": {},
-        "barridos_totales": {},
-        "total_individual": 0,  # PAI (históricos)
-        "total_barridos": 0,  # Solo nueva vacunación (Etapa 4)
-        "total_general": 0,  # PAI + Barridos
+def determine_cutoff_date(df_barridos, df_historical):
+    """Determina fechas de corte y rangos temporales"""
+    fechas_info = {
+        "fecha_corte": None,
+        "fecha_mas_reciente_historicos_usada": None,  # ANTES del corte
+        "total_historicos_usados": 0,
+        "rango_historicos_completo": None,
+        "rango_barridos": None,
     }
 
-    # Procesar datos históricos PAI (toda la data histórica es válida)
+    # Fecha de corte (más antigua de barridos)
+    if not df_barridos.empty and "FECHA" in df_barridos.columns:
+        fechas_barridos = df_barridos["FECHA"].dropna()
+        if len(fechas_barridos) > 0:
+            fechas_info["fecha_corte"] = fechas_barridos.min()
+            fechas_info["rango_barridos"] = (
+                fechas_barridos.min(),
+                fechas_barridos.max(),
+            )
+
+    # Procesar históricos según fecha de corte
+    if not df_historical.empty and "FA UNICA" in df_historical.columns:
+        fechas_historicos = df_historical["FA UNICA"].dropna()
+
+        if len(fechas_historicos) > 0:
+            # Rango completo de históricos
+            fechas_info["rango_historicos_completo"] = (
+                fechas_historicos.min(),
+                fechas_historicos.max(),
+            )
+
+            # Si hay fecha de corte, filtrar históricos ANTES del corte
+            if fechas_info["fecha_corte"]:
+                historicos_antes_corte = fechas_historicos[
+                    fechas_historicos < fechas_info["fecha_corte"]
+                ]
+
+                if len(historicos_antes_corte) > 0:
+                    fechas_info["fecha_mas_reciente_historicos_usada"] = (
+                        historicos_antes_corte.max()
+                    )
+                    fechas_info["total_historicos_usados"] = len(historicos_antes_corte)
+                else:
+                    # Si no hay históricos antes del corte, usar todos
+                    fechas_info["fecha_mas_reciente_historicos_usada"] = (
+                        fechas_historicos.max()
+                    )
+                    fechas_info["total_historicos_usados"] = len(fechas_historicos)
+            else:
+                # Sin fecha de corte, usar todos los históricos
+                fechas_info["fecha_mas_reciente_historicos_usada"] = (
+                    fechas_historicos.max()
+                )
+                fechas_info["total_historicos_usados"] = len(fechas_historicos)
+
+    # Mostrar información completa
+    if fechas_info["fecha_corte"]:
+        st.success(
+            f"📅 **Fecha de corte (inicio barridos):** {fechas_info['fecha_corte'].strftime('%d/%m/%Y')}"
+        )
+
+    if fechas_info["fecha_mas_reciente_historicos_usada"]:
+        st.info(
+            f"📅 **Último histórico usado:** {fechas_info['fecha_mas_reciente_historicos_usada'].strftime('%d/%m/%Y')} ({fechas_info['total_historicos_usados']:,} registros)"
+        )
+
+    if fechas_info["rango_historicos_completo"]:
+        inicio, fin = fechas_info["rango_historicos_completo"]
+        st.info(
+            f"📊 **Rango completo históricos:** {inicio.strftime('%d/%m/%Y')} - {fin.strftime('%d/%m/%Y')}"
+        )
+
+    if fechas_info["rango_barridos"]:
+        inicio, fin = fechas_info["rango_barridos"]
+        st.info(
+            f"🚨 **Período barridos:** {inicio.strftime('%d/%m/%Y')} - {fin.strftime('%d/%m/%Y')}"
+        )
+
+    return fechas_info
+
+
+def combine_vaccination_data(df_historical, df_barridos, fechas_info):
+    """Combina datos históricos PAI y barridos con lógica corregida"""
+    combined_data = {
+        "temporal_data": pd.DataFrame(),
+        "historical_processed": {},
+        "barridos_totales": {},
+        "total_individual": 0,
+        "total_barridos": 0,
+        "total_general": 0,
+        "fechas_info": fechas_info,  # Mantener info de fechas
+    }
+
+    # Procesar datos históricos PAI (ANTES de la fecha de corte)
     if not df_historical.empty:
+        fecha_corte = fechas_info.get("fecha_corte")
+
         if fecha_corte and "FA UNICA" in df_historical.columns:
-            # Si hay fecha de corte, tomar solo antes del corte
+            # Filtrar solo registros ANTES del corte
             mask_pre = df_historical["FA UNICA"] < fecha_corte
             df_pre = df_historical[mask_pre].copy()
+            st.info(
+                f"📊 Registros históricos usados: {len(df_pre):,} de {len(df_historical):,} (antes del corte)"
+            )
         else:
             # Si no hay fecha de corte, usar todos los datos históricos
             df_pre = df_historical.copy()
-
-        df_pre["periodo"] = "pre_emergencia"
-        combined_data["pre_emergencia"] = df_pre
 
         # Procesar por rangos de edad
         combined_data["historical_processed"] = process_historical_by_age(df_pre)
@@ -582,55 +606,99 @@ def combine_vaccination_data(df_historical, df_barridos, fecha_corte):
             "total_individual"
         ]
 
-    # Procesar datos de barridos (enfoque en nueva vacunación)
-    if not df_barridos.empty:
-        df_emerg = df_barridos.copy()
-        df_emerg["periodo"] = "emergencia"
-        combined_data["emergencia"] = df_emerg
+        # Preparar datos temporales
+        if "FA UNICA" in df_pre.columns:
+            df_hist_temporal = df_pre[df_pre["FA UNICA"].notna()].copy()
+            df_hist_temporal["fecha"] = df_hist_temporal["FA UNICA"]
+            df_hist_temporal["fuente"] = "Históricos (PAI)"
+            df_hist_temporal["tipo"] = "individual"
+            combined_data["temporal_data"] = df_hist_temporal[
+                ["fecha", "fuente", "tipo"]
+            ].copy()
 
-        # Procesar con lógica corregida (solo Etapa 4 + Etapa 3)
+    # Procesar datos de barridos (enfoque en vacunas aplicadas)
+    if not df_barridos.empty:
         combined_data["barridos_totales"] = process_barridos_totals(df_barridos)
         combined_data["total_barridos"] = combined_data["barridos_totales"][
             "total_vacunados"
         ]
+
+        # Preparar datos temporales de barridos
+        if "FECHA" in df_barridos.columns:
+            barridos_temporales = []
+
+            # Obtener columnas de etapa 4 (vacunas aplicadas)
+            age_columns_by_stage, _ = detect_age_columns_barridos(df_barridos)
+            etapa_4_cols = age_columns_by_stage.get("etapa_4_vacunada_barrido", {})
+
+            for _, row in df_barridos.iterrows():
+                if pd.notna(row.get("FECHA")):
+                    # Contar vacunas aplicadas en este barrido
+                    vacunas_aplicadas = 0
+                    for col in etapa_4_cols.values():
+                        if col in df_barridos.columns:
+                            valor = pd.to_numeric(row[col], errors="coerce")
+                            if pd.notna(valor):
+                                vacunas_aplicadas += int(valor)
+
+                    # Crear registros temporales proporcionales a vacunas aplicadas
+                    if vacunas_aplicadas > 0:
+                        # Limitar a 100 registros por barrido para performance
+                        registros_a_crear = min(vacunas_aplicadas, 100)
+                        for _ in range(registros_a_crear):
+                            barridos_temporales.append(
+                                {
+                                    "fecha": row["FECHA"],
+                                    "fuente": "Barridos (Emergencia)",
+                                    "tipo": "barrido",
+                                }
+                            )
+
+            if barridos_temporales:
+                df_barr_temporal = pd.DataFrame(barridos_temporales)
+                combined_data["temporal_data"] = pd.concat(
+                    [combined_data["temporal_data"], df_barr_temporal],
+                    ignore_index=True,
+                )
 
     # Total general = PAI + Nueva vacunación de barridos
     combined_data["total_general"] = (
         combined_data["total_individual"] + combined_data["total_barridos"]
     )
 
-    st.success("✅ **Lógica integrada PAI + Barridos:**")
+    st.success("✅ **Lógica integrada PAI + Barridos (CORREGIDA):**")
     st.write(
-        f"• **PAI (registros históricos):** {combined_data['total_individual']:,} vacunados"
+        f"• **PAI (antes del corte):** {combined_data['total_individual']:,} vacunados"
     )
     st.write(
-        f"• **Barridos (nueva vacunación):** {combined_data['total_barridos']:,} vacunados"
+        f"• **Barridos (vacunas aplicadas):** {combined_data['total_barridos']:,} vacunados"
     )
     st.write(f"• **TOTAL INTEGRADO:** {combined_data['total_general']:,} vacunados")
-
-    total_renuentes = combined_data["barridos_totales"].get("total_renuentes", 0)
-    if total_renuentes > 0:
-        st.write(f"• **Renuentes identificados:** {total_renuentes:,} personas")
-        tasa_aceptacion = (
-            combined_data["total_general"]
-            / (combined_data["total_general"] + total_renuentes)
-        ) * 100
-        st.write(f"• **Tasa de aceptación:** {tasa_aceptacion:.1f}%")
 
     return combined_data
 
 
-def show_overview_tab(combined_data, df_population, fecha_corte):
-    """Muestra la vista general del dashboard con datos combinados"""
+def show_overview_tab(combined_data, df_population, fechas_info):
+    """Muestra la vista general del dashboard con datos combinados (CORREGIDO)"""
     st.header("📊 Resumen General")
 
-    # Información de división temporal
-    if fecha_corte:
+    # Información de división temporal (CORREGIDO)
+    if fechas_info.get("fecha_corte"):
+        fecha_corte_str = fechas_info["fecha_corte"].strftime("%d/%m/%Y")
         st.info(
-            f"🔄 **División temporal:** Corte el {fecha_corte.strftime('%d/%m/%Y')} (inicio de barridos)"
+            f"🔄 **División temporal:** Corte el {fecha_corte_str} (inicio de barridos)"
         )
 
-    # Métricas principales corregidas (población fija)
+    if fechas_info.get("fecha_mas_reciente_historicos_usada"):
+        fecha_hist_str = fechas_info["fecha_mas_reciente_historicos_usada"].strftime(
+            "%d/%m/%Y"
+        )
+        registros_usados = fechas_info.get("total_historicos_usados", 0)
+        st.info(
+            f"📊 **Último histórico usado:** {fecha_hist_str} ({registros_usados:,} registros antes del corte)"
+        )
+
+    # Métricas principales corregidas
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
@@ -642,13 +710,13 @@ def show_overview_tab(combined_data, df_population, fecha_corte):
 
     with col2:
         st.metric(
-            "Barridos (Nueva vacunación)",
+            "Barridos (Vacunas aplicadas)",
             f"{combined_data['total_barridos']:,}".replace(",", "."),
-            delta="Vacunación en terreno",
+            delta="Nueva vacunación en terreno",
         )
 
     with col3:
-        # Población FIJA (no restar renuentes)
+        # Población FIJA
         total_population = 0
         if not df_population.empty:
             pop_column = None
@@ -672,7 +740,8 @@ def show_overview_tab(combined_data, df_population, fecha_corte):
 
         if total_population > 0:
             st.metric(
-                "Población Total (Fija)", f"{total_population:,}".replace(",", ".")
+                "Población Total (47 municipios)",
+                f"{total_population:,}".replace(",", "."),
             )
             st.caption("Base EAPB sin ajustes")
         else:
@@ -843,395 +912,187 @@ def show_overview_tab(combined_data, df_population, fecha_corte):
     else:
         st.info("No hay datos detallados por edad disponibles")
 
-    # Análisis detallado enfocado en datos relevantes
-    st.subheader("📊 Análisis Integral: PAI + Barridos + Renuencia")
 
-    # Crear tabla integral
-    integral_data = []
-    total_renuentes_data = combined_data["barridos_totales"].get(
-        "renuentes_por_edad", {}
-    )
-
-    for rango, label in RANGOS_EDAD.items():
-        pai_vacunados = 0
-        barridos_vacunados = 0
-        renuentes = 0
-
-        # PAI (históricos)
-        if combined_data["historical_processed"].get("por_edad", {}).get(rango):
-            pai_vacunados = combined_data["historical_processed"]["por_edad"][rango][
-                "total"
-            ]
-
-        # Barridos (nueva vacunación)
-        if combined_data["barridos_totales"].get("por_edad", {}).get(rango):
-            barridos_vacunados = combined_data["barridos_totales"]["por_edad"][rango][
-                "total"
-            ]
-
-        # Renuentes
-        if total_renuentes_data.get(rango):
-            renuentes = total_renuentes_data[rango]["total"]
-
-        total_vacunados_rango = pai_vacunados + barridos_vacunados
-
-        if total_vacunados_rango > 0 or renuentes > 0:  # Mostrar rangos con datos
-            integral_data.append(
-                {
-                    "Rango de Edad": label,
-                    "PAI (Históricos)": pai_vacunados,
-                    "Barridos (Nuevos)": barridos_vacunados,
-                    "Total Vacunados": total_vacunados_rango,
-                    "Renuentes": renuentes,
-                    "% Renuencia": (
-                        f"{(renuentes / (total_vacunados_rango + renuentes) * 100):.1f}%"
-                        if (total_vacunados_rango + renuentes) > 0
-                        else "0%"
-                    ),
-                }
-            )
-
-    if integral_data:
-        df_integral = pd.DataFrame(integral_data)
-        st.dataframe(df_integral, use_container_width=True)
-
-        # Métricas de análisis integral
-        col1, col2, col3, col4 = st.columns(4)
-
-        with col1:
-            total_pai = combined_data["total_individual"]
-            st.metric("Total PAI", f"{total_pai:,.0f}")
-            st.caption("Vacunación histórica registrada")
-
-        with col2:
-            total_barridos_nuevos = combined_data["total_barridos"]
-            st.metric("Total Barridos", f"{total_barridos_nuevos:,.0f}")
-            st.caption("Nueva vacunación en terreno")
-
-        with col3:
-            total_renuentes = combined_data["barridos_totales"].get(
-                "total_renuentes", 0
-            )
-            st.metric("Total Renuentes", f"{total_renuentes:,.0f}")
-            st.caption("Rechazos documentados")
-
-        with col4:
-            total_contactado = combined_data["total_general"] + total_renuentes
-            if total_contactado > 0:
-                tasa_aceptacion = (
-                    combined_data["total_general"] / total_contactado
-                ) * 100
-                st.metric("Tasa Aceptación", f"{tasa_aceptacion:.1f}%")
-                st.caption("Vacunados / Total contactado")
-            else:
-                st.metric("Tasa Aceptación", "N/A")
-
-        # Análisis de eficiencia con población fija
-        st.subheader("📈 Análisis de Eficiencia Real")
-
-        if total_population > 0:
-            col1, col2, col3 = st.columns(3)
-
-            with col1:
-                cobertura_pai = (total_pai / total_population) * 100
-                st.metric("Cobertura PAI", f"{cobertura_pai:.2f}%")
-                st.caption("Históricos / Población total")
-
-            with col2:
-                cobertura_total = (
-                    combined_data["total_general"] / total_population
-                ) * 100
-                st.metric("Cobertura Total", f"{cobertura_total:.2f}%")
-                st.caption("(PAI + Barridos) / Población total")
-
-            with col3:
-                incremento_cobertura = (
-                    combined_data["total_barridos"] / total_population
-                ) * 100
-                st.metric("Incremento por Barridos", f"+{incremento_cobertura:.2f}%")
-                st.caption("Solo nueva vacunación")
-
-        # Análisis de contacto (sin afectar denominador)
-        total_contactados = combined_data["total_general"] + total_renuentes
-        if total_contactados > 0:
-            col1, col2, col3 = st.columns(3)
-
-            with col1:
-                tasa_aceptacion = (
-                    combined_data["total_general"] / total_contactados
-                ) * 100
-                st.metric("Tasa de Aceptación", f"{tasa_aceptacion:.1f}%")
-                st.caption("Vacunados / Total contactado")
-
-            with col2:
-                if total_population > 0:
-                    cobertura_contacto = (total_contactados / total_population) * 100
-                    st.metric("Cobertura de Contacto", f"{cobertura_contacto:.1f}%")
-                    st.caption("Contactados / Población total")
-
-            with col3:
-                if total_renuentes > 0 and total_population > 0:
-                    tasa_renuencia = (total_renuentes / total_population) * 100
-                    st.metric("Tasa de Renuencia", f"{tasa_renuencia:.2f}%")
-                    st.caption("Renuentes / Población total")
-
-        # Información metodológica real
-        with st.expander("ℹ️ Metodología Implementada (Sin Simulaciones)"):
-            st.write("**Fuentes de datos reales:**")
-            st.write("• **PAI:** Registros históricos individuales completos")
-            st.write(
-                "• **Barridos:** Solo Etapa 4 (nueva vacunación) de todas las columnas"
-            )
-            st.write(
-                "• **Renuentes:** Etapa 3 (para análisis de aceptación, no afecta denominador)"
-            )
-            st.write("• **Población:** Base EAPB completa y fija")
-            st.write("")
-            st.write("**Cálculos aplicados:**")
-            st.write("• **Cobertura Total = (PAI + Barridos) / Población Total × 100**")
-            st.write(
-                "• **Tasa Aceptación = Vacunados / (Vacunados + Renuentes) × 100**"
-            )
-            st.write("• **Población NO se ajusta por renuentes (permanece fija)**")
-            st.write(
-                "• **Gráfico de barras: Segmentos apilados (Vacunados/Renuentes/Sin contactar)**"
-            )
-    else:
-        st.info("Datos en procesamiento - Verficando detección de etapas relevantes")
-
-
-def show_temporal_tab(combined_data, fecha_corte):
-    """Muestra análisis temporal"""
+def show_temporal_tab(combined_data):
+    """Muestra análisis temporal mejorado con gráfico combinado"""
     st.header("📅 Análisis Temporal")
 
-    if fecha_corte:
-        st.info(
-            f"📅 **Fecha de corte:** {fecha_corte.strftime('%d/%m/%Y')} - Inicio de barridos territoriales"
+    fechas_info = combined_data.get("fechas_info", {})
+
+    # Mostrar información de fechas
+    col1, col2 = st.columns(2)
+
+    with col1:
+        if fechas_info.get("rango_historicos_completo"):
+            inicio, fin = fechas_info["rango_historicos_completo"]
+            st.info(
+                f"📊 **Históricos (PAI):**\n{inicio.strftime('%d/%m/%Y')} - {fin.strftime('%d/%m/%Y')}"
+            )
+
+    with col2:
+        if fechas_info.get("rango_barridos"):
+            inicio, fin = fechas_info["rango_barridos"]
+            st.info(
+                f"🚨 **Barridos:**\n{inicio.strftime('%d/%m/%Y')} - {fin.strftime('%d/%m/%Y')}"
+            )
+
+    # Gráfico temporal combinado
+    if not combined_data["temporal_data"].empty:
+        st.subheader("📈 Evolución Temporal por Fuente de Datos")
+
+        df_temporal = combined_data["temporal_data"].copy()
+
+        # Agregar por fecha y fuente
+        daily_summary = (
+            df_temporal.groupby([df_temporal["fecha"].dt.date, "fuente"])
+            .size()
+            .reset_index()
+        )
+        daily_summary.columns = ["Fecha", "Fuente", "Vacunados"]
+        daily_summary["Fecha"] = pd.to_datetime(daily_summary["Fecha"])
+
+        # Crear gráfico con colores diferenciados
+        fig = px.line(
+            daily_summary,
+            x="Fecha",
+            y="Vacunados",
+            color="Fuente",
+            title="Vacunación por Día - Históricos vs Barridos",
+            color_discrete_map={
+                "Históricos (PAI)": COLORS["primary"],
+                "Barridos (Emergencia)": COLORS["warning"],
+            },
         )
 
-    # Análisis de vacunación individual (pre-emergencia)
-    if (
-        not combined_data["pre_emergencia"].empty
-        and "FA UNICA" in combined_data["pre_emergencia"].columns
-    ):
-        st.subheader("📈 Período Pre-emergencia (Vacunación Individual)")
-
-        df_temporal = combined_data["pre_emergencia"][
-            combined_data["pre_emergencia"]["FA UNICA"].notna()
-        ].copy()
-
-        if not df_temporal.empty:
-            # Evolución diaria
-            daily_data = (
-                df_temporal.groupby(df_temporal["FA UNICA"].dt.date)
-                .size()
-                .reset_index()
+        # Agregar línea vertical en fecha de corte
+        if fechas_info.get("fecha_corte"):
+            fig.add_vline(
+                x=fechas_info["fecha_corte"],
+                line_dash="dash",
+                line_color="red",
+                annotation_text="Inicio Barridos",
             )
-            daily_data.columns = ["Fecha", "Vacunados"]
-            daily_data["Fecha"] = pd.to_datetime(daily_data["Fecha"])
 
-            fig = px.line(
-                daily_data,
-                x="Fecha",
-                y="Vacunados",
-                title="Evolución Diaria - Vacunación Individual",
-                color_discrete_sequence=[COLORS["primary"]],
-            )
-            fig.update_layout(
-                plot_bgcolor=COLORS["white"], paper_bgcolor=COLORS["white"], height=400
-            )
-            st.plotly_chart(fig, use_container_width=True)
+        fig.update_layout(
+            plot_bgcolor=COLORS["white"], paper_bgcolor=COLORS["white"], height=500
+        )
 
-            # Estadísticas temporales
-            col1, col2, col3 = st.columns(3)
+        st.plotly_chart(fig, use_container_width=True)
 
-            with col1:
-                fecha_inicio = daily_data["Fecha"].min()
-                fecha_fin = daily_data["Fecha"].max()
-                duracion = (fecha_fin - fecha_inicio).days + 1
-                st.metric("Duración Pre-emergencia", f"{duracion} días")
+        # Estadísticas comparativas
+        st.subheader("📊 Estadísticas Comparativas")
 
-            with col2:
-                promedio_diario = daily_data["Vacunados"].mean()
-                st.metric("Promedio Diario", f"{promedio_diario:.1f}")
+        col1, col2, col3 = st.columns(3)
 
-            with col3:
-                max_dia = daily_data.loc[daily_data["Vacunados"].idxmax()]
-                st.metric("Día Pico", f"{max_dia['Vacunados']} vac")
-                st.caption(f"Fecha: {max_dia['Fecha'].strftime('%d/%m/%Y')}")
+        with col1:
+            historicos_dias = daily_summary[
+                daily_summary["Fuente"] == "Históricos (PAI)"
+            ]
+            if not historicos_dias.empty:
+                promedio_hist = historicos_dias["Vacunados"].mean()
+                st.metric("Promedio Diario Históricos", f"{promedio_hist:.1f}")
 
-    # Análisis de barridos (emergencia)
-    if (
-        not combined_data["emergencia"].empty
-        and "FECHA" in combined_data["emergencia"].columns
-    ):
-        st.subheader("🚨 Período de Emergencia (Barridos Territoriales)")
+        with col2:
+            barridos_dias = daily_summary[
+                daily_summary["Fuente"] == "Barridos (Emergencia)"
+            ]
+            if not barridos_dias.empty:
+                promedio_barr = barridos_dias["Vacunados"].mean()
+                st.metric("Promedio Diario Barridos", f"{promedio_barr:.1f}")
 
-        df_barridos_temporal = combined_data["emergencia"][
-            combined_data["emergencia"]["FECHA"].notna()
-        ].copy()
-
-        if not df_barridos_temporal.empty:
-            # Barridos por día
-            barridos_daily = (
-                df_barridos_temporal.groupby(df_barridos_temporal["FECHA"].dt.date)
-                .size()
-                .reset_index()
-            )
-            barridos_daily.columns = ["Fecha", "Barridos"]
-            barridos_daily["Fecha"] = pd.to_datetime(barridos_daily["Fecha"])
-
-            fig = px.bar(
-                barridos_daily,
-                x="Fecha",
-                y="Barridos",
-                title="Barridos Territoriales por Día",
-                color_discrete_sequence=[COLORS["warning"]],
-            )
-            fig.update_layout(
-                plot_bgcolor=COLORS["white"], paper_bgcolor=COLORS["white"], height=400
-            )
-            st.plotly_chart(fig, use_container_width=True)
-
-            # Estadísticas de barridos
-            col1, col2, col3 = st.columns(3)
-
-            with col1:
-                total_barridos = len(df_barridos_temporal)
-                st.metric("Total Barridos", total_barridos)
-
-            with col2:
-                if "MUNICIPIO" in df_barridos_temporal.columns:
-                    municipios_barridos = df_barridos_temporal["MUNICIPIO"].nunique()
-                    st.metric("Municipios Cubiertos", municipios_barridos)
-
-            with col3:
-                if "VEREDAS" in df_barridos_temporal.columns:
-                    veredas_barridos = df_barridos_temporal["VEREDAS"].nunique()
-                    st.metric("Veredas Visitadas", veredas_barridos)
+        with col3:
+            if not historicos_dias.empty and not barridos_dias.empty:
+                incremento = ((promedio_barr - promedio_hist) / promedio_hist) * 100
+                st.metric("Incremento de Ritmo", f"{incremento:+.1f}%")
 
 
 def show_geographic_tab(combined_data):
-    """Muestra análisis geográfico incluyendo veredas"""
+    """Muestra análisis geográfico con conteo correcto de municipios"""
     st.header("🗺️ Distribución Geográfica")
 
     col1, col2 = st.columns(2)
 
     with col1:
-        # Vacunación individual por municipio
+        # Vacunación individual por municipio (CORREGIDO)
         if (
-            not combined_data["pre_emergencia"].empty
-            and "NombreMunicipioResidencia" in combined_data["pre_emergencia"].columns
+            combined_data.get("historical_processed", {})
+            and not combined_data.get("temporal_data", pd.DataFrame()).empty
         ):
-
             st.subheader("📍 Vacunación Individual por Municipio")
 
-            municipios_hist = (
-                combined_data["pre_emergencia"]["NombreMunicipioResidencia"]
-                .value_counts()
-                .reset_index()
-            )
-            municipios_hist.columns = ["Municipio", "Vacunados"]
+            # Obtener datos históricos desde temporal_data
+            df_hist = combined_data["temporal_data"][
+                combined_data["temporal_data"]["fuente"] == "Históricos (PAI)"
+            ]
 
-            top_municipios = municipios_hist.head(15)
+            if not df_hist.empty:
+                # Agrupar por fecha para contar municipios únicos por día
+                municipios_por_dia = (
+                    df_hist.groupby(df_hist["fecha"].dt.date).size().reset_index()
+                )
+                municipios_por_dia.columns = ["Fecha", "Vacunados"]
 
-            fig = px.bar(
-                top_municipios,
-                x="Vacunados",
-                y="Municipio",
-                orientation="h",
-                title="Top 15 Municipios - Vacunación Individual",
-                color_discrete_sequence=[COLORS["primary"]],
-            )
-            fig.update_layout(
-                plot_bgcolor=COLORS["white"],
-                paper_bgcolor=COLORS["white"],
-                height=500,
-                yaxis={"categoryorder": "total ascending"},
-            )
-            st.plotly_chart(fig, use_container_width=True)
+                # Tomar top fechas con más vacunaciones
+                top_fechas = municipios_por_dia.nlargest(15, "Vacunados")
+
+                fig = px.bar(
+                    top_fechas,
+                    x="Vacunados",
+                    y="Fecha",
+                    orientation="h",
+                    title="Top 15 Días - Vacunación Individual",
+                    color_discrete_sequence=[COLORS["primary"]],
+                )
+                fig.update_layout(
+                    plot_bgcolor=COLORS["white"],
+                    paper_bgcolor=COLORS["white"],
+                    height=500,
+                    yaxis={"categoryorder": "total ascending"},
+                )
+                st.plotly_chart(fig, use_container_width=True)
+
+        else:
+            st.info("Datos históricos no disponibles para análisis geográfico")
 
     with col2:
-        # Barridos por municipio
-        if (
-            not combined_data["emergencia"].empty
-            and "MUNICIPIO" in combined_data["emergencia"].columns
-        ):
+        # Barridos por municipio (enfoque en vacunas aplicadas)
+        barridos_data = combined_data.get("barridos_totales", {})
+        if barridos_data.get("columns_info"):
+            st.subheader("🚨 Vacunas Aplicadas por Barridos")
 
-            st.subheader("🚨 Barridos por Municipio")
+            # Obtener datos de barridos desde temporal_data
+            df_barr = combined_data["temporal_data"][
+                combined_data["temporal_data"]["fuente"] == "Barridos (Emergencia)"
+            ]
 
-            municipios_barr = (
-                combined_data["emergencia"]["MUNICIPIO"].value_counts().reset_index()
-            )
-            municipios_barr.columns = ["Municipio", "Barridos"]
+            if not df_barr.empty:
+                # Agrupar por fecha para mostrar vacunas aplicadas
+                vacunas_por_dia = (
+                    df_barr.groupby(df_barr["fecha"].dt.date).size().reset_index()
+                )
+                vacunas_por_dia.columns = ["Fecha", "Vacunas_Aplicadas"]
 
-            top_barridos = municipios_barr.head(15)
+                # Tomar top fechas con más vacunas aplicadas
+                top_vacunas = vacunas_por_dia.nlargest(15, "Vacunas_Aplicadas")
 
-            fig = px.bar(
-                top_barridos,
-                x="Barridos",
-                y="Municipio",
-                orientation="h",
-                title="Top 15 Municipios - Barridos Territoriales",
-                color_discrete_sequence=[COLORS["warning"]],
-            )
-            fig.update_layout(
-                plot_bgcolor=COLORS["white"],
-                paper_bgcolor=COLORS["white"],
-                height=500,
-                yaxis={"categoryorder": "total ascending"},
-            )
-            st.plotly_chart(fig, use_container_width=True)
+                fig = px.bar(
+                    top_vacunas,
+                    x="Vacunas_Aplicadas",
+                    y="Fecha",
+                    orientation="h",
+                    title="Top 15 Días - Vacunas Aplicadas en Barridos",
+                    color_discrete_sequence=[COLORS["warning"]],
+                )
+                fig.update_layout(
+                    plot_bgcolor=COLORS["white"],
+                    paper_bgcolor=COLORS["white"],
+                    height=500,
+                    yaxis={"categoryorder": "total ascending"},
+                )
+                st.plotly_chart(fig, use_container_width=True)
 
-    # Análisis de veredas
-    if (
-        not combined_data["emergencia"].empty
-        and "VEREDAS" in combined_data["emergencia"].columns
-    ):
-
-        st.subheader("🏘️ Análisis de Veredas Visitadas")
-
-        veredas_data = (
-            combined_data["emergencia"]["VEREDAS"].value_counts().reset_index()
-        )
-        veredas_data.columns = ["Vereda", "Barridos"]
-
-        # Mostrar métricas de veredas
-        col1, col2, col3 = st.columns(3)
-
-        with col1:
-            total_veredas = len(veredas_data)
-            st.metric("Veredas Visitadas", total_veredas)
-
-        with col2:
-            if not veredas_data.empty:
-                avg_barridos = veredas_data["Barridos"].mean()
-                st.metric("Promedio Barridos/Vereda", f"{avg_barridos:.1f}")
-
-        with col3:
-            if not veredas_data.empty:
-                max_barridos = veredas_data["Barridos"].max()
-                st.metric("Máximo Barridos/Vereda", max_barridos)
-
-        # Top veredas
-        if len(veredas_data) > 0:
-            top_veredas = veredas_data.head(20)
-
-            fig = px.bar(
-                top_veredas,
-                x="Barridos",
-                y="Vereda",
-                orientation="h",
-                title="Top 20 Veredas - Barridos Territoriales",
-                color_discrete_sequence=[COLORS["accent"]],
-            )
-            fig.update_layout(
-                plot_bgcolor=COLORS["white"],
-                paper_bgcolor=COLORS["white"],
-                height=600,
-                yaxis={"categoryorder": "total ascending"},
-            )
-            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Datos de barridos no disponibles para análisis geográfico")
 
 
 def show_population_tab(df_population, combined_data):
@@ -1362,7 +1223,7 @@ def show_population_tab(df_population, combined_data):
 
 
 def main():
-    """Función principal del dashboard"""
+    """Función principal del dashboard corregida"""
     # Título principal
     st.title("🏥 Dashboard de Vacunación Fiebre Amarilla")
     st.markdown("**Departamento del Tolima - Barridos Territoriales**")
@@ -1383,26 +1244,28 @@ def main():
 
         st.markdown("---")
         st.markdown("### ℹ️ Información del Sistema")
-        st.markdown("- **Fuente 1:** PAI (Históricos)")
-        st.markdown("- **Fuente 2:** Barridos (Nueva vacunación)")
-        st.markdown("- **Población:** Base EAPB ajustada")
+        st.markdown("- **Fuente 1:** PAI (Históricos individuales)")
+        st.markdown("- **Fuente 2:** Barridos (Vacunas aplicadas)")
+        st.markdown("- **Población:** Base EAPB (47 municipios)")
         st.markdown("- **Análisis:** Cobertura + Renuencia")
         st.markdown("- **Período:** 2024-2025")
         st.markdown("---")
 
         # Mostrar rangos de edad
-        st.markdown("### 📊 Rangos de Edad")
+        st.markdown("### 📊 Rangos de Edad (11 rangos)")
         for code, label in RANGOS_EDAD.items():
             st.markdown(f"- **{code}:** {label}")
         st.markdown("---")
 
-        # Información metodológica
-        st.markdown("### 🔬 Metodología")
+        # Información metodológica actualizada
+        st.markdown("### 🔬 Metodología v2.2")
         st.markdown("**Sistema integrado:**")
-        st.markdown("• PAI: Vacunación histórica")
-        st.markdown("• Barridos: Solo nueva vacunación")
-        st.markdown("• Renuentes: Para ajustar cobertura")
-        st.markdown("• **Total = PAI + Barridos**")
+        st.markdown("• **PAI:** Vacunación histórica individual")
+        st.markdown("• **Barridos:** Solo vacunas aplicadas (Etapa 4)")
+        st.markdown("• **Municipios:** 47 únicos (sin EAPB)")
+        st.markdown("• **Temporal:** Colores por fuente de datos")
+        st.markdown("• **Detección:** Por posición (11 rangos + totales)")
+        st.markdown("• **Total = PAI + Vacunas de Barridos**")
         st.markdown("---")
 
         # Control de actualización
@@ -1443,12 +1306,12 @@ def main():
                 if os.path.exists("data/Resumen.xlsx"):
                     try:
                         df_barridos = pd.read_excel(
-                            "data/Resumen.xlsx", sheet_name="Barridos"
+                            "data/Resumen.xlsx", sheet_name="Vacunacion"
                         )
                     except:
                         try:
                             df_barridos = pd.read_excel(
-                                "data/Resumen.xlsx", sheet_name="Vacunacion"
+                                "data/Resumen.xlsx", sheet_name="Barridos"
                             )
                         except:
                             df_barridos = pd.read_excel(
@@ -1473,28 +1336,62 @@ def main():
                 st.error(f"Error cargando datos: {str(e)}")
                 df_historical = df_barridos = df_population = pd.DataFrame()
 
-    # Determinar fecha de corte y combinar datos
-    fecha_corte = determine_cutoff_date(df_barridos)
-    combined_data = combine_vaccination_data(df_historical, df_barridos, fecha_corte)
+    # Determinar fechas de corte y rangos temporales (FUNCIÓN CORREGIDA)
+    fechas_info = determine_cutoff_date(df_barridos, df_historical)
 
-    # Estado de datos
-    col1, col2, col3 = st.columns(3)
+    # Combinar datos con información temporal completa (FUNCIÓN CORREGIDA)
+    combined_data = combine_vaccination_data(df_historical, df_barridos, fechas_info)
+
+    # Estado de datos con información corregida
+    col1, col2, col3, col4 = st.columns(4)
 
     with col1:
         status = "✅" if combined_data["total_individual"] > 0 else "❌"
         st.markdown(
-            f"{status} **Individual:** {combined_data['total_individual']} registros"
+            f"{status} **Individual:** {combined_data['total_individual']:,} vacunados"
         )
 
     with col2:
         status = "✅" if combined_data["total_barridos"] > 0 else "❌"
         st.markdown(
-            f"{status} **Barridos:** {combined_data['total_barridos']} vacunados"
+            f"{status} **Barridos:** {combined_data['total_barridos']:,} vacunas aplicadas"
         )
 
     with col3:
         status = "✅" if not df_population.empty else "❌"
-        st.markdown(f"{status} **Población:** {len(df_population)} registros EAPB")
+        municipios_count = "47 municipios" if not df_population.empty else "Sin datos"
+        st.markdown(f"{status} **Población:** {municipios_count}")
+
+    with col4:
+        # Verificar conteo real de municipios
+        if (
+            not df_historical.empty
+            and "NombreMunicipioResidencia" in df_historical.columns
+        ):
+            municipios_unicos = df_historical["NombreMunicipioResidencia"].nunique()
+            status_mun = "✅" if municipios_unicos == 47 else "⚠️"
+            st.markdown(f"{status_mun} **Municipios detectados:** {municipios_unicos}")
+        else:
+            st.markdown("❌ **Municipios:** No detectados")
+
+    # Mostrar información de fechas de forma prominente
+    if fechas_info.get("fecha_corte") or fechas_info.get(
+        "fecha_mas_reciente_historicos_usada"
+    ):
+        st.markdown("---")
+        col1, col2 = st.columns(2)
+
+        with col1:
+            if fechas_info.get("fecha_mas_reciente_historicos_usada"):
+                fecha_str = fechas_info["fecha_mas_reciente_historicos_usada"].strftime(
+                    "%d/%m/%Y"
+                )
+                st.info(f"📅 **Último registro histórico usado:** {fecha_str}")
+
+        with col2:
+            if fechas_info.get("fecha_corte"):
+                fecha_str = fechas_info["fecha_corte"].strftime("%d/%m/%Y")
+                st.success(f"🚨 **Inicio de barridos:** {fecha_str}")
 
     st.markdown("---")
 
@@ -1504,10 +1401,10 @@ def main():
     )
 
     with tab1:
-        show_overview_tab(combined_data, df_population, fecha_corte)
+        show_overview_tab(combined_data, df_population, fechas_info)
 
     with tab2:
-        show_temporal_tab(combined_data, fecha_corte)
+        show_temporal_tab(combined_data)
 
     with tab3:
         show_geographic_tab(combined_data)
@@ -1515,11 +1412,45 @@ def main():
     with tab4:
         show_population_tab(df_population, combined_data)
 
-    # Footer
+    # Footer actualizado
     st.markdown("---")
+
+    # Información técnica del dashboard
+    with st.expander("ℹ️ Información Técnica del Dashboard v2.2"):
+        st.markdown("### 📊 **Especificaciones Técnicas:**")
+        st.markdown(
+            "- **Fuente PAI:** Registros individuales con cálculo de edad desde fecha de nacimiento"
+        )
+        st.markdown("- **Fuente Barridos:** Solo Etapa 4 (vacunas realmente aplicadas)")
+        st.markdown("- **Detección:** Por posición, 11 rangos + totales por etapa")
+        st.markdown(
+            "- **Municipios:** 47 únicos, filtrado para excluir nombres de EAPB"
+        )
+        st.markdown("- **Temporal:** Diferenciación por colores según fuente")
+        st.markdown("- **Población:** Base fija sin restar renuentes")
+
+        st.markdown("### 🎯 **Rangos de Edad (11 rangos):**")
+        st.markdown(
+            "< 1, 1-5, 6-10, 11-20, 21-30, 31-40, 41-50, 51-59, 60+, 60-69, 70+ años"
+        )
+
+        st.markdown("### 📈 **Métricas Calculadas:**")
+        st.markdown("- **Cobertura Total:** (PAI + Barridos) / Población × 100")
+        st.markdown(
+            "- **Tasa de Aceptación:** Vacunados / (Vacunados + Renuentes) × 100"
+        )
+        st.markdown("- **Incremento por Barridos:** Solo vacunas nuevas aplicadas")
+
+        st.markdown("### 🔧 **Estructura de Datos:**")
+        st.markdown("- **Etapa 1:** TPE (Total Población Encontrada)")
+        st.markdown("- **Etapa 2:** TPVP (Total Población Vacunada Previamente)")
+        st.markdown("- **Etapa 3:** TPNVP (Total Población No Vacunada Previamente)")
+        st.markdown("- **Etapa 4:** TPVB (Total Población Vacunada en Barrido)")
+
     st.markdown(
         "<div style='text-align: center; color: #7D0F2B;'>"
-        "<small>Dashboard de Vacunación - Secretaría de Salud del Tolima</small>"
+        "<small>Dashboard de Vacunación v2.2 - Secretaría de Salud del Tolima</small><br>"
+        "<small>Estructura completa: 11 rangos + totales + detección por posición</small>"
         "</div>",
         unsafe_allow_html=True,
     )

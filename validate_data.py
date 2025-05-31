@@ -8,7 +8,6 @@ import os
 from datetime import datetime
 import sys
 
-# Rangos de edad esperados
 RANGOS_EDAD_ESPERADOS = {
     "<1": "< 1 año",
     "1-5": "1-5 años",
@@ -19,6 +18,8 @@ RANGOS_EDAD_ESPERADOS = {
     "41-50": "41-50 años",
     "51-59": "51-59 años",
     "60+": "60 años y más",
+    "60-69": "60-69 años",
+    "70+": "70 años y más",
 }
 
 

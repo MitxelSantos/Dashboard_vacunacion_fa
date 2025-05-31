@@ -1,6 +1,6 @@
 """
 data_helpers.py - Utilidades específicas para manejo de datos de vacunación
-Versión actualizada con rangos de edad correctos y cálculo de edad desde fecha de nacimiento
+Versión 2.2 - Actualizada con 11 rangos de edad y estructura completa
 """
 
 import pandas as pd
@@ -8,7 +8,7 @@ import numpy as np
 from datetime import datetime
 from typing import Dict, List, Tuple, Optional
 
-# Definición de rangos de edad correctos
+# Definición de rangos de edad correctos (11 rangos)
 RANGOS_EDAD_DEFINIDOS = {
     "<1": {
         "label": "< 1 año",
@@ -21,15 +21,16 @@ RANGOS_EDAD_DEFINIDOS = {
             "0-1",
             "LACTANTE",
             "0A11M",
+            "< 1 AÑO",
         ],
     },
     "1-5": {
         "label": "1-5 años",
-        "aliases": ["1-5", "1 A 5", "1A5", "1_5", "PREESCOLAR", "1 A 5 AÑOS"],
+        "aliases": ["1-5", "1 A 5", "1A5", "1_5", "PREESCOLAR", "1-5 AÑOS"],
     },
     "6-10": {
         "label": "6-10 años",
-        "aliases": ["6-10", "6 A 10", "6A10", "6_10", "ESCOLAR_MENOR", "6 A 10 AÑOS"],
+        "aliases": ["6-10", "6 A 10", "6A10", "6_10", "ESCOLAR_MENOR", "6-10 AÑOS"],
     },
     "11-20": {
         "label": "11-20 años",
@@ -39,7 +40,7 @@ RANGOS_EDAD_DEFINIDOS = {
             "11A20",
             "11_20",
             "ADOLESCENTE",
-            "11 A 20 AÑOS",
+            "11-20 AÑOS",
         ],
     },
     "21-30": {
@@ -50,12 +51,12 @@ RANGOS_EDAD_DEFINIDOS = {
             "21A30",
             "21_30",
             "ADULTO_JOVEN",
-            "21 A 30 AÑOS",
+            "21-30 AÑOS",
         ],
     },
     "31-40": {
         "label": "31-40 años",
-        "aliases": ["31-40", "31 A 40", "31A40", "31_40", "ADULTO", "31 A 40 AÑOS"],
+        "aliases": ["31-40", "31 A 40", "31A40", "31_40", "ADULTO", "31-40 AÑOS"],
     },
     "41-50": {
         "label": "41-50 años",
@@ -65,7 +66,7 @@ RANGOS_EDAD_DEFINIDOS = {
             "41A50",
             "41_50",
             "ADULTO_MEDIO",
-            "41 A 50 AÑOS",
+            "41-50 AÑOS",
         ],
     },
     "51-59": {
@@ -76,7 +77,7 @@ RANGOS_EDAD_DEFINIDOS = {
             "51A59",
             "51_59",
             "ADULTO_MAYOR",
-            "51 A 59 AÑOS",
+            "51-59 AÑOS",
         ],
     },
     "60+": {
@@ -93,24 +94,40 @@ RANGOS_EDAD_DEFINIDOS = {
             "MAYOR_60",
         ],
     },
+    "60-69": {
+        "label": "60-69 años",
+        "aliases": [
+            "60-69",
+            "60 A 69",
+            "60A69",
+            "60_69",
+            "60-69 AÑOS",
+        ],
+    },
+    "70+": {
+        "label": "70 años y más",
+        "aliases": [
+            "70+",
+            "70 +",
+            "70 Y MAS",
+            "70 Y MÁS",
+            "70MAS",
+            "70_MAS",
+            "MAYOR 70",
+            ">70",
+            "MAYOR_70",
+            "70 AÑOS Y MAS",
+        ],
+    },
 }
 
-# Patrones adicionales para consolidar en 60+
-PATRONES_CONSOLIDAR_60 = [
-    "60-69",
-    "60 A 69",
-    "60A69",
-    "60_69",
-    "70+",
-    "70 +",
-    "70 Y MAS",
-    "70 Y MÁS",
-    "70MAS",
-    "70_MAS",
-    "MAYOR 70",
-    ">70",
-    "MAYOR_70",
-]
+# Columnas de totales por etapa
+TOTALES_POR_ETAPA = {
+    "etapa_1": ["TPE"],
+    "etapa_2": ["TPVP"],
+    "etapa_3": ["TPNVP"],
+    "etapa_4": ["TPVB"],
+}
 
 
 def calculate_age(fecha_nacimiento, fecha_referencia=None):
@@ -189,133 +206,322 @@ def classify_age_group(edad):
         return "60+"
 
 
-def detect_age_columns(df: pd.DataFrame) -> Dict[str, str]:
+def validate_barridos_structure_v2(df: pd.DataFrame) -> Dict[str, any]:
     """
-    Detecta automáticamente las columnas de rangos de edad en el DataFrame
-    Maneja 4 etapas de barridos: encontrada, previa, no_vacunada, vacunada_barrido
+    Valida la estructura de datos de barridos territoriales (v2.2)
+    Actualizada para 11 rangos + totales
 
     Args:
-        df: DataFrame con columnas de vacunación por edad
+        df: DataFrame de barridos
 
     Returns:
-        Dict mapeando rango estándar -> nombre de columna encontrada (etapa 1 por defecto)
+        Dict con información de validación
     """
-    edad_columns = {}
+    validation = {
+        "valid": True,
+        "errors": [],
+        "warnings": [],
+        "columns_found": {
+            "fecha": None,
+            "municipio": None,
+            "vereda": None,
+            "edad_columns_by_stage": {},
+            "total_columns_by_stage": {},
+        },
+        "stats": {
+            "total_rows": len(df),
+            "date_coverage": None,
+            "municipios_count": 0,
+            "veredas_count": 0,
+            "rangos_detectados": 0,
+            "etapas_completas": 0,
+        },
+    }
 
-    for col in df.columns:
-        col_upper = str(col).upper().strip().replace(" ", "")
+    if df.empty:
+        validation["valid"] = False
+        validation["errors"].append("DataFrame está vacío")
+        return validation
 
-        for rango, config in RANGOS_EDAD_DEFINIDOS.items():
+    # Verificar columnas esenciales
+    essential_columns = {
+        "fecha": ["FECHA", "DATE", "FECHA_BARRIDO"],
+        "municipio": ["MUNICIPIO", "MUNICIPALITY", "MPÍO"],
+        "vereda": ["VEREDA", "VEREDAS", "VILLAGE", "CORREGIMIENTO"],
+    }
+
+    for key, possible_names in essential_columns.items():
+        found_col = None
+        for col in df.columns:
+            if any(name.upper() in str(col).upper() for name in possible_names):
+                found_col = col
+                break
+
+        validation["columns_found"][key] = found_col
+        if found_col is None:
+            validation["warnings"].append(f"No se encontró columna de {key}")
+
+    # Detectar columnas de edad por etapa (11 rangos)
+    rangos_detectados = 0
+    etapas_completas = 0
+
+    for rango, config in RANGOS_EDAD_DEFINIDOS.items():
+        columnas_encontradas = []
+
+        for col in df.columns:
+            col_upper = str(col).upper().strip()
             for alias in config["aliases"]:
-                alias_clean = alias.replace(" ", "").upper()
-                # Solo tomar etapa 1 (sin sufijos) para compatibilidad
-                if alias_clean == col_upper or (
-                    alias_clean in col_upper
-                    and not any(suf in col_upper for suf in ["2", "3", "4"])
+                if alias.upper() in col_upper:
+                    columnas_encontradas.append(col)
+                    break
+
+        if columnas_encontradas:
+            rangos_detectados += 1
+            # Asignar a etapas por posición
+            for i, col in enumerate(columnas_encontradas[:4]):  # Máximo 4 etapas
+                etapa_key = f"etapa_{i+1}"
+                if (
+                    etapa_key
+                    not in validation["columns_found"]["edad_columns_by_stage"]
                 ):
-                    edad_columns[rango] = col
-                    break
-            if rango in edad_columns:
+                    validation["columns_found"]["edad_columns_by_stage"][etapa_key] = {}
+                validation["columns_found"]["edad_columns_by_stage"][etapa_key][
+                    rango
+                ] = col
+
+    # Detectar columnas de totales
+    for etapa, patterns in TOTALES_POR_ETAPA.items():
+        for col in df.columns:
+            col_str = str(col).upper().strip()
+            if col_str in [p.upper() for p in patterns]:
+                validation["columns_found"]["total_columns_by_stage"][etapa] = col
                 break
 
-    return edad_columns
+    # Contar etapas completas (con 11 rangos + total)
+    for etapa_key in ["etapa_1", "etapa_2", "etapa_3", "etapa_4"]:
+        edad_count = len(
+            validation["columns_found"]["edad_columns_by_stage"].get(etapa_key, {})
+        )
+        total_col = validation["columns_found"]["total_columns_by_stage"].get(etapa_key)
+
+        if edad_count == 11 and total_col:
+            etapas_completas += 1
+
+    validation["stats"]["rangos_detectados"] = rangos_detectados
+    validation["stats"]["etapas_completas"] = etapas_completas
+
+    if rangos_detectados < 11:
+        validation["warnings"].append(
+            f"Solo se detectaron {rangos_detectados}/11 rangos de edad"
+        )
+
+    if etapas_completas < 4:
+        validation["warnings"].append(
+            f"Solo {etapas_completas}/4 etapas están completas"
+        )
+
+    # Estadísticas básicas
+    if validation["columns_found"]["municipio"]:
+        validation["stats"]["municipios_count"] = df[
+            validation["columns_found"]["municipio"]
+        ].nunique()
+
+    if validation["columns_found"]["vereda"]:
+        validation["stats"]["veredas_count"] = df[
+            validation["columns_found"]["vereda"]
+        ].nunique()
+
+    if validation["columns_found"]["fecha"]:
+        fecha_col = validation["columns_found"]["fecha"]
+        try:
+            fechas = pd.to_datetime(df[fecha_col], errors="coerce")
+            fechas_validas = fechas.dropna()
+            if len(fechas_validas) > 0:
+                validation["stats"]["date_coverage"] = {
+                    "inicio": fechas_validas.min(),
+                    "fin": fechas_validas.max(),
+                    "dias": (fechas_validas.max() - fechas_validas.min()).days + 1,
+                    "fechas_validas": len(fechas_validas),
+                    "fechas_invalidas": len(fechas) - len(fechas_validas),
+                }
+        except Exception as e:
+            validation["warnings"].append(f"Error procesando fechas: {str(e)}")
+
+    return validation
 
 
-def detect_age_columns_by_stage(df: pd.DataFrame) -> Dict[str, Dict[str, str]]:
+def calculate_coverage_metrics_v2(
+    vacunados: int,
+    poblacion_total: int,
+    poblacion_objetivo: Optional[int] = None,
+    renuentes: int = 0,
+) -> Dict[str, float]:
     """
-    Detecta columnas de rangos de edad separadas por las 4 etapas de barridos
+    Calcula métricas de cobertura de vacunación (v2.2)
+    Incluye análisis de renuencia
 
     Args:
-        df: DataFrame con columnas de barridos
+        vacunados: Número total de vacunados
+        poblacion_total: Población total
+        poblacion_objetivo: Población objetivo (opcional, se calcula como % de total)
+        renuentes: Número de renuentes
 
     Returns:
-        Dict con estructura: {etapa: {rango: columna}}
+        Dict con métricas de cobertura
     """
-    age_columns_by_stage = {
-        "etapa_1_encontrada": {},  # Población encontrada
-        "etapa_2_previa": {},  # Vacunada previamente
-        "etapa_3_no_vacunada": {},  # No vacunada encontrada
-        "etapa_4_vacunada_barrido": {},  # Vacunada en barrido
+    metrics = {
+        "vacunados": vacunados,
+        "poblacion_total": poblacion_total,
+        "poblacion_objetivo": poblacion_objetivo,
+        "renuentes": renuentes,
     }
 
-    # Patrones base para cada rango
-    base_patterns = {
-        "<1": ["<1", "< 1", "MENOR 1", "< 1 AÑO"],
-        "1-5": ["1-5", "1 A 5", "1-5 AÑOS"],
-        "6-10": ["6-10", "6 A 10", "6-10 AÑOS"],
-        "11-20": ["11-20", "11 A 20", "11-20 AÑOS"],
-        "21-30": ["21-30", "21 A 30", "21-30 AÑOS"],
-        "31-40": ["31-40", "31 A 40", "31-40 AÑOS"],
-        "41-50": ["41-50", "41 A 50", "41-50 AÑOS"],
-        "51-59": ["51-59", "51 A 59", "51-59 AÑOS"],
-        "60+": ["60+", "60 Y MAS", "60 Y MÁS"],
-    }
+    if poblacion_total > 0:
+        metrics["cobertura_general"] = (vacunados / poblacion_total) * 100
 
-    for col in df.columns:
-        col_clean = str(col).upper().strip()
+        # Si no se especifica población objetivo, usar 80% de la población total
+        if poblacion_objetivo is None:
+            poblacion_objetivo = poblacion_total * 0.8
+            metrics["poblacion_objetivo"] = poblacion_objetivo
 
-        # Determinar rango de edad
-        rango_detectado = None
-        for rango, patterns in base_patterns.items():
-            for pattern in patterns:
-                if pattern in col_clean:
-                    rango_detectado = rango
-                    break
-            if rango_detectado:
-                break
+        if poblacion_objetivo > 0:
+            metrics["avance_meta"] = (vacunados / poblacion_objetivo) * 100
+            metrics["faltante_meta"] = max(0, poblacion_objetivo - vacunados)
+            metrics["porcentaje_faltante"] = max(
+                0, (poblacion_objetivo - vacunados) / poblacion_objetivo * 100
+            )
 
-        if rango_detectado:
-            # Determinar etapa basado en sufijos
-            if col_clean.endswith(("2", "AÑOS2")):
-                age_columns_by_stage["etapa_2_previa"][rango_detectado] = col
-            elif col_clean.endswith(
-                (
-                    "3",
-                    "AÑOS11",
-                    "AÑOS12",
-                    "AÑOS13",
-                    "AÑOS14",
-                    "AÑOS15",
-                    "AÑOS16",
-                    "AÑOS17",
-                )
-            ):
-                age_columns_by_stage["etapa_3_no_vacunada"][rango_detectado] = col
-            elif col_clean.endswith(
-                ("4", "AÑOS21", "AÑOS22", "AÑOS23", "AÑOS24", "AÑOS25", "AÑOS26")
-            ):
-                age_columns_by_stage["etapa_4_vacunada_barrido"][rango_detectado] = col
+            # Clasificación de avance
+            if metrics["avance_meta"] >= 100:
+                metrics["status_meta"] = "COMPLETADA"
+            elif metrics["avance_meta"] >= 80:
+                metrics["status_meta"] = "ALTA"
+            elif metrics["avance_meta"] >= 50:
+                metrics["status_meta"] = "MEDIA"
             else:
-                # Sin sufijo = etapa 1 (población encontrada)
-                age_columns_by_stage["etapa_1_encontrada"][rango_detectado] = col
+                metrics["status_meta"] = "BAJA"
 
-    return age_columns_by_stage
+        # Métricas de renuencia
+        total_contactado = vacunados + renuentes
+        if total_contactado > 0:
+            metrics["tasa_aceptacion"] = (vacunados / total_contactado) * 100
+            metrics["tasa_renuencia"] = (renuentes / total_contactado) * 100
+
+        if poblacion_total > 0:
+            metrics["cobertura_contacto"] = (total_contactado / poblacion_total) * 100
+            metrics["poblacion_sin_contactar"] = max(
+                0, poblacion_total - total_contactado
+            )
+            metrics["porcentaje_sin_contactar"] = (
+                metrics["poblacion_sin_contactar"] / poblacion_total * 100
+            )
+
+    return metrics
 
 
-def detect_consolidation_columns(df: pd.DataFrame) -> List[str]:
+def generate_comprehensive_report_v2(
+    historical_data: Dict, barridos_data: Dict, population_data: Dict = None
+) -> Dict[str, any]:
     """
-    Detecta columnas que deben consolidarse en el rango 60+
+    Genera reporte comprehensivo de vacunación (v2.2)
+    Incluye análisis completo de 11 rangos, etapas y métricas
 
     Args:
-        df: DataFrame con columnas de vacunación
+        historical_data: Datos procesados de vacunación individual
+        barridos_data: Datos procesados de barridos
+        population_data: Datos de población (opcional)
 
     Returns:
-        List de nombres de columnas para consolidar
+        Dict con reporte comprehensivo
     """
-    columns_to_consolidate = []
+    report = {
+        "timestamp": datetime.now(),
+        "version": "2.2",
+        "resumen": {
+            "total_individual": historical_data.get("total_individual", 0),
+            "total_barridos": barridos_data.get("total_vacunados", 0),
+            "total_renuentes": barridos_data.get("total_renuentes", 0),
+            "total_general": 0,
+        },
+        "por_edad": {},
+        "metricas": {},
+        "estructura": {
+            "rangos_procesados": 0,
+            "etapas_detectadas": 0,
+            "calidad_datos": "PENDIENTE",
+        },
+    }
 
-    for col in df.columns:
-        col_upper = str(col).upper().strip().replace(" ", "")
+    report["resumen"]["total_general"] = (
+        report["resumen"]["total_individual"] + report["resumen"]["total_barridos"]
+    )
 
-        for pattern in PATRONES_CONSOLIDAR_60:
-            pattern_clean = pattern.replace(" ", "").upper()
-            if pattern_clean in col_upper:
-                columns_to_consolidate.append(col)
-                break
+    # Combinar datos por edad (11 rangos)
+    rangos_procesados = 0
+    for rango, config in RANGOS_EDAD_DEFINIDOS.items():
+        individual = 0
+        barridos = 0
+        renuentes = 0
 
-    return columns_to_consolidate
+        if historical_data.get("por_edad", {}).get(rango):
+            individual = historical_data["por_edad"][rango].get("total", 0)
+
+        if barridos_data.get("por_edad", {}).get(rango):
+            barridos = barridos_data["por_edad"][rango].get("total", 0)
+
+        if barridos_data.get("renuentes_por_edad", {}).get(rango):
+            renuentes = barridos_data["renuentes_por_edad"][rango].get("total", 0)
+
+        total_rango = individual + barridos
+
+        if total_rango > 0 or renuentes > 0:
+            rangos_procesados += 1
+
+            report["por_edad"][rango] = {
+                "label": config["label"],
+                "individual": individual,
+                "barridos": barridos,
+                "renuentes": renuentes,
+                "total_vacunados": total_rango,
+                "porcentaje_total": (
+                    (total_rango / report["resumen"]["total_general"] * 100)
+                    if report["resumen"]["total_general"] > 0
+                    else 0
+                ),
+                "tasa_aceptacion": (
+                    (total_rango / (total_rango + renuentes) * 100)
+                    if (total_rango + renuentes) > 0
+                    else 0
+                ),
+            }
+
+    report["estructura"]["rangos_procesados"] = rangos_procesados
+
+    # Calcular métricas de cobertura
+    if population_data:
+        poblacion_total = population_data.get("total", 0)
+        if poblacion_total > 0:
+            report["metricas"] = calculate_coverage_metrics_v2(
+                vacunados=report["resumen"]["total_general"],
+                poblacion_total=poblacion_total,
+                renuentes=report["resumen"]["total_renuentes"],
+            )
+
+    # Evaluar calidad de datos
+    if rangos_procesados >= 9:  # Al menos 9 de 11 rangos
+        if rangos_procesados == 11:
+            report["estructura"]["calidad_datos"] = "EXCELENTE"
+        else:
+            report["estructura"]["calidad_datos"] = "BUENA"
+    elif rangos_procesados >= 6:
+        report["estructura"]["calidad_datos"] = "REGULAR"
+    else:
+        report["estructura"]["calidad_datos"] = "DEFICIENTE"
+
+    return report
 
 
+# Funciones de compatibilidad (mantener versiones anteriores funcionando)
 def process_individual_data_by_age(
     df: pd.DataFrame,
     fecha_referencia_col: str = "FA UNICA",
@@ -323,6 +529,7 @@ def process_individual_data_by_age(
 ) -> Dict[str, any]:
     """
     Procesa datos individuales calculando edades y clasificando por rangos
+    Versión actualizada para 11 rangos
 
     Args:
         df: DataFrame con datos individuales
@@ -373,7 +580,7 @@ def process_individual_data_by_age(
     registros_validos = df_work["edad_calculada"].notna().sum()
     result["registros_validos"] = registros_validos
 
-    # Contar por rango
+    # Contar por rango (11 rangos)
     if registros_validos > 0:
         age_counts = df_work["rango_edad"].value_counts()
 
@@ -399,490 +606,3 @@ def process_individual_data_by_age(
             }
 
     return result
-
-
-def validate_barridos_structure(df: pd.DataFrame) -> Dict[str, any]:
-    """
-    Valida la estructura de datos de barridos territoriales
-
-    Args:
-        df: DataFrame de barridos
-
-    Returns:
-        Dict con información de validación
-    """
-    validation = {
-        "valid": True,
-        "errors": [],
-        "warnings": [],
-        "columns_found": {
-            "fecha": None,
-            "municipio": None,
-            "vereda": None,
-            "edad_columns": {},
-            "consolidation_columns": [],
-        },
-        "stats": {
-            "total_rows": len(df),
-            "date_coverage": None,
-            "municipios_count": 0,
-            "veredas_count": 0,
-            "total_vacunados": 0,
-        },
-    }
-
-    if df.empty:
-        validation["valid"] = False
-        validation["errors"].append("DataFrame está vacío")
-        return validation
-
-    # Verificar columnas esenciales
-    essential_columns = {
-        "fecha": ["FECHA", "DATE", "FECHA_BARRIDO"],
-        "municipio": ["MUNICIPIO", "MUNICIPALITY", "MPÍO"],
-        "vereda": ["VEREDA", "VEREDAS", "VILLAGE", "CORREGIMIENTO"],
-    }
-
-    for key, possible_names in essential_columns.items():
-        found_col = None
-        for col in df.columns:
-            if any(name.upper() in str(col).upper() for name in possible_names):
-                found_col = col
-                break
-
-        validation["columns_found"][key] = found_col
-        if found_col is None:
-            validation["warnings"].append(f"No se encontró columna de {key}")
-
-    # Detectar columnas de edad
-    edad_cols = detect_age_columns(df)
-    validation["columns_found"]["edad_columns"] = edad_cols
-
-    if not edad_cols:
-        validation["errors"].append("No se encontraron columnas de rangos de edad")
-        validation["valid"] = False
-    else:
-        # Calcular total de vacunados
-        total_vacunados = 0
-        for rango, col_name in edad_cols.items():
-            if col_name in df.columns:
-                total_vacunados += df[col_name].fillna(0).sum()
-        validation["stats"]["total_vacunados"] = total_vacunados
-
-    # Detectar columnas para consolidación
-    consolidation_cols = detect_consolidation_columns(df)
-    validation["columns_found"]["consolidation_columns"] = consolidation_cols
-
-    if consolidation_cols:
-        validation["warnings"].append(
-            f"Se encontraron {len(consolidation_cols)} columnas para consolidar en 60+"
-        )
-
-    # Estadísticas básicas
-    if validation["columns_found"]["municipio"]:
-        validation["stats"]["municipios_count"] = df[
-            validation["columns_found"]["municipio"]
-        ].nunique()
-
-    if validation["columns_found"]["vereda"]:
-        validation["stats"]["veredas_count"] = df[
-            validation["columns_found"]["vereda"]
-        ].nunique()
-
-    if validation["columns_found"]["fecha"]:
-        fecha_col = validation["columns_found"]["fecha"]
-        try:
-            fechas = pd.to_datetime(df[fecha_col], errors="coerce")
-            fechas_validas = fechas.dropna()
-            if len(fechas_validas) > 0:
-                validation["stats"]["date_coverage"] = {
-                    "inicio": fechas_validas.min(),
-                    "fin": fechas_validas.max(),
-                    "dias": (fechas_validas.max() - fechas_validas.min()).days + 1,
-                    "fechas_validas": len(fechas_validas),
-                    "fechas_invalidas": len(fechas) - len(fechas_validas),
-                }
-        except Exception as e:
-            validation["warnings"].append(f"Error procesando fechas: {str(e)}")
-
-    return validation
-
-
-def process_barridos_by_age(df: pd.DataFrame) -> Dict[str, any]:
-    """
-    Procesa totales de vacunación por rangos de edad desde barridos
-
-    Args:
-        df: DataFrame de barridos
-
-    Returns:
-        Dict con totales procesados
-    """
-    result = {
-        "total_general": 0,
-        "por_edad": {},
-        "por_municipio": {},
-        "por_vereda": {},
-        "consolidacion": {
-            "columnas_principales": {},
-            "columnas_consolidadas": [],
-            "total_consolidado": 0,
-        },
-        "resumen": {},
-    }
-
-    if df.empty:
-        return result
-
-    # Detectar columnas de edad y consolidación
-    edad_columns = detect_age_columns(df)
-    consolidation_columns = detect_consolidation_columns(df)
-
-    result["consolidacion"]["columnas_principales"] = edad_columns
-    result["consolidacion"]["columnas_consolidadas"] = consolidation_columns
-
-    # Procesar columnas principales por rango de edad
-    for rango, col_name in edad_columns.items():
-        if col_name in df.columns:
-            # Convertir a numérico de forma segura
-            valores_numericos = pd.to_numeric(df[col_name], errors="coerce").fillna(0)
-            total_rango = valores_numericos.sum()
-            result["por_edad"][rango] = {
-                "total": total_rango,
-                "label": RANGOS_EDAD_DEFINIDOS[rango]["label"],
-                "column": col_name,
-            }
-            result["total_general"] += total_rango
-
-    # Consolidar columnas adicionales en 60+
-    total_consolidado = 0
-    for col in consolidation_columns:
-        if col in df.columns:
-            # Convertir a numérico de forma segura
-            valores_numericos = pd.to_numeric(df[col], errors="coerce").fillna(0)
-            total_consolidado += valores_numericos.sum()
-
-    if total_consolidado > 0:
-        result["consolidacion"]["total_consolidado"] = total_consolidado
-
-        # Agregar al rango 60+
-        if "60+" in result["por_edad"]:
-            result["por_edad"]["60+"]["total"] += total_consolidado
-        else:
-            result["por_edad"]["60+"] = {
-                "total": total_consolidado,
-                "label": RANGOS_EDAD_DEFINIDOS["60+"]["label"],
-                "column": "consolidado",
-            }
-
-        result["total_general"] += total_consolidado
-
-    # Agrupar por municipio si existe la columna
-    municipio_col = None
-    for col in df.columns:
-        if "MUNICIPIO" in str(col).upper():
-            municipio_col = col
-            break
-
-    if municipio_col:
-        for municipio in df[municipio_col].unique():
-            if pd.notna(municipio):
-                mask = df[municipio_col] == municipio
-                df_mun = df[mask]
-
-                total_municipio = 0
-                por_edad_mun = {}
-
-                # Procesar columnas principales
-                for rango, col_name in edad_columns.items():
-                    if col_name in df_mun.columns:
-                        # Convertir a numérico de forma segura
-                        valores_numericos = pd.to_numeric(
-                            df_mun[col_name], errors="coerce"
-                        ).fillna(0)
-                        total_edad = valores_numericos.sum()
-                        por_edad_mun[rango] = total_edad
-                        total_municipio += total_edad
-
-                # Agregar consolidación
-                total_consolidado_mun = 0
-                for col in consolidation_columns:
-                    if col in df_mun.columns:
-                        # Convertir a numérico de forma segura
-                        valores_numericos = pd.to_numeric(
-                            df_mun[col], errors="coerce"
-                        ).fillna(0)
-                        total_consolidado_mun += valores_numericos.sum()
-
-                if total_consolidado_mun > 0:
-                    por_edad_mun["60+"] = (
-                        por_edad_mun.get("60+", 0) + total_consolidado_mun
-                    )
-                    total_municipio += total_consolidado_mun
-
-                result["por_municipio"][municipio] = {
-                    "total": total_municipio,
-                    "por_edad": por_edad_mun,
-                }
-
-    # Estadísticas de resumen
-    result["resumen"] = {
-        "municipios_cubiertos": len(result["por_municipio"]),
-        "rangos_con_datos": len(
-            [r for r in result["por_edad"] if result["por_edad"][r]["total"] > 0]
-        ),
-        "rango_mas_vacunado": None,
-        "municipio_mas_activo": None,
-    }
-
-    if result["por_edad"]:
-        rango_max = max(result["por_edad"].items(), key=lambda x: x[1]["total"])
-        result["resumen"]["rango_mas_vacunado"] = {
-            "rango": rango_max[0],
-            "total": rango_max[1]["total"],
-            "label": rango_max[1]["label"],
-        }
-
-    if result["por_municipio"]:
-        municipio_max = max(
-            result["por_municipio"].items(), key=lambda x: x[1]["total"]
-        )
-        result["resumen"]["municipio_mas_activo"] = {
-            "municipio": municipio_max[0],
-            "total": municipio_max[1]["total"],
-        }
-
-    return result
-
-
-def validate_population_structure(df: pd.DataFrame) -> Dict[str, any]:
-    """
-    Valida estructura de datos de población por EAPB
-
-    Args:
-        df: DataFrame de población
-
-    Returns:
-        Dict con información de validación
-    """
-    validation = {
-        "valid": True,
-        "errors": [],
-        "warnings": [],
-        "structure": {
-            "multiple_eapb_per_municipio": False,
-            "total_registros": len(df),
-            "municipios_unicos": 0,
-            "eapb_unicas": 0,
-            "poblacion_total": 0,
-        },
-    }
-
-    if df.empty:
-        validation["valid"] = False
-        validation["errors"].append("DataFrame de población está vacío")
-        return validation
-
-    # Buscar columnas clave
-    municipio_col = None
-    eapb_col = None
-    poblacion_col = None
-
-    for col in df.columns:
-        col_upper = str(col).upper()
-        if "MUNICIPIO" in col_upper or "MPÍO" in col_upper:
-            municipio_col = col
-        elif "EAPB" in col_upper or "ASEGURADORA" in col_upper:
-            eapb_col = col
-        elif (
-            "TOTAL" in col_upper or "POBLACION" in col_upper or "POBLACIÓN" in col_upper
-        ):
-            poblacion_col = col
-
-    if not municipio_col:
-        validation["errors"].append("No se encontró columna de municipio")
-        validation["valid"] = False
-
-    if not eapb_col:
-        validation["errors"].append("No se encontró columna de EAPB")
-        validation["valid"] = False
-
-    if not poblacion_col:
-        validation["warnings"].append("No se encontró columna de población total")
-
-    # Analizar estructura
-    if municipio_col and eapb_col:
-        validation["structure"]["municipios_unicos"] = df[municipio_col].nunique()
-        validation["structure"]["eapb_unicas"] = df[eapb_col].nunique()
-
-        # Verificar si hay múltiples EAPB por municipio
-        eapb_por_municipio = df.groupby(municipio_col)[eapb_col].nunique()
-        if eapb_por_municipio.max() > 1:
-            validation["structure"]["multiple_eapb_per_municipio"] = True
-            validation["structure"][
-                "promedio_eapb_por_municipio"
-            ] = eapb_por_municipio.mean()
-            validation["structure"]["max_eapb_por_municipio"] = eapb_por_municipio.max()
-            validation["structure"]["municipios_con_multiples_eapb"] = (
-                eapb_por_municipio > 1
-            ).sum()
-
-    # Calcular población total
-    if poblacion_col:
-        try:
-            validation["structure"]["poblacion_total"] = df[poblacion_col].sum()
-        except:
-            validation["warnings"].append("Error calculando población total")
-
-    return validation
-
-
-def calculate_coverage_metrics(
-    vacunados: int, poblacion_total: int, poblacion_objetivo: Optional[int] = None
-) -> Dict[str, float]:
-    """
-    Calcula métricas de cobertura de vacunación
-
-    Args:
-        vacunados: Número total de vacunados
-        poblacion_total: Población total
-        poblacion_objetivo: Población objetivo (opcional, se calcula como % de total)
-
-    Returns:
-        Dict con métricas de cobertura
-    """
-    metrics = {
-        "vacunados": vacunados,
-        "poblacion_total": poblacion_total,
-        "poblacion_objetivo": poblacion_objetivo,
-    }
-
-    if poblacion_total > 0:
-        metrics["cobertura_general"] = (vacunados / poblacion_total) * 100
-
-        # Si no se especifica población objetivo, usar 80% de la población total
-        if poblacion_objetivo is None:
-            poblacion_objetivo = poblacion_total * 0.8
-            metrics["poblacion_objetivo"] = poblacion_objetivo
-
-        if poblacion_objetivo > 0:
-            metrics["avance_meta"] = (vacunados / poblacion_objetivo) * 100
-            metrics["faltante_meta"] = max(0, poblacion_objetivo - vacunados)
-            metrics["porcentaje_faltante"] = max(
-                0, (poblacion_objetivo - vacunados) / poblacion_objetivo * 100
-            )
-
-            # Clasificación de avance
-            if metrics["avance_meta"] >= 100:
-                metrics["status_meta"] = "COMPLETADA"
-            elif metrics["avance_meta"] >= 80:
-                metrics["status_meta"] = "ALTA"
-            elif metrics["avance_meta"] >= 50:
-                metrics["status_meta"] = "MEDIA"
-            else:
-                metrics["status_meta"] = "BAJA"
-
-    return metrics
-
-
-def generate_age_distribution_report(
-    historical_data: Dict, barridos_data: Dict
-) -> Dict[str, any]:
-    """
-    Genera reporte comparativo de distribución por edades
-
-    Args:
-        historical_data: Datos procesados de vacunación individual
-        barridos_data: Datos procesados de barridos
-
-    Returns:
-        Dict con reporte comparativo
-    """
-    report = {
-        "timestamp": datetime.now(),
-        "resumen": {
-            "total_individual": historical_data.get("registros_validos", 0),
-            "total_barridos": barridos_data.get("total_general", 0),
-            "total_general": 0,
-        },
-        "por_edad": {},
-        "comparativo": {},
-        "estadisticas": {},
-    }
-
-    report["resumen"]["total_general"] = (
-        report["resumen"]["total_individual"] + report["resumen"]["total_barridos"]
-    )
-
-    # Combinar datos por edad
-    for rango, config in RANGOS_EDAD_DEFINIDOS.items():
-        individual = 0
-        barridos = 0
-
-        if historical_data.get("por_edad", {}).get(rango):
-            individual = historical_data["por_edad"][rango]["total"]
-
-        if barridos_data.get("por_edad", {}).get(rango):
-            barridos = barridos_data["por_edad"][rango]["total"]
-
-        total_rango = individual + barridos
-
-        report["por_edad"][rango] = {
-            "label": config["label"],
-            "individual": individual,
-            "barridos": barridos,
-            "total": total_rango,
-            "porcentaje_total": (
-                (total_rango / report["resumen"]["total_general"] * 100)
-                if report["resumen"]["total_general"] > 0
-                else 0
-            ),
-        }
-
-    # Análisis comparativo
-    if report["resumen"]["total_general"] > 0:
-        rangos_con_datos = [
-            r for r in report["por_edad"] if report["por_edad"][r]["total"] > 0
-        ]
-
-        if rangos_con_datos:
-            # Rango más vacunado
-            rango_max = max(
-                rangos_con_datos, key=lambda r: report["por_edad"][r]["total"]
-            )
-            report["comparativo"]["rango_mas_vacunado"] = {
-                "rango": rango_max,
-                "label": report["por_edad"][rango_max]["label"],
-                "total": report["por_edad"][rango_max]["total"],
-                "porcentaje": report["por_edad"][rango_max]["porcentaje_total"],
-            }
-
-            # Rango menos vacunado (con datos)
-            rango_min = min(
-                rangos_con_datos, key=lambda r: report["por_edad"][r]["total"]
-            )
-            report["comparativo"]["rango_menos_vacunado"] = {
-                "rango": rango_min,
-                "label": report["por_edad"][rango_min]["label"],
-                "total": report["por_edad"][rango_min]["total"],
-                "porcentaje": report["por_edad"][rango_min]["porcentaje_total"],
-            }
-
-        # Dominancia de modalidad por rango
-        dominancia = {}
-        for rango in rangos_con_datos:
-            data = report["por_edad"][rango]
-            if data["total"] > 0:
-                pct_individual = (data["individual"] / data["total"]) * 100
-                pct_barridos = (data["barridos"] / data["total"]) * 100
-
-                if pct_individual > pct_barridos:
-                    dominancia[rango] = "individual"
-                elif pct_barridos > pct_individual:
-                    dominancia[rango] = "barridos"
-                else:
-                    dominancia[rango] = "equilibrado"
-
-        report["comparativo"]["dominancia_por_rango"] = dominancia
-
-    return report
