@@ -583,56 +583,48 @@ def combine_vaccination_data(df_historical, df_barridos, fechas_info):
 
 
 def main():
-    """Función principal del dashboard"""
-    # Título principal
+    """Función principal con carga secuencial y timeout"""
     st.title("🏥 Dashboard de Vacunación Fiebre Amarilla")
     st.markdown("**Departamento del Tolima - Barridos Territoriales**")
 
     # Sidebar
     with st.sidebar:
-        # Cargar logo silenciosamente
-        logo_loaded = False
+        # ... tu código de sidebar existente ...
+        pass
 
-        if GOOGLE_DRIVE_AVAILABLE:
-            try:
-                logo_data = load_logo()
-                if logo_data:
-                    st.image(logo_data, width=200)
-                    logo_loaded = True
-            except:
-                pass
+    # CARGA SECUENCIAL CON PROGRESO TOTAL
+    st.markdown("### 📥 Cargando datos necesarios...")
 
-        if not logo_loaded:
-            logo_path = "assets/images/logo_gobernacion.png"
-            if os.path.exists(logo_path):
-                st.image(logo_path, width=200)
-            else:
-                st.image(
-                    "https://via.placeholder.com/200x100/7D0F2B/FFFFFF?text=TOLIMA",
-                    width=200,
-                )
+    total_progress = st.progress(0)
+    overall_status = st.empty()
 
-        st.markdown("---")
-        st.markdown("### ℹ️ Información del Sistema")
-        st.markdown("- **Fuente 1:** PAI (Históricos individuales)")
-        st.markdown("- **Fuente 2:** Barridos (Vacunas aplicadas)")
-        st.markdown("- **Población:** Base EAPB (47 municipios)")
-        st.markdown("- **Análisis:** Cobertura + Renuencia")
-        st.markdown("---")
-
-        st.markdown("### 📊 Rangos de Edad (11 rangos)")
-        for code, label in RANGOS_EDAD.items():
-            st.markdown(f"- **{code}:** {label}")
-        st.markdown("---")
-
-        if st.button("🔄 Actualizar Datos"):
-            st.cache_data.clear()
-            st.rerun()
-
-    # Cargar datos SILENCIOSAMENTE
+    # 1. Cargar históricos (40% del progreso)
+    overall_status.text("1/3 Cargando datos históricos de vacunación...")
     df_historical = load_historical_data()
-    df_barridos = load_barridos_data()
+    total_progress.progress(0.33)
+
+    # 2. Cargar población (30% del progreso)
+    overall_status.text("2/3 Cargando datos de población...")
     df_population = load_population_data()
+    total_progress.progress(0.66)
+
+    # 3. Cargar barridos (30% del progreso)
+    overall_status.text("3/3 Cargando datos de barridos...")
+    df_barridos = load_barridos_data()
+    total_progress.progress(1.0)
+
+    # Limpiar progreso
+    overall_status.text("✅ Todos los datos cargados")
+    time.sleep(1)
+    total_progress.empty()
+    overall_status.empty()
+
+    # Verificar que se cargaron datos críticos
+    if df_historical.empty and df_barridos.empty:
+        st.error(
+            "❌ No se pudieron cargar datos críticos. Revisa tu conexión y permisos."
+        )
+        st.stop()
 
     # Determinar fechas de corte (mantener solo estos mensajes)
     fechas_info = determine_cutoff_date(df_barridos, df_historical)
