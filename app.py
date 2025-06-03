@@ -502,14 +502,15 @@ def determine_cutoff_date(df_barridos, df_historical):
         "rango_barridos": None,
     }
 
-    # Fecha de corte (más antigua de barridos)
+    # Fecha de corte (más antigua de barridos) - CONVERTIR A DATETIME PYTHON
     if not df_barridos.empty and "FECHA" in df_barridos.columns:
         fechas_barridos = df_barridos["FECHA"].dropna()
         if len(fechas_barridos) > 0:
-            fechas_info["fecha_corte"] = fechas_barridos.min()
+            # Convertir a datetime de Python para compatibilidad con plotly
+            fechas_info["fecha_corte"] = fechas_barridos.min().to_pydatetime()
             fechas_info["rango_barridos"] = (
-                fechas_barridos.min(),
-                fechas_barridos.max(),
+                fechas_barridos.min().to_pydatetime(),
+                fechas_barridos.max().to_pydatetime(),
             )
 
     # Procesar históricos según fecha de corte
@@ -517,33 +518,35 @@ def determine_cutoff_date(df_barridos, df_historical):
         fechas_historicos = df_historical["FA UNICA"].dropna()
 
         if len(fechas_historicos) > 0:
-            # Rango completo de históricos
+            # Rango completo de históricos - CONVERTIR A DATETIME PYTHON
             fechas_info["rango_historicos_completo"] = (
-                fechas_historicos.min(),
-                fechas_historicos.max(),
+                fechas_historicos.min().to_pydatetime(),
+                fechas_historicos.max().to_pydatetime(),
             )
 
             # Si hay fecha de corte, filtrar históricos ANTES del corte
             if fechas_info["fecha_corte"]:
+                # Convertir fecha_corte de vuelta a pandas timestamp para comparación
+                fecha_corte_pd = pd.Timestamp(fechas_info["fecha_corte"])
                 historicos_antes_corte = fechas_historicos[
-                    fechas_historicos < fechas_info["fecha_corte"]
+                    fechas_historicos < fecha_corte_pd
                 ]
 
                 if len(historicos_antes_corte) > 0:
                     fechas_info["fecha_mas_reciente_historicos_usada"] = (
-                        historicos_antes_corte.max()
+                        historicos_antes_corte.max().to_pydatetime()
                     )
                     fechas_info["total_historicos_usados"] = len(historicos_antes_corte)
                 else:
                     # Si no hay históricos antes del corte, usar todos
                     fechas_info["fecha_mas_reciente_historicos_usada"] = (
-                        fechas_historicos.max()
+                        fechas_historicos.max().to_pydatetime()
                     )
                     fechas_info["total_historicos_usados"] = len(fechas_historicos)
             else:
                 # Sin fecha de corte, usar todos los históricos
                 fechas_info["fecha_mas_reciente_historicos_usada"] = (
-                    fechas_historicos.max()
+                    fechas_historicos.max().to_pydatetime()
                 )
                 fechas_info["total_historicos_usados"] = len(fechas_historicos)
 
@@ -590,8 +593,10 @@ def combine_vaccination_data(df_historical, df_barridos, fechas_info):
         fecha_corte = fechas_info.get("fecha_corte")
 
         if fecha_corte and "FA UNICA" in df_historical.columns:
+            # Convertir fecha_corte a pandas timestamp para comparación
+            fecha_corte_pd = pd.Timestamp(fecha_corte)
             # Filtrar solo registros ANTES del corte
-            mask_pre = df_historical["FA UNICA"] < fecha_corte
+            mask_pre = df_historical["FA UNICA"] < fecha_corte_pd
             df_pre = df_historical[mask_pre].copy()
             st.info(
                 f"📊 Registros históricos usados: {len(df_pre):,} de {len(df_historical):,} (antes del corte)"
@@ -964,14 +969,44 @@ def show_temporal_tab(combined_data):
             },
         )
 
-        # Agregar línea vertical en fecha de corte
+        # Agregar línea vertical en fecha de corte - VERSIÓN CORREGIDA
         if fechas_info.get("fecha_corte"):
-            fig.add_vline(
-                x=fechas_info["fecha_corte"],
-                line_dash="dash",
-                line_color="red",
-                annotation_text="Inicio Barridos",
-            )
+            try:
+                # Convertir a string ISO para máxima compatibilidad
+                fecha_corte = fechas_info["fecha_corte"]
+                if hasattr(fecha_corte, "strftime"):
+                    fecha_corte_str = fecha_corte.strftime("%Y-%m-%d")
+                else:
+                    fecha_corte_str = str(fecha_corte)
+
+                # Usar add_shape en lugar de add_vline para mayor control
+                fig.add_shape(
+                    type="line",
+                    x0=fecha_corte_str,
+                    x1=fecha_corte_str,
+                    y0=0,
+                    y1=1,
+                    yref="paper",
+                    line=dict(color="red", width=2, dash="dash"),
+                )
+
+                # Agregar anotación separadamente
+                fig.add_annotation(
+                    x=fecha_corte_str,
+                    y=0.95,
+                    yref="paper",
+                    text="Inicio Barridos",
+                    showarrow=True,
+                    arrowhead=2,
+                    arrowcolor="red",
+                    font=dict(color="red"),
+                    bgcolor="white",
+                    bordercolor="red",
+                    borderwidth=1,
+                )
+
+            except Exception as e:
+                st.warning(f"No se pudo agregar línea de fecha de corte: {str(e)}")
 
         fig.update_layout(
             plot_bgcolor=COLORS["white"], paper_bgcolor=COLORS["white"], height=500
@@ -1004,6 +1039,8 @@ def show_temporal_tab(combined_data):
             if not historicos_dias.empty and not barridos_dias.empty:
                 incremento = ((promedio_barr - promedio_hist) / promedio_hist) * 100
                 st.metric("Incremento de Ritmo", f"{incremento:+.1f}%")
+    else:
+        st.info("No hay datos temporales disponibles para mostrar")
 
 
 def show_geographic_tab(combined_data):

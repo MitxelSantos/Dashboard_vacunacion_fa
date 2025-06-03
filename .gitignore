@@ -2,6 +2,7 @@
 venv/
 env/
 .env/
+.venv/
 
 # Archivos de caché de Python
 __pycache__/
@@ -14,29 +15,49 @@ dist/
 build/
 *.egg-info/
 
-# Archivos y carpetas de datos (para proteger información sensible)
+# Archivos de datos sensibles
 data/vacunacion_fa.csv
+data/Resumen.xlsx
+data/Poblacion_aseguramiento.xlsx
 data/processed/
 data/*.csv
 data/*.xlsx
+data/*.xls
 
 # Logs
 logs/
 *.log
 
-# Archivos de configuración local
+# Archivos de configuración local con datos sensibles
 .streamlit/secrets.toml
 
 # Archivos de sistema operativo
 .DS_Store
 Thumbs.db
+desktop.ini
 
 # Archivos de IDE
 .idea/
 .vscode/
 *.swp
 *.swo
+.spyderproject
+.spyproject
 
+# Jupyter Notebook
+.ipynb_checkpoints
 
-*.pyc
+# pyenv
+.python-version
 
+# Archivos temporales
+*.tmp
+*.temp
+~*
+
+# Archivos de backup
+*.bak
+*.backup
+
+# Streamlit
+.streamlit/config_local.toml
