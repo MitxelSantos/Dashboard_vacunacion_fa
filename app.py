@@ -4,6 +4,15 @@ Versión 2.4 - Corregida con arquitectura robusta de carga
 """
 
 import streamlit as st
+
+# Configuración de página
+st.set_page_config(
+    page_title="Dashboard Fiebre Amarilla - Tolima",
+    page_icon="💉",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
 import pandas as pd
 import numpy as np
 import plotly.express as px
@@ -25,23 +34,17 @@ try:
     )
 
     GOOGLE_DRIVE_AVAILABLE = True
+    GOOGLE_DRIVE_ERROR = None
 except ImportError as e:
-    st.warning(f"⚠️ Google Drive no disponible: {str(e)}")
+    # ✅ NO usar st.warning aquí, solo guardar el error
     GOOGLE_DRIVE_AVAILABLE = False
+    GOOGLE_DRIVE_ERROR = str(e)
 
 # Importar vistas
 from vistas.overview import show_overview_tab
 from vistas.temporal import show_temporal_tab
 from vistas.geographic import show_geographic_tab
 from vistas.population import show_population_tab
-
-# Configuración de página
-st.set_page_config(
-    page_title="Dashboard Fiebre Amarilla - Tolima",
-    page_icon="💉",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
 
 # Colores institucionales del Tolima
 COLORS = {
@@ -53,7 +56,7 @@ COLORS = {
     "white": "#FFFFFF",
 }
 
-# Rangos de edad (11 rangos)
+# Rangos de edad (9 rangos consolidados)
 RANGOS_EDAD = {
     "<1": "< 1 año",
     "1-5": "1-5 años",
@@ -64,8 +67,7 @@ RANGOS_EDAD = {
     "41-50": "41-50 años",
     "51-59": "51-59 años",
     "60+": "60 años y más",
-    "60-69": "60-69 años",
-    "70+": "70 años y más",
+    # Nota: Los rangos 60-69 y 70+ se consolidan automáticamente en 60+
 }
 
 
@@ -617,6 +619,10 @@ def main():
     """
     st.title("🏥 Dashboard de Vacunación Fiebre Amarilla")
     st.markdown("**Departamento del Tolima - Barridos Territoriales**")
+
+    # ✅ Mostrar warning de Google Drive aquí
+    if not GOOGLE_DRIVE_AVAILABLE and GOOGLE_DRIVE_ERROR:
+        st.warning(f"⚠️ Google Drive no disponible: {GOOGLE_DRIVE_ERROR}")
 
     # Sidebar con logo y configuración
     with st.sidebar:
