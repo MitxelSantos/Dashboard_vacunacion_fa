@@ -1,6 +1,6 @@
 """
 app.py - Dashboard de Vacunación Fiebre Amarilla - Tolima
-Versión 2.3 - Limpio, modularizado y con porcentajes en gráficos
+Versión 2.4 - Corregida con arquitectura robusta de carga
 """
 
 import streamlit as st
@@ -10,19 +10,23 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, date
 import os
+import time
 from pathlib import Path
 
-# Importar módulos de Google Drive
+# Importar módulos de Google Drive con manejo de errores mejorado
 try:
     from google_drive_loader import (
         load_vaccination_data,
         load_population_data,
         load_barridos_data,
         load_logo,
+        load_from_drive,
+        validate_secrets,
     )
 
     GOOGLE_DRIVE_AVAILABLE = True
-except ImportError:
+except ImportError as e:
+    st.warning(f"⚠️ Google Drive no disponible: {str(e)}")
     GOOGLE_DRIVE_AVAILABLE = False
 
 # Importar vistas
@@ -30,7 +34,6 @@ from vistas.overview import show_overview_tab
 from vistas.temporal import show_temporal_tab
 from vistas.geographic import show_geographic_tab
 from vistas.population import show_population_tab
-
 
 # Configuración de página
 st.set_page_config(
@@ -113,99 +116,148 @@ def classify_age_group(edad):
         return "60+"
 
 
-@st.cache_data
-def load_historical_data():
-    """Carga datos históricos de vacunación individual"""
-    try:
-        # Intentar cargar desde Google Drive primero
-        if GOOGLE_DRIVE_AVAILABLE and st.secrets.get("google_drive", {}).get(
-            "vacunacion_csv"
-        ):
-            df = load_vaccination_data()
-            if not df.empty:
-                if "FA UNICA" in df.columns:
-                    df["FA UNICA"] = pd.to_datetime(df["FA UNICA"], errors="coerce")
-                if "FechaNacimiento" in df.columns:
-                    df["FechaNacimiento"] = pd.to_datetime(
-                        df["FechaNacimiento"], errors="coerce"
-                    )
-                return df
+def show_system_status():
+    """Muestra el estado del sistema de carga"""
+    st.markdown("### 🔍 Estado del Sistema")
 
-        # Fallback a archivo local
-        if os.path.exists("data/vacunacion_fa.csv"):
-            df = pd.read_csv("data/vacunacion_fa.csv")
-            if not df.empty:
-                if "FA UNICA" in df.columns:
-                    df["FA UNICA"] = pd.to_datetime(df["FA UNICA"], errors="coerce")
-                if "FechaNacimiento" in df.columns:
-                    df["FechaNacimiento"] = pd.to_datetime(
-                        df["FechaNacimiento"], errors="coerce"
-                    )
-                return df
+    # Verificar Google Drive
+    if GOOGLE_DRIVE_AVAILABLE:
+        valid, message = validate_secrets()
+        if valid:
+            st.success("✅ Google Drive: Configurado correctamente")
+        else:
+            st.warning(f"⚠️ Google Drive: {message}")
+    else:
+        st.error("❌ Google Drive: No disponible")
+
+    # Verificar archivos locales
+    local_files = {
+        "Vacunación": Path("data/vacunacion_fa.csv"),
+        "Población": Path("data/Poblacion_aseguramiento.xlsx"),
+        "Barridos": Path("data/Resumen.xlsx"),
+        "Logo": Path("assets/images/logo_gobernacion.png"),
+    }
+
+    st.markdown("**Archivos Locales:**")
+    for name, path in local_files.items():
+        if path.exists():
+            size = path.stat().st_size
+            st.success(f"✅ {name}: Disponible ({size:,} bytes)")
+        else:
+            st.error(f"❌ {name}: No encontrado")
+
+
+@st.cache_data(ttl=3600)  # Cache por 1 hora
+def load_historical_data():
+    """
+    Carga datos históricos de vacunación individual con arquitectura robusta
+    """
+    try:
+        # Verificar archivo local primero
+        local_file = Path("data/vacunacion_fa.csv")
+
+        if local_file.exists():
+            st.info("📁 Usando archivo local de vacunación")
+            df = pd.read_csv(
+                local_file, low_memory=False, encoding="utf-8", on_bad_lines="skip"
+            )
+        elif GOOGLE_DRIVE_AVAILABLE:
+            st.info("☁️ Descargando datos de vacunación desde Google Drive...")
+            df = load_vaccination_data()
+        else:
+            st.error("❌ No se puede acceder a datos de vacunación")
+            return pd.DataFrame()
+
+        # Procesar fechas si el DataFrame no está vacío
+        if not df.empty:
+            if "FA UNICA" in df.columns:
+                df["FA UNICA"] = pd.to_datetime(df["FA UNICA"], errors="coerce")
+            if "FechaNacimiento" in df.columns:
+                df["FechaNacimiento"] = pd.to_datetime(
+                    df["FechaNacimiento"], errors="coerce"
+                )
+
+            st.success(f"✅ Datos de vacunación cargados: {len(df):,} registros")
+            return df
+        else:
+            st.warning("⚠️ No se encontraron datos de vacunación")
+            return pd.DataFrame()
 
     except Exception as e:
-        st.error(f"Error cargando datos históricos: {str(e)}")
+        st.error(f"❌ Error cargando datos históricos: {str(e)}")
+        return pd.DataFrame()
 
-    return pd.DataFrame()
 
-
-@st.cache_data
-def load_barridos_data():
-    """Carga datos de barridos territoriales de emergencia"""
+@st.cache_data(ttl=3600)
+def load_barridos_data_cached():
+    """
+    Carga datos de barridos territoriales con arquitectura robusta
+    """
     try:
-        # Intentar cargar desde Google Drive primero
-        if GOOGLE_DRIVE_AVAILABLE and st.secrets.get("google_drive", {}).get(
-            "resumen_barridos_xlsx"
-        ):
-            df = load_barridos_data()
-            if not df.empty:
-                if "FECHA" in df.columns:
-                    df["FECHA"] = pd.to_datetime(df["FECHA"], errors="coerce")
-                return df
+        # Verificar archivo local primero
+        local_file = Path("data/Resumen.xlsx")
 
-        # Fallback a archivo local
-        if os.path.exists("data/Resumen.xlsx"):
+        if local_file.exists():
+            st.info("📁 Usando archivo local de barridos")
             try:
-                df = pd.read_excel("data/Resumen.xlsx", sheet_name="Vacunacion")
+                df = pd.read_excel(local_file, sheet_name="Vacunacion")
             except:
                 try:
-                    df = pd.read_excel("data/Resumen.xlsx", sheet_name="Barridos")
+                    df = pd.read_excel(local_file, sheet_name="Barridos")
                 except:
-                    df = pd.read_excel("data/Resumen.xlsx", sheet_name=0)
+                    df = pd.read_excel(local_file, sheet_name=0)
+        elif GOOGLE_DRIVE_AVAILABLE:
+            st.info("☁️ Descargando datos de barridos desde Google Drive...")
+            df = load_barridos_data()
+        else:
+            st.error("❌ No se puede acceder a datos de barridos")
+            return pd.DataFrame()
 
-            if not df.empty:
-                if "FECHA" in df.columns:
-                    df["FECHA"] = pd.to_datetime(df["FECHA"], errors="coerce")
-                return df
+        # Procesar fechas si el DataFrame no está vacío
+        if not df.empty:
+            if "FECHA" in df.columns:
+                df["FECHA"] = pd.to_datetime(df["FECHA"], errors="coerce")
+
+            st.success(f"✅ Datos de barridos cargados: {len(df):,} registros")
+            return df
+        else:
+            st.warning("⚠️ No se encontraron datos de barridos")
+            return pd.DataFrame()
 
     except Exception as e:
-        st.error(f"Error cargando barridos: {str(e)}")
+        st.error(f"❌ Error cargando barridos: {str(e)}")
+        return pd.DataFrame()
 
-    return pd.DataFrame()
 
-
-@st.cache_data
-def load_population_data():
-    """Carga datos de población por EAPB y municipio"""
+@st.cache_data(ttl=3600)
+def load_population_data_cached():
+    """
+    Carga datos de población con arquitectura robusta
+    """
     try:
-        # Intentar cargar desde Google Drive primero
-        if GOOGLE_DRIVE_AVAILABLE and st.secrets.get("google_drive", {}).get(
-            "poblacion_xlsx"
-        ):
-            df = load_population_data()
-            if not df.empty:
-                return df
+        # Verificar archivo local primero
+        local_file = Path("data/Poblacion_aseguramiento.xlsx")
 
-        # Fallback a archivo local
-        if os.path.exists("data/Poblacion_aseguramiento.xlsx"):
-            df = pd.read_excel("data/Poblacion_aseguramiento.xlsx")
-            if not df.empty:
-                return df
+        if local_file.exists():
+            st.info("📁 Usando archivo local de población")
+            df = pd.read_excel(local_file)
+        elif GOOGLE_DRIVE_AVAILABLE:
+            st.info("☁️ Descargando datos de población desde Google Drive...")
+            df = load_population_data()
+        else:
+            st.error("❌ No se puede acceder a datos de población")
+            return pd.DataFrame()
+
+        if not df.empty:
+            st.success(f"✅ Datos de población cargados: {len(df):,} registros")
+            return df
+        else:
+            st.warning("⚠️ No se encontraron datos de población")
+            return pd.DataFrame()
 
     except Exception as e:
-        st.error(f"Error cargando población: {str(e)}")
-
-    return pd.DataFrame()
+        st.error(f"❌ Error cargando población: {str(e)}")
+        return pd.DataFrame()
 
 
 def detect_age_columns_barridos(df):
@@ -473,29 +525,6 @@ def determine_cutoff_date(df_barridos, df_historical):
                 )
                 fechas_info["total_historicos_usados"] = len(fechas_historicos)
 
-    # Mostrar información de fechas de corte (MANTENER)
-    if fechas_info["fecha_corte"]:
-        st.success(
-            f"📅 **Fecha de corte (inicio barridos):** {fechas_info['fecha_corte'].strftime('%d/%m/%Y')}"
-        )
-
-    if fechas_info["fecha_mas_reciente_historicos_usada"]:
-        st.info(
-            f"📅 **Último histórico usado:** {fechas_info['fecha_mas_reciente_historicos_usada'].strftime('%d/%m/%Y')} ({fechas_info['total_historicos_usados']:,} registros)"
-        )
-
-    if fechas_info["rango_historicos_completo"]:
-        inicio, fin = fechas_info["rango_historicos_completo"]
-        st.info(
-            f"📊 **Rango completo históricos:** {inicio.strftime('%d/%m/%Y')} - {fin.strftime('%d/%m/%Y')}"
-        )
-
-    if fechas_info["rango_barridos"]:
-        inicio, fin = fechas_info["rango_barridos"]
-        st.info(
-            f"🚨 **Período barridos:** {inicio.strftime('%d/%m/%Y')} - {fin.strftime('%d/%m/%Y')}"
-        )
-
     return fechas_info
 
 
@@ -583,51 +612,164 @@ def combine_vaccination_data(df_historical, df_barridos, fechas_info):
 
 
 def main():
-    """Función principal con carga secuencial y timeout"""
+    """
+    Función principal con carga secuencial mejorada y manejo robusto de errores
+    """
     st.title("🏥 Dashboard de Vacunación Fiebre Amarilla")
     st.markdown("**Departamento del Tolima - Barridos Territoriales**")
 
-    # Sidebar
+    # Sidebar con logo y configuración
     with st.sidebar:
-        # ... tu código de sidebar existente ...
-        pass
+        # Logo de la Gobernación
+        logo_path = None
+        try:
+            if GOOGLE_DRIVE_AVAILABLE:
+                logo_path = load_logo()
+            else:
+                local_logo = Path("assets/images/logo_gobernacion.png")
+                if local_logo.exists():
+                    logo_path = str(local_logo)
+        except:
+            pass
 
-    # CARGA SECUENCIAL CON PROGRESO TOTAL
+        if logo_path and Path(logo_path).exists():
+            st.image(logo_path, width=150, caption="Secretaría de Salud del Tolima")
+        else:
+            st.info("💡 Logo no encontrado")
+
+        st.title("Dashboard Vacunación")
+        st.subheader("Fiebre Amarilla")
+
+        # Información del sistema
+        if st.checkbox("🔍 Estado del Sistema"):
+            show_system_status()
+
+        st.markdown("---")
+        st.markdown("**Desarrollado por:**")
+        st.markdown("Ing. José Miguel Santos")
+        st.markdown("Secretaría de Salud del Tolima © 2025")
+
+    # CARGA SECUENCIAL CON PROGRESO Y VALIDACIÓN
     st.markdown("### 📥 Cargando datos necesarios...")
 
-    total_progress = st.progress(0)
-    overall_status = st.empty()
+    # Verificar disponibilidad inicial
+    with st.spinner("Inicializando sistema de carga..."):
+        if GOOGLE_DRIVE_AVAILABLE:
+            st.info("✅ Google Drive disponible")
+        else:
+            st.warning(
+                "⚠️ Google Drive no disponible - usando archivos locales únicamente"
+            )
 
-    # 1. Cargar históricos (40% del progreso)
-    overall_status.text("1/3 Cargando datos históricos de vacunación...")
-    df_historical = load_historical_data()
-    total_progress.progress(0.33)
+    # Contenedor para el progreso
+    progress_container = st.container()
 
-    # 2. Cargar población (30% del progreso)
-    overall_status.text("2/3 Cargando datos de población...")
-    df_population = load_population_data()
-    total_progress.progress(0.66)
+    with progress_container:
+        total_progress = st.progress(0)
+        overall_status = st.empty()
 
-    # 3. Cargar barridos (30% del progreso)
-    overall_status.text("3/3 Cargando datos de barridos...")
-    df_barridos = load_barridos_data()
-    total_progress.progress(1.0)
+        # 1. Cargar datos históricos (33% del progreso)
+        overall_status.text("1/3 Cargando datos históricos de vacunación...")
+        df_historical = load_historical_data()
+        total_progress.progress(0.33)
 
-    # Limpiar progreso
-    overall_status.text("✅ Todos los datos cargados")
-    time.sleep(1)
-    total_progress.empty()
-    overall_status.empty()
+        # 2. Cargar datos de población (66% del progreso)
+        overall_status.text("2/3 Cargando datos de población...")
+        df_population = load_population_data_cached()
+        total_progress.progress(0.66)
 
-    # Verificar que se cargaron datos críticos
+        # 3. Cargar datos de barridos (100% del progreso)
+        overall_status.text("3/3 Cargando datos de barridos...")
+        df_barridos = load_barridos_data_cached()
+        total_progress.progress(1.0)
+
+        # Limpiar progreso
+        time.sleep(1)
+        total_progress.empty()
+        overall_status.empty()
+
+    # Validación de datos críticos
+    st.markdown("### 📊 Validación de Datos")
+
+    validation_results = []
+
+    # Validar datos históricos
+    if not df_historical.empty:
+        validation_results.append("✅ **Datos históricos:** OK")
+        if "FechaNacimiento" in df_historical.columns:
+            validation_results.append("  ├─ ✅ Columna FechaNacimiento disponible")
+        else:
+            validation_results.append("  ├─ ⚠️ Falta columna FechaNacimiento")
+    else:
+        validation_results.append("❌ **Datos históricos:** Sin datos")
+
+    # Validar datos de barridos
+    if not df_barridos.empty:
+        validation_results.append("✅ **Datos de barridos:** OK")
+    else:
+        validation_results.append("❌ **Datos de barridos:** Sin datos")
+
+    # Validar datos de población
+    if not df_population.empty:
+        validation_results.append("✅ **Datos de población:** OK")
+    else:
+        validation_results.append("❌ **Datos de población:** Sin datos")
+
+    # Mostrar resultados de validación
+    for result in validation_results:
+        st.markdown(result)
+
+    # Verificar que tengamos datos mínimos para continuar
     if df_historical.empty and df_barridos.empty:
-        st.error(
-            "❌ No se pudieron cargar datos críticos. Revisa tu conexión y permisos."
+        st.error("❌ Sin datos suficientes para mostrar el dashboard")
+        st.markdown(
+            """
+        ### 🔧 Posibles soluciones:
+        1. **Verificar conexión a Google Drive** - Revisa los secretos en Streamlit Cloud
+        2. **Subir archivos localmente** - Coloca los archivos en la carpeta `data/`
+        3. **Verificar permisos** - Asegúrate de que los archivos en Drive sean accesibles
+        4. **Contactar administrador** - Si el problema persiste
+        """
         )
-        st.stop()
 
-    # Determinar fechas de corte (mantener solo estos mensajes)
+        # Mostrar información de debug
+        with st.expander("🔍 Información de depuración"):
+            st.write("**Google Drive disponible:**", GOOGLE_DRIVE_AVAILABLE)
+            if GOOGLE_DRIVE_AVAILABLE:
+                valid, message = validate_secrets()
+                st.write("**Configuración válida:**", valid)
+                st.write("**Mensaje:**", message)
+
+        return
+
+    # Si llegamos aquí, tenemos datos suficientes para continuar
+    st.success("🎉 ¡Datos cargados exitosamente! Procesando dashboard...")
+
+    # Determinar fechas de corte
     fechas_info = determine_cutoff_date(df_barridos, df_historical)
+
+    # Mostrar información de fechas de corte
+    if fechas_info.get("fecha_corte"):
+        st.success(
+            f"📅 **Fecha de corte (inicio barridos):** {fechas_info['fecha_corte'].strftime('%d/%m/%Y')}"
+        )
+
+    if fechas_info.get("fecha_mas_reciente_historicos_usada"):
+        st.info(
+            f"📅 **Último histórico usado:** {fechas_info['fecha_mas_reciente_historicos_usada'].strftime('%d/%m/%Y')} ({fechas_info['total_historicos_usados']:,} registros)"
+        )
+
+    if fechas_info.get("rango_historicos_completo"):
+        inicio, fin = fechas_info["rango_historicos_completo"]
+        st.info(
+            f"📊 **Rango completo históricos:** {inicio.strftime('%d/%m/%Y')} - {fin.strftime('%d/%m/%Y')}"
+        )
+
+    if fechas_info.get("rango_barridos"):
+        inicio, fin = fechas_info["rango_barridos"]
+        st.info(
+            f"🚨 **Período barridos:** {inicio.strftime('%d/%m/%Y')} - {fin.strftime('%d/%m/%Y')}"
+        )
 
     # Combinar datos
     combined_data = combine_vaccination_data(df_historical, df_barridos, fechas_info)
@@ -671,25 +813,37 @@ def main():
     )
 
     with tab1:
-        show_overview_tab(
-            combined_data, df_population, fechas_info, COLORS, RANGOS_EDAD
-        )
+        try:
+            show_overview_tab(
+                combined_data, df_population, fechas_info, COLORS, RANGOS_EDAD
+            )
+        except Exception as e:
+            st.error(f"❌ Error en vista Resumen: {str(e)}")
 
     with tab2:
-        show_temporal_tab(combined_data, COLORS)
+        try:
+            show_temporal_tab(combined_data, COLORS)
+        except Exception as e:
+            st.error(f"❌ Error en vista Temporal: {str(e)}")
 
     with tab3:
-        show_geographic_tab(combined_data, COLORS)
+        try:
+            show_geographic_tab(combined_data, COLORS)
+        except Exception as e:
+            st.error(f"❌ Error en vista Geográfico: {str(e)}")
 
     with tab4:
-        show_population_tab(df_population, combined_data, COLORS)
+        try:
+            show_population_tab(df_population, combined_data, COLORS)
+        except Exception as e:
+            st.error(f"❌ Error en vista Población: {str(e)}")
 
     # Footer
     st.markdown("---")
     st.markdown(
         "<div style='text-align: center; color: #7D0F2B;'>"
-        "<small>Dashboard de Vacunación v2.3 - Secretaría de Salud del Tolima</small><br>"
-        "<small>Modularizado y optimizado</small>"
+        "<small>Dashboard de Vacunación v2.4 - Secretaría de Salud del Tolima</small><br>"
+        "<small>Arquitectura robusta con carga mejorada</small>"
         "</div>",
         unsafe_allow_html=True,
     )
