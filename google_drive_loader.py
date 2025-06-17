@@ -1,343 +1,499 @@
 """
-google_drive_loader.py - VERSIÓN CORREGIDA
-Basada en la arquitectura exitosa del segundo repositorio
+google_drive_loader.py - Carga de datos desde Google Drive
+Versión 2.5 - SIN análisis por EAPB, enfocado en municipios y rangos de edad
 """
 
 import streamlit as st
 import pandas as pd
-import io
-import time
+import os
+import tempfile
+import requests
 from pathlib import Path
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseDownload
+import logging
 
-# Directorios
-DATA_DIR = Path(__file__).parent / "data"
-ASSETS_DIR = Path(__file__).parent / "assets"
-IMAGES_DIR = ASSETS_DIR / "images"
-
-# Asegurar que las carpetas existan
-DATA_DIR.mkdir(exist_ok=True, parents=True)
-ASSETS_DIR.mkdir(exist_ok=True, parents=True)
-IMAGES_DIR.mkdir(exist_ok=True, parents=True)
-
-
-def download_file_with_robust_timeout(
-    drive_service, file_id, destination_path, timeout=1800
-):
-    """
-    Descarga un archivo de Google Drive con manejo robusto para archivos grandes.
-    Basado en la versión exitosa del segundo repositorio.
-    """
-    try:
-        start_time = time.time()
-
-        # Obtener información del archivo
-        file_info = (
-            drive_service.files()
-            .get(fileId=file_id, fields="size,name,mimeType")
-            .execute()
-        )
-        file_size = int(file_info.get("size", 0))
-
-        # Asegurar que el directorio existe
-        destination_path.parent.mkdir(exist_ok=True, parents=True)
-
-        # Para archivos grandes, usar chunks grandes
-        if file_size > 200 * 1024 * 1024:  # > 200MB
-            chunk_size = 50 * 1024 * 1024  # 50MB por chunk
-        else:
-            chunk_size = 20 * 1024 * 1024  # 20MB chunks
-
-        # Crear request para descargar
-        request = drive_service.files().get_media(fileId=file_id)
-
-        with open(destination_path, "wb") as f:
-            downloader = MediaIoBaseDownload(f, request, chunksize=chunk_size)
-            done = False
-
-            while not done:
-                # Verificar tiempo de espera máximo
-                if time.time() - start_time > timeout:
-                    if destination_path.exists():
-                        destination_path.unlink()  # Eliminar archivo parcial
-                    return False
-
-                try:
-                    status, done = downloader.next_chunk()
-                except Exception:
-                    # Intentar continuar con el siguiente chunk
-                    continue
-
-        # Verificar resultado
-        if destination_path.exists():
-            downloaded_size = destination_path.stat().st_size
-            # Permitir hasta 5% de diferencia
-            if downloaded_size >= file_size * 0.95:
-                return True
-            else:
-                return False
-        else:
-            return False
-
-    except Exception:
-        return False
+# Configurar logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 def validate_secrets():
     """
-    Valida que todos los secretos necesarios estén configurados.
-    """
-    # Verificar secretos básicos
-    if "google_drive" not in st.secrets:
-        return False, "Falta configuración 'google_drive' en secrets"
-
-    if "gcp_service_account" not in st.secrets:
-        return False, "Falta configuración 'gcp_service_account' en secrets"
-
-    # Verificar IDs de archivos
-    required_files = ["poblacion_xlsx", "vacunacion_csv", "logo_gobernacion"]
-    missing_files = [f for f in required_files if f not in st.secrets["google_drive"]]
-
-    if missing_files:
-        return False, f"Faltan IDs de archivos en Google Drive: {missing_files}"
-
-    return True, "Configuración válida"
-
-
-def create_drive_service():
-    """
-    Crea el servicio de Google Drive con manejo de errores robusto.
+    Valida que los secretos de Google Drive estén configurados correctamente
     """
     try:
-        # Crear credenciales
-        credentials = service_account.Credentials.from_service_account_info(
-            st.secrets["gcp_service_account"],
-            scopes=["https://www.googleapis.com/auth/drive.readonly"],
-        )
+        # IDs de archivos en Google Drive (se configuran en secrets.toml)
+        file_ids = {
+            "vacunacion_csv_id": st.secrets.get("google_drive", {}).get(
+                "vacunacion_csv_id"
+            ),
+            "barridos_xlsx_id": st.secrets.get("google_drive", {}).get(
+                "barridos_xlsx_id"
+            ),
+            "poblacion_xlsx_id": st.secrets.get("google_drive", {}).get(
+                "poblacion_xlsx_id"
+            ),  # OPCIONAL
+            "logo_id": st.secrets.get("google_drive", {}).get("logo_id"),
+        }
 
-        # Construir servicio de Drive
-        drive_service = build("drive", "v3", credentials=credentials)
+        # Verificar que al menos los archivos críticos estén configurados
+        critical_files = ["vacunacion_csv_id", "barridos_xlsx_id"]
+        missing_critical = [key for key in critical_files if not file_ids.get(key)]
 
-        # Verificar conexión - intentar listar archivos
-        response = drive_service.files().list(pageSize=1).execute()
-        if "files" not in response:
-            return None
+        if missing_critical:
+            return False, f"Faltan IDs críticos: {missing_critical}"
 
-        return drive_service
+        # Verificar opcional
+        optional_files = ["poblacion_xlsx_id", "logo_id"]
+        missing_optional = [key for key in optional_files if not file_ids.get(key)]
+
+        if missing_optional:
+            logger.info(f"Archivos opcionales no configurados: {missing_optional}")
+
+        return True, "Configuración de Google Drive válida"
 
     except Exception as e:
-        st.error(f"Error creando servicio de Google Drive: {str(e)}")
+        return False, f"Error validando secretos: {str(e)}"
+
+
+def download_from_drive(file_id, file_name, target_dir="temp"):
+    """
+    Descarga un archivo específico desde Google Drive usando su ID
+    """
+    try:
+        if not file_id:
+            logger.warning(f"No se proporcionó ID para {file_name}")
+            return None
+
+        # URL de descarga directa de Google Drive
+        download_url = f"https://drive.google.com/uc?export=download&id={file_id}"
+
+        # Crear directorio temporal si no existe
+        temp_dir = Path(target_dir)
+        temp_dir.mkdir(exist_ok=True)
+
+        # Ruta de destino
+        target_path = temp_dir / file_name
+
+        logger.info(f"Descargando {file_name} desde Google Drive...")
+
+        # Realizar la descarga
+        response = requests.get(download_url, timeout=30)
+        response.raise_for_status()
+
+        # Guardar archivo
+        with open(target_path, "wb") as f:
+            f.write(response.content)
+
+        logger.info(f"Archivo descargado exitosamente: {target_path}")
+        return str(target_path)
+
+    except requests.RequestException as e:
+        logger.error(f"Error de red descargando {file_name}: {str(e)}")
+        return None
+    except Exception as e:
+        logger.error(f"Error descargando {file_name}: {str(e)}")
         return None
 
 
-def load_from_drive():
+def load_vaccination_data():
     """
-    Descarga archivos de Google Drive usando la arquitectura exitosa.
+    Carga datos históricos de vacunación individual desde Google Drive
     """
-    # Validar secretos primero
-    valid, message = validate_secrets()
-    if not valid:
-        st.warning(f"⚠️ Configuración de Google Drive: {message}")
-        return False
-
-    # Crear servicio
-    drive_service = create_drive_service()
-    if drive_service is None:
-        st.error("❌ No se pudo conectar a Google Drive")
-        return False
-
-    success_count = 0
-    total_files = 3
-
-    # Lista de archivos a descargar
-    files_to_download = [
-        {
-            "key": "poblacion_xlsx",
-            "path": DATA_DIR / "POBLACION.xlsx",
-            "name": "Población",
-        },
-        {
-            "key": "vacunacion_csv",
-            "path": DATA_DIR / "vacunacion_fa.csv",
-            "name": "Vacunación",
-        },
-        {
-            "key": "logo_gobernacion",
-            "path": IMAGES_DIR / "logo_gobernacion.png",
-            "name": "Logo",
-        },
-    ]
-
-    # Barra de progreso
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-
-    for i, file_info in enumerate(files_to_download):
-        status_text.text(f"Descargando {file_info['name']}...")
-
-        try:
-            file_id = st.secrets["google_drive"][file_info["key"]]
-
-            # Verificar que el archivo existe en Drive
-            drive_service.files().get(
-                fileId=file_id, fields="name,size,mimeType"
-            ).execute()
-
-            # Descargar archivo
-            success = download_file_with_robust_timeout(
-                drive_service,
-                file_id,
-                file_info["path"],
-                timeout=1800,  # 30 minutos timeout
-            )
-
-            if success:
-                success_count += 1
-                st.success(f"✅ {file_info['name']} descargado exitosamente")
-            else:
-                st.error(f"❌ Error descargando {file_info['name']}")
-
-        except Exception as e:
-            st.error(f"❌ Error con {file_info['name']}: {str(e)}")
-
-        # Actualizar progreso
-        progress_bar.progress((i + 1) / total_files)
-
-    # Limpiar UI
-    progress_bar.empty()
-    status_text.empty()
-
-    # Verificar archivos críticos
-    required_files_paths = [
-        DATA_DIR / "POBLACION.xlsx",
-        DATA_DIR / "vacunacion_fa.csv",
-    ]
-
-    missing_critical = [str(path) for path in required_files_paths if not path.exists()]
-
-    if missing_critical:
-        st.error(f"❌ Archivos críticos faltantes: {missing_critical}")
-        return False
-
-    st.success(f"✅ Descarga completada: {success_count}/{total_files} archivos")
-    return success_count >= 2  # Al menos población y vacunación
-
-
-# Funciones específicas para cada tipo de archivo
-def load_vaccination_data() -> pd.DataFrame:
-    """Carga datos de vacunación con fallback robusto"""
     try:
-        file_path = DATA_DIR / "vacunacion_fa.csv"
+        # Obtener ID del archivo
+        file_id = st.secrets.get("google_drive", {}).get("vacunacion_csv_id")
 
-        # Si no existe, intentar descargar
-        if not file_path.exists():
-            if load_from_drive():
-                pass  # Archivo descargado
-            else:
-                return pd.DataFrame()
+        if not file_id:
+            logger.error("ID de archivo de vacunación no configurado")
+            return pd.DataFrame()
 
-        # Cargar archivo con optimizaciones
-        if file_path.exists():
-            df = pd.read_csv(
-                file_path, low_memory=False, encoding="utf-8", on_bad_lines="skip"
+        # Descargar archivo
+        file_path = download_from_drive(file_id, "vacunacion_fa.csv")
+
+        if not file_path or not Path(file_path).exists():
+            logger.error("No se pudo descargar el archivo de vacunación")
+            return pd.DataFrame()
+
+        # Cargar CSV
+        df = pd.read_csv(
+            file_path, low_memory=False, encoding="utf-8", on_bad_lines="skip"
+        )
+
+        logger.info(f"Datos de vacunación cargados: {len(df):,} registros")
+
+        # Validaciones básicas
+        required_columns = ["FA UNICA", "NombreMunicipioResidencia"]
+        missing_cols = [col for col in required_columns if col not in df.columns]
+
+        if missing_cols:
+            logger.warning(f"Columnas faltantes en vacunación: {missing_cols}")
+
+        # Verificar columna crítica para cálculo de edad
+        if "FechaNacimiento" not in df.columns:
+            logger.warning(
+                "Columna FechaNacimiento no encontrada - edad no se podrá calcular"
             )
 
-            # Procesar fechas
-            if "FA UNICA" in df.columns:
-                df["FA UNICA"] = pd.to_datetime(df["FA UNICA"], errors="coerce")
-            if "FechaNacimiento" in df.columns:
-                df["FechaNacimiento"] = pd.to_datetime(
-                    df["FechaNacimiento"], errors="coerce"
+        return df
+
+    except Exception as e:
+        logger.error(f"Error cargando datos de vacunación: {str(e)}")
+        return pd.DataFrame()
+
+
+def load_barridos_data():
+    """
+    Carga datos de barridos territoriales desde Google Drive
+    """
+    try:
+        # Obtener ID del archivo
+        file_id = st.secrets.get("google_drive", {}).get("barridos_xlsx_id")
+
+        if not file_id:
+            logger.error("ID de archivo de barridos no configurado")
+            return pd.DataFrame()
+
+        # Descargar archivo
+        file_path = download_from_drive(file_id, "Resumen.xlsx")
+
+        if not file_path or not Path(file_path).exists():
+            logger.error("No se pudo descargar el archivo de barridos")
+            return pd.DataFrame()
+
+        # Intentar cargar desde diferentes hojas
+        sheet_names = ["Barridos", "Vacunacion", 0]
+        df = None
+
+        for sheet in sheet_names:
+            try:
+                df = pd.read_excel(file_path, sheet_name=sheet)
+                logger.info(
+                    f"Datos de barridos cargados desde hoja '{sheet}': {len(df):,} registros"
                 )
+                break
+            except Exception as e:
+                logger.warning(f"No se pudo leer hoja '{sheet}': {str(e)}")
+                continue
 
-            return df
+        if df is None:
+            logger.error("No se pudo leer ninguna hoja del archivo de barridos")
+            return pd.DataFrame()
 
-        return pd.DataFrame()
+        # Validaciones básicas para rangos de edad
+        expected_age_patterns = [
+            "<1",
+            "1-5",
+            "6-10",
+            "11-20",
+            "21-30",
+            "31-40",
+            "41-50",
+            "51-59",
+            "60",
+        ]
+        age_columns_found = []
+
+        for col in df.columns:
+            col_str = str(col).upper()
+            for pattern in expected_age_patterns:
+                if pattern in col_str:
+                    age_columns_found.append(col)
+                    break
+
+        logger.info(
+            f"Columnas de edad encontradas en barridos: {len(age_columns_found)}"
+        )
+
+        if len(age_columns_found) == 0:
+            logger.warning("No se encontraron columnas de rangos de edad en barridos")
+
+        return df
 
     except Exception as e:
-        st.error(f"❌ Error cargando datos de vacunación: {str(e)}")
+        logger.error(f"Error cargando datos de barridos: {str(e)}")
         return pd.DataFrame()
 
 
-def load_population_data() -> pd.DataFrame:
-    """Carga datos de población con fallback robusto"""
+def load_population_data():
+    """
+    Carga datos de población por municipios desde Google Drive (OPCIONAL)
+    """
     try:
-        file_path = DATA_DIR / "POBLACION.xlsx"
+        # Obtener ID del archivo (opcional)
+        file_id = st.secrets.get("google_drive", {}).get("poblacion_xlsx_id")
 
-        # Si no existe, intentar descargar
-        if not file_path.exists():
-            if load_from_drive():
-                pass  # Archivo descargado
-            else:
-                return pd.DataFrame()
+        if not file_id:
+            logger.info("ID de archivo de población no configurado (opcional)")
+            return pd.DataFrame()
 
-        # Cargar archivo
-        if file_path.exists():
-            # Intentar diferentes hojas
-            try:
-                df = pd.read_excel(file_path, sheet_name="Poblacion")
-            except:
-                df = pd.read_excel(file_path, sheet_name=0)
+        # Descargar archivo
+        file_path = download_from_drive(file_id, "Poblacion_aseguramiento.xlsx")
 
-            return df
+        if not file_path or not Path(file_path).exists():
+            logger.info("No se pudo descargar el archivo de población (opcional)")
+            return pd.DataFrame()
 
-        return pd.DataFrame()
+        # Cargar Excel
+        df = pd.read_excel(file_path)
 
-    except Exception as e:
-        st.error(f"❌ Error cargando datos de población: {str(e)}")
-        return pd.DataFrame()
+        logger.info(f"Datos de población cargados: {len(df):,} registros")
 
+        # Validaciones para identificar columnas clave
+        municipio_col = None
+        poblacion_col = None
 
-def load_barridos_data() -> pd.DataFrame:
-    """Carga datos de barridos con fallback robusto"""
-    try:
-        file_path = DATA_DIR / "Resumen.xlsx"
+        for col in df.columns:
+            col_upper = str(col).upper()
+            if "MUNICIPIO" in col_upper:
+                municipio_col = col
+            elif "TOTAL" in col_upper or "POBLACION" in col_upper:
+                poblacion_col = col
 
-        # Si no existe, intentar descargar
-        if not file_path.exists():
-            if load_from_drive():
-                pass  # Archivo descargado
-            else:
-                return pd.DataFrame()
+        if municipio_col:
+            municipios_unicos = df[municipio_col].nunique()
+            logger.info(f"Municipios únicos en población: {municipios_unicos}")
+        else:
+            logger.warning("No se encontró columna de municipio en datos de población")
 
-        # Cargar archivo
-        if file_path.exists():
-            # Intentar diferentes hojas
-            try:
-                df = pd.read_excel(file_path, sheet_name="Vacunacion")
-            except:
-                try:
-                    df = pd.read_excel(file_path, sheet_name="Barridos")
-                except:
-                    df = pd.read_excel(file_path, sheet_name=0)
+        if poblacion_col:
+            total_poblacion = df[poblacion_col].sum()
+            logger.info(f"Población total: {total_poblacion:,}")
+        else:
+            logger.warning("No se encontró columna de población total")
 
-            # Procesar fechas
-            if "FECHA" in df.columns:
-                df["FECHA"] = pd.to_datetime(df["FECHA"], errors="coerce")
+        # NOTA: Se ignora columna EAPB intencionalmente en v2.5
+        if "EAPB" in df.columns:
+            logger.info(
+                "Columna EAPB encontrada pero será ignorada (v2.5 sin análisis EAPB)"
+            )
 
-            return df
-
-        return pd.DataFrame()
+        return df
 
     except Exception as e:
-        st.error(f"❌ Error cargando datos de barridos: {str(e)}")
+        logger.info(f"Error cargando datos de población (opcional): {str(e)}")
         return pd.DataFrame()
 
 
 def load_logo():
-    """Carga logo con manejo de errores"""
+    """
+    Descarga logo desde Google Drive (OPCIONAL)
+    """
     try:
-        logo_path = IMAGES_DIR / "logo_gobernacion.png"
+        # Obtener ID del archivo (opcional)
+        file_id = st.secrets.get("google_drive", {}).get("logo_id")
 
-        if not logo_path.exists():
-            load_from_drive()
+        if not file_id:
+            logger.info("ID de logo no configurado (opcional)")
+            return None
 
-        if logo_path.exists():
-            return str(logo_path)
+        # Descargar archivo
+        file_path = download_from_drive(
+            file_id, "logo_gobernacion.png", "assets/images"
+        )
 
+        if file_path and Path(file_path).exists():
+            logger.info("Logo descargado exitosamente")
+            return file_path
+        else:
+            logger.info("No se pudo descargar el logo (opcional)")
+            return None
+
+    except Exception as e:
+        logger.info(f"Error descargando logo (opcional): {str(e)}")
         return None
 
-    except Exception:
-        return None
+
+def load_from_drive(file_type="all"):
+    """
+    Función principal para cargar datos específicos o todos desde Google Drive
+
+    Args:
+        file_type (str): 'vacunacion', 'barridos', 'poblacion', 'logo', o 'all'
+
+    Returns:
+        dict: Diccionario con los DataFrames/rutas cargados
+    """
+    results = {
+        "vacunacion": pd.DataFrame(),
+        "barridos": pd.DataFrame(),
+        "poblacion": pd.DataFrame(),
+        "logo": None,
+        "status": {
+            "vacunacion": False,
+            "barridos": False,
+            "poblacion": False,  # Opcional
+            "logo": False,  # Opcional
+        },
+    }
+
+    try:
+        # Validar configuración primero
+        valid, message = validate_secrets()
+        if not valid:
+            logger.error(f"Configuración inválida: {message}")
+            return results
+
+        # Cargar datos según el tipo solicitado
+        if file_type in ["vacunacion", "all"]:
+            try:
+                results["vacunacion"] = load_vaccination_data()
+                results["status"]["vacunacion"] = not results["vacunacion"].empty
+            except Exception as e:
+                logger.error(f"Error cargando vacunación: {str(e)}")
+
+        if file_type in ["barridos", "all"]:
+            try:
+                results["barridos"] = load_barridos_data()
+                results["status"]["barridos"] = not results["barridos"].empty
+            except Exception as e:
+                logger.error(f"Error cargando barridos: {str(e)}")
+
+        if file_type in ["poblacion", "all"]:
+            try:
+                results["poblacion"] = load_population_data()
+                results["status"]["poblacion"] = not results["poblacion"].empty
+                # Población es opcional, no es error si está vacía
+            except Exception as e:
+                logger.info(f"Población no disponible (opcional): {str(e)}")
+
+        if file_type in ["logo", "all"]:
+            try:
+                results["logo"] = load_logo()
+                results["status"]["logo"] = results["logo"] is not None
+                # Logo es opcional, no es error si no está
+            except Exception as e:
+                logger.info(f"Logo no disponible (opcional): {str(e)}")
+
+        # Log del resumen
+        critical_loaded = (
+            results["status"]["vacunacion"] and results["status"]["barridos"]
+        )
+        logger.info(
+            f"Carga completada - Críticos: {critical_loaded}, Población: {results['status']['poblacion']}, Logo: {results['status']['logo']}"
+        )
+
+        return results
+
+    except Exception as e:
+        logger.error(f"Error general en carga desde Drive: {str(e)}")
+        return results
+
+
+def check_drive_availability():
+    """
+    Verifica si Google Drive está disponible y configurado correctamente
+    """
+    try:
+        valid, message = validate_secrets()
+        return valid, message
+    except Exception as e:
+        return False, f"Error verificando Google Drive: {str(e)}"
+
+
+def get_drive_file_info():
+    """
+    Obtiene información de los archivos configurados en Google Drive
+    """
+    try:
+        file_ids = {
+            "vacunacion_csv_id": st.secrets.get("google_drive", {}).get(
+                "vacunacion_csv_id"
+            ),
+            "barridos_xlsx_id": st.secrets.get("google_drive", {}).get(
+                "barridos_xlsx_id"
+            ),
+            "poblacion_xlsx_id": st.secrets.get("google_drive", {}).get(
+                "poblacion_xlsx_id"
+            ),
+            "logo_id": st.secrets.get("google_drive", {}).get("logo_id"),
+        }
+
+        info = {
+            "configurados": sum(1 for file_id in file_ids.values() if file_id),
+            "total": len(file_ids),
+            "criticos_configurados": all(
+                file_ids[key] for key in ["vacunacion_csv_id", "barridos_xlsx_id"]
+            ),
+            "opcionales_configurados": sum(
+                1 for key in ["poblacion_xlsx_id", "logo_id"] if file_ids[key]
+            ),
+            "detalles": file_ids,
+        }
+
+        return info
+
+    except Exception as e:
+        logger.error(f"Error obteniendo información de Drive: {str(e)}")
+        return {
+            "configurados": 0,
+            "total": 4,
+            "criticos_configurados": False,
+            "opcionales_configurados": 0,
+            "detalles": {},
+            "error": str(e),
+        }
+
+
+# Funciones de utilidad para migración desde versiones con EAPB
+def migrate_from_eapb_version():
+    """
+    Función de ayuda para migrar desde versiones anteriores que usaban EAPB
+    """
+    migration_notes = {
+        "removed_features": [
+            "Análisis por EAPB/Aseguradoras",
+            "Métricas de cobertura por aseguradora",
+            "Validaciones obligatorias de EAPB",
+            "Dependencia crítica de datos poblacionales con EAPB",
+        ],
+        "new_features": [
+            "Análisis territorial por municipios",
+            "Categorización automática de municipios por tamaño",
+            "Datos de población opcionales",
+            "Enfoque en rangos de edad",
+            "Análisis de concentración poblacional",
+        ],
+        "file_changes": {
+            "poblacion_xlsx": "Ahora es OPCIONAL - dashboard funciona sin él",
+            "vacunacion_csv": "Debe incluir FechaNacimiento para cálculo de edad",
+            "barridos_xlsx": "Sin cambios en estructura",
+        },
+    }
+
+    return migration_notes
+
+
+if __name__ == "__main__":
+    # Script de prueba para validar configuración
+    print("🔍 VALIDADOR DE CONFIGURACIÓN GOOGLE DRIVE")
+    print("=" * 50)
+
+    # Verificar disponibilidad
+    available, message = check_drive_availability()
+    print(f"Disponibilidad: {'✅' if available else '❌'} {message}")
+
+    # Obtener información de archivos
+    info = get_drive_file_info()
+    print(f"\nArchivos configurados: {info['configurados']}/{info['total']}")
+    print(f"Críticos configurados: {'✅' if info['criticos_configurados'] else '❌'}")
+    print(f"Opcionales configurados: {info['opcionales_configurados']}/2")
+
+    # Mostrar detalles
+    print("\nDetalles de configuración:")
+    for key, value in info["detalles"].items():
+        status = "✅" if value else "❌"
+        optional = (
+            "(opcional)" if key in ["poblacion_xlsx_id", "logo_id"] else "(crítico)"
+        )
+        print(f"  {status} {key}: {optional}")
+
+    # Información de migración
+    migration = migrate_from_eapb_version()
+    print(f"\n📋 CAMBIOS VERSIÓN 2.5:")
+    print("Funciones eliminadas:")
+    for item in migration["removed_features"]:
+        print(f"  ❌ {item}")
+
+    print("\nNuevas funciones:")
+    for item in migration["new_features"]:
+        print(f"  ✅ {item}")

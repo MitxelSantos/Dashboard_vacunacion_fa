@@ -1,6 +1,6 @@
 """
-vistas/geographic.py - Vista de distribución geográfica
-Enfocada en análisis territorial y cobertura por municipios
+vistas/geographic.py - Análisis geográfico simplificado
+Enfocado en distribución por municipios
 """
 
 import streamlit as st
@@ -10,304 +10,342 @@ import plotly.graph_objects as go
 
 
 def show_geographic_tab(combined_data, COLORS):
-    """Muestra análisis geográfico con énfasis en cobertura territorial"""
+    """Muestra análisis geográfico por municipios"""
     st.header("🗺️ Distribución Geográfica")
 
-    # Análisis por tipo de intervención
+    # Análisis de vacunación individual por municipios
+    show_individual_by_municipality(combined_data, COLORS)
+
+    # Análisis de barridos por municipios
+    show_barridos_by_municipality(combined_data, COLORS)
+
+    # Comparación territorial
+    show_territorial_comparison(combined_data, COLORS)
+
+
+def show_individual_by_municipality(combined_data, COLORS):
+    """Muestra distribución de vacunación individual por municipios"""
+    st.subheader("🏥 Vacunación Individual por Municipios")
+
+    individual_municipios = combined_data["individual"]["por_municipio"]
+
+    if not individual_municipios:
+        st.warning("⚠️ No hay datos de municipios para vacunación individual")
+        return
+
+    # Convertir a DataFrame y ordenar
+    df_individual = pd.DataFrame(
+        list(individual_municipios.items()), columns=["Municipio", "Vacunados"]
+    )
+    df_individual = df_individual.sort_values("Vacunados", ascending=False)
+
     col1, col2 = st.columns(2)
 
     with col1:
-        st.subheader("📍 Concentración de Vacunación Individual")
+        # Top 15 municipios
+        top_15 = df_individual.head(15)
 
-        # Analizar datos históricos por fecha
-        if not combined_data.get("temporal_data", pd.DataFrame()).empty:
-            df_hist = combined_data["temporal_data"][
-                combined_data["temporal_data"]["fuente"] == "Históricos (PAI)"
-            ]
-
-            if not df_hist.empty:
-                # Agrupar por fecha para identificar días con mayor actividad
-                actividad_por_dia = (
-                    df_hist.groupby(df_hist["fecha"].dt.date).size().reset_index()
-                )
-                actividad_por_dia.columns = ["Fecha", "Vacunados"]
-                actividad_por_dia = actividad_por_dia.sort_values(
-                    "Vacunados", ascending=False
-                )
-
-                # Calcular porcentajes
-                total_vacunados_hist = actividad_por_dia["Vacunados"].sum()
-                actividad_por_dia["Porcentaje"] = (
-                    actividad_por_dia["Vacunados"] / total_vacunados_hist
-                ) * 100
-                actividad_por_dia["Porcentaje_Acum"] = actividad_por_dia[
-                    "Porcentaje"
-                ].cumsum()
-
-                # Top 15 días con más actividad
-                top_dias = actividad_por_dia.head(15)
-
-                fig = px.bar(
-                    top_dias,
-                    y="Fecha",
-                    x="Porcentaje",
-                    orientation="h",
-                    title="Top 15 Días - Concentración de Vacunación (%)",
-                    color_discrete_sequence=[COLORS["primary"]],
-                    text="Porcentaje",
-                )
-
-                fig.update_traces(
-                    texttemplate="%{text:.1f}%",
-                    textposition="outside",
-                    hovertemplate="<b>%{y}</b><br>"
-                    + "Porcentaje: %{x:.1f}%<br>"
-                    + "Vacunados: %{customdata:,}<extra></extra>",
-                    customdata=top_dias["Vacunados"],
-                )
-
-                fig.update_layout(
-                    plot_bgcolor=COLORS["white"],
-                    paper_bgcolor=COLORS["white"],
-                    height=500,
-                    yaxis={"categoryorder": "total ascending"},
-                    xaxis_title="Porcentaje del Total Individual (%)",
-                )
-                st.plotly_chart(fig, use_container_width=True)
-
-                # Estadísticas de concentración
-                st.markdown("**📊 Estadísticas de Concentración:**")
-                dias_80_pct = len(
-                    actividad_por_dia[actividad_por_dia["Porcentaje_Acum"] <= 80]
-                )
-                dias_total = len(actividad_por_dia)
-                concentracion = (dias_80_pct / dias_total) * 100
-
-                col_a, col_b = st.columns(2)
-                with col_a:
-                    st.metric("80% vacunados en", f"{dias_80_pct} días")
-                with col_b:
-                    st.metric("Concentración", f"{concentracion:.1f}%")
-
-        else:
-            st.info("Datos históricos no disponibles para análisis geográfico")
-
-    with col2:
-        st.subheader("🚨 Efectividad de Barridos Territoriales")
-
-        # Analizar datos de barridos
-        df_barr = (
-            combined_data["temporal_data"][
-                combined_data["temporal_data"]["fuente"] == "Barridos (Emergencia)"
-            ]
-            if not combined_data["temporal_data"].empty
-            else pd.DataFrame()
+        fig = px.bar(
+            top_15,
+            x="Vacunados",
+            y="Municipio",
+            orientation="h",
+            title="Top 15 Municipios - Vacunación Individual",
+            color_discrete_sequence=[COLORS["primary"]],
+            text="Vacunados",
         )
 
-        if not df_barr.empty:
-            # Agrupar por fecha para mostrar efectividad de barridos
-            barridos_por_dia = (
-                df_barr.groupby(df_barr["fecha"].dt.date).size().reset_index()
-            )
-            barridos_por_dia.columns = ["Fecha", "Vacunas_Aplicadas"]
-            barridos_por_dia = barridos_por_dia.sort_values(
-                "Vacunas_Aplicadas", ascending=False
-            )
+        fig.update_traces(texttemplate="%{text:,}", textposition="outside")
 
-            # Calcular porcentajes
-            total_vacunas_barridos = barridos_por_dia["Vacunas_Aplicadas"].sum()
-            barridos_por_dia["Porcentaje"] = (
-                barridos_por_dia["Vacunas_Aplicadas"] / total_vacunas_barridos
-            ) * 100
-            barridos_por_dia["Porcentaje_Acum"] = barridos_por_dia[
-                "Porcentaje"
-            ].cumsum()
+        fig.update_layout(
+            plot_bgcolor=COLORS["white"],
+            paper_bgcolor=COLORS["white"],
+            height=500,
+            yaxis={"categoryorder": "total ascending"},
+        )
 
-            # Top 15 días más efectivos
-            top_barridos = barridos_por_dia.head(15)
+        st.plotly_chart(fig, use_container_width=True)
 
-            fig = px.bar(
-                top_barridos,
-                y="Fecha",
-                x="Porcentaje",
-                orientation="h",
-                title="Top 15 Días - Efectividad de Barridos (%)",
-                color_discrete_sequence=[COLORS["warning"]],
-                text="Porcentaje",
-            )
+    with col2:
+        # Concentración - Top 5 vs Resto
+        total_individual = df_individual["Vacunados"].sum()
+        top_5_total = df_individual.head(5)["Vacunados"].sum()
+        resto_total = total_individual - top_5_total
 
-            fig.update_traces(
-                texttemplate="%{text:.1f}%",
-                textposition="outside",
-                hovertemplate="<b>%{y}</b><br>"
-                + "Porcentaje: %{x:.1f}%<br>"
-                + "Vacunas: %{customdata:,}<extra></extra>",
-                customdata=top_barridos["Vacunas_Aplicadas"],
-            )
+        concentracion_data = {
+            "Categoria": ["Top 5 Municipios", "Resto de Municipios"],
+            "Vacunados": [top_5_total, resto_total],
+            "Porcentaje": [
+                (top_5_total / total_individual) * 100,
+                (resto_total / total_individual) * 100,
+            ],
+        }
 
-            fig.update_layout(
-                plot_bgcolor=COLORS["white"],
-                paper_bgcolor=COLORS["white"],
-                height=500,
-                yaxis={"categoryorder": "total ascending"},
-                xaxis_title="Porcentaje del Total Barridos (%)",
-            )
-            st.plotly_chart(fig, use_container_width=True)
+        fig_pie = px.pie(
+            values=concentracion_data["Vacunados"],
+            names=concentracion_data["Categoria"],
+            title="Concentración de Vacunación Individual",
+            color_discrete_sequence=[COLORS["primary"], COLORS["accent"]],
+        )
 
-            # Estadísticas de efectividad
-            st.markdown("**📊 Estadísticas de Efectividad:**")
-            dias_barridos = len(barridos_por_dia)
-            promedio_diario = (
-                total_vacunas_barridos / dias_barridos if dias_barridos > 0 else 0
-            )
+        fig_pie.update_traces(textposition="inside", textinfo="percent+label")
+        fig_pie.update_layout(height=500)
 
-            col_a, col_b = st.columns(2)
-            with col_a:
-                st.metric("Promedio Diario", f"{promedio_diario:.0f} vacunas")
-            with col_b:
-                st.metric("Días Activos", f"{dias_barridos} días")
+        st.plotly_chart(fig_pie, use_container_width=True)
 
-        else:
-            st.info("Datos de barridos no disponibles para análisis geográfico")
+    # Estadísticas
+    municipios_count = len(df_individual)
+    promedio_por_municipio = df_individual["Vacunados"].mean()
+    municipio_lider = df_individual.iloc[0]
 
-    # Análisis comparativo de eficiencia
-    st.subheader("⚖️ Comparación de Eficiencia Territorial")
+    col1, col2, col3 = st.columns(3)
 
-    if (
-        not combined_data["temporal_data"].empty
-        and len(combined_data["temporal_data"]["fuente"].unique()) > 1
-    ):
+    with col1:
+        st.metric("Municipios con Vacunación", f"{municipios_count}")
 
-        # Comparar eficiencia entre modalidades
-        eficiencia_data = []
+    with col2:
+        st.metric("Promedio por Municipio", f"{promedio_por_municipio:.0f}")
 
-        for fuente in combined_data["temporal_data"]["fuente"].unique():
-            data_fuente = combined_data["temporal_data"][
-                combined_data["temporal_data"]["fuente"] == fuente
-            ]
+    with col3:
+        st.metric(
+            "Municipio Líder",
+            f"{municipio_lider['Vacunados']:,}",
+            delta=municipio_lider["Municipio"],
+        )
 
-            if not data_fuente.empty:
-                dias_activos = data_fuente["fecha"].dt.date.nunique()
-                total_vacunados = len(data_fuente)
-                promedio_diario = (
-                    total_vacunados / dias_activos if dias_activos > 0 else 0
+
+def show_barridos_by_municipality(combined_data, COLORS):
+    """Muestra distribución de barridos por municipios"""
+    st.subheader("🚨 Barridos Territoriales por Municipios")
+
+    barridos_municipios = combined_data["barridos"]["vacunados_barrido"][
+        "por_municipio"
+    ]
+
+    if not barridos_municipios:
+        st.warning("⚠️ No hay datos de municipios para barridos territoriales")
+        return
+
+    # Convertir a DataFrame y ordenar
+    df_barridos = pd.DataFrame(
+        list(barridos_municipios.items()), columns=["Municipio", "Vacunados"]
+    )
+    df_barridos = df_barridos.sort_values("Vacunados", ascending=False)
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        # Top 15 municipios
+        top_15 = df_barridos.head(15)
+
+        fig = px.bar(
+            top_15,
+            x="Vacunados",
+            y="Municipio",
+            orientation="h",
+            title="Top 15 Municipios - Barridos Territoriales",
+            color_discrete_sequence=[COLORS["warning"]],
+            text="Vacunados",
+        )
+
+        fig.update_traces(texttemplate="%{text:,}", textposition="outside")
+
+        fig.update_layout(
+            plot_bgcolor=COLORS["white"],
+            paper_bgcolor=COLORS["white"],
+            height=500,
+            yaxis={"categoryorder": "total ascending"},
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
+
+    with col2:
+        # Análisis de intensidad de barridos
+        df_barridos["Categoria"] = df_barridos["Vacunados"].apply(
+            lambda x: (
+                "Alta Intensidad (>500)"
+                if x > 500
+                else (
+                    "Media Intensidad (100-500)"
+                    if x >= 100
+                    else "Baja Intensidad (<100)"
                 )
-
-                eficiencia_data.append(
-                    {
-                        "Modalidad": fuente.split("(")[0].strip(),
-                        "Total_Vacunados": total_vacunados,
-                        "Dias_Activos": dias_activos,
-                        "Promedio_Diario": promedio_diario,
-                        "Eficiencia_Relativa": 0,  # Se calculará después
-                    }
-                )
-
-        if len(eficiencia_data) >= 2:
-            df_eficiencia = pd.DataFrame(eficiencia_data)
-
-            # Calcular eficiencia relativa (%)
-            max_eficiencia = df_eficiencia["Promedio_Diario"].max()
-            df_eficiencia["Eficiencia_Relativa"] = (
-                df_eficiencia["Promedio_Diario"] / max_eficiencia
-            ) * 100
-
-            # Gráfico de comparación
-            fig = px.bar(
-                df_eficiencia,
-                x="Modalidad",
-                y="Eficiencia_Relativa",
-                title="Eficiencia Relativa por Modalidad (%)",
-                color="Modalidad",
-                color_discrete_map={
-                    "Históricos": COLORS["primary"],
-                    "Barridos": COLORS["warning"],
-                },
-                text="Eficiencia_Relativa",
             )
+        )
 
-            fig.update_traces(
-                texttemplate="%{text:.1f}%",
-                textposition="outside",
-                hovertemplate="<b>%{x}</b><br>"
-                + "Eficiencia: %{y:.1f}%<br>"
-                + "Promedio/día: %{customdata:.0f}<extra></extra>",
-                customdata=df_eficiencia["Promedio_Diario"],
-            )
+        categoria_counts = df_barridos["Categoria"].value_counts()
 
-            fig.update_layout(
-                plot_bgcolor=COLORS["white"],
-                paper_bgcolor=COLORS["white"],
-                height=400,
-                yaxis_title="Eficiencia Relativa (%)",
-                showlegend=False,
-            )
+        fig_intensidad = px.pie(
+            values=categoria_counts.values,
+            names=categoria_counts.index,
+            title="Intensidad de Barridos por Municipios",
+            color_discrete_sequence=[
+                COLORS["warning"],
+                COLORS["secondary"],
+                COLORS["accent"],
+            ],
+        )
 
-            st.plotly_chart(fig, use_container_width=True)
+        fig_intensidad.update_traces(textposition="inside", textinfo="percent+label")
+        fig_intensidad.update_layout(height=500)
 
-            # Tabla de métricas detalladas
-            st.markdown("**📋 Métricas Detalladas por Modalidad:**")
+        st.plotly_chart(fig_intensidad, use_container_width=True)
 
-            df_display = df_eficiencia.copy()
-            df_display = df_display.rename(
-                columns={
-                    "Modalidad": "Modalidad",
-                    "Total_Vacunados": "Total Vacunados",
-                    "Dias_Activos": "Días Activos",
-                    "Promedio_Diario": "Promedio/Día",
-                    "Eficiencia_Relativa": "Eficiencia (%)",
+    # Estadísticas
+    municipios_barridos = len(df_barridos)
+    promedio_barridos = df_barridos["Vacunados"].mean()
+    municipio_lider_barridos = df_barridos.iloc[0]
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.metric("Municipios con Barridos", f"{municipios_barridos}")
+
+    with col2:
+        st.metric("Promedio por Municipio", f"{promedio_barridos:.0f}")
+
+    with col3:
+        st.metric(
+            "Municipio Líder",
+            f"{municipio_lider_barridos['Vacunados']:,}",
+            delta=municipio_lider_barridos["Municipio"],
+        )
+
+
+def show_territorial_comparison(combined_data, COLORS):
+    """Muestra comparación territorial entre modalidades"""
+    st.subheader("⚖️ Comparación Territorial")
+
+    individual_municipios = combined_data["individual"]["por_municipio"]
+    barridos_municipios = combined_data["barridos"]["vacunados_barrido"][
+        "por_municipio"
+    ]
+
+    if not individual_municipios and not barridos_municipios:
+        st.warning("⚠️ No hay datos municipales para comparar")
+        return
+
+    # Combinar datos de ambas modalidades
+    all_municipios = set(individual_municipios.keys()) | set(barridos_municipios.keys())
+
+    comparison_data = []
+    for municipio in all_municipios:
+        individual_count = individual_municipios.get(municipio, 0)
+        barridos_count = barridos_municipios.get(municipio, 0)
+        total_count = individual_count + barridos_count
+
+        if total_count > 0:  # Solo incluir municipios con vacunación
+            comparison_data.append(
+                {
+                    "Municipio": municipio,
+                    "Individual": individual_count,
+                    "Barridos": barridos_count,
+                    "Total": total_count,
+                    "Prop_Individual": (
+                        (individual_count / total_count * 100) if total_count > 0 else 0
+                    ),
+                    "Prop_Barridos": (
+                        (barridos_count / total_count * 100) if total_count > 0 else 0
+                    ),
                 }
             )
 
-            # Formatear columnas
-            df_display["Promedio/Día"] = df_display["Promedio/Día"].round(1)
-            df_display["Eficiencia (%)"] = df_display["Eficiencia (%)"].round(1)
+    if not comparison_data:
+        st.warning("⚠️ No hay datos para comparación territorial")
+        return
 
-            st.dataframe(
-                df_display,
-                use_container_width=True,
-                column_config={
-                    "Total Vacunados": st.column_config.NumberColumn(
-                        "Total Vacunados", format="%d"
-                    ),
-                    "Promedio/Día": st.column_config.NumberColumn(
-                        "Promedio/Día", format="%.1f"
-                    ),
-                    "Eficiencia (%)": st.column_config.NumberColumn(
-                        "Eficiencia (%)", format="%.1f%%"
-                    ),
-                },
+    df_comparison = pd.DataFrame(comparison_data)
+    df_comparison = df_comparison.sort_values("Total", ascending=False)
+
+    # Gráfico de barras apiladas - Top 20
+    top_20 = df_comparison.head(20)
+
+    fig = go.Figure()
+
+    fig.add_trace(
+        go.Bar(
+            name="Individual",
+            x=top_20["Municipio"],
+            y=top_20["Individual"],
+            marker_color=COLORS["primary"],
+        )
+    )
+
+    fig.add_trace(
+        go.Bar(
+            name="Barridos",
+            x=top_20["Municipio"],
+            y=top_20["Barridos"],
+            marker_color=COLORS["warning"],
+        )
+    )
+
+    fig.update_layout(
+        title="Comparación Territorial: Individual vs Barridos (Top 20)",
+        xaxis_title="Municipio",
+        yaxis_title="Cantidad de Vacunados",
+        barmode="stack",
+        plot_bgcolor=COLORS["white"],
+        paper_bgcolor=COLORS["white"],
+        height=500,
+        xaxis={"tickangle": 45},
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+    # Análisis de estrategias territoriales
+    st.markdown("**🎯 Análisis de Estrategias por Municipio:**")
+
+    # Clasificar municipios por estrategia dominante
+    df_comparison["Estrategia"] = df_comparison.apply(
+        lambda row: (
+            "Principalmente Individual"
+            if row["Prop_Individual"] > 70
+            else (
+                "Principalmente Barridos"
+                if row["Prop_Barridos"] > 70
+                else "Estrategia Mixta"
             )
+        ),
+        axis=1,
+    )
 
-    # Análisis de cobertura territorial
-    st.subheader("🎯 Indicadores de Cobertura Territorial")
+    estrategia_counts = df_comparison["Estrategia"].value_counts()
 
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3 = st.columns(3)
 
     with col1:
-        # Intensidad de cobertura
-        total_registros = len(combined_data.get("temporal_data", pd.DataFrame()))
-        if total_registros > 0:
-            st.metric("Registros Totales", f"{total_registros:,}")
+        st.metric(
+            "Principalmente Individual",
+            estrategia_counts.get("Principalmente Individual", 0),
+        )
 
     with col2:
-        # Diversidad temporal
-        if not combined_data.get("temporal_data", pd.DataFrame()).empty:
-            dias_unicos = combined_data["temporal_data"]["fecha"].dt.date.nunique()
-            st.metric("Días con Actividad", f"{dias_unicos}")
+        st.metric(
+            "Principalmente Barridos",
+            estrategia_counts.get("Principalmente Barridos", 0),
+        )
 
     with col3:
-        # Modalidades activas
-        modalidades = (
-            len(combined_data.get("temporal_data", pd.DataFrame())["fuente"].unique())
-            if not combined_data.get("temporal_data", pd.DataFrame()).empty
-            else 0
-        )
-        st.metric("Modalidades Activas", f"{modalidades}/2")
+        st.metric("Estrategia Mixta", estrategia_counts.get("Estrategia Mixta", 0))
 
-    with col4:
-        # Eficiencia global
-        if not combined_data.get("temporal_data", pd.DataFrame()).empty:
-            dias_span = combined_data["temporal_data"]["fecha"].dt.date.nunique()
-            eficiencia_global = total_registros / dias_span if dias_span > 0 else 0
-            st.metric("Eficiencia Global", f"{eficiencia_global:.0f}/día")
+    # Municipios destacados por estrategia
+    if len(df_comparison) > 0:
+        municipio_mas_individual = df_comparison.loc[
+            df_comparison["Prop_Individual"].idxmax()
+        ]
+        municipio_mas_barridos = df_comparison.loc[
+            df_comparison["Prop_Barridos"].idxmax()
+        ]
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.info(
+                f"**🏥 Mayor dependencia individual:**\n{municipio_mas_individual['Municipio']}\n{municipio_mas_individual['Prop_Individual']:.1f}% individual"
+            )
+
+        with col2:
+            st.info(
+                f"**🚨 Mayor dependencia barridos:**\n{municipio_mas_barridos['Municipio']}\n{municipio_mas_barridos['Prop_Barridos']:.1f}% barridos"
+            )
