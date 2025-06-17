@@ -58,7 +58,7 @@ def show_main_metrics_temporal(combined_data, COLORS):
         )
 
     with col4:
-        # Mostrar tasa de aceptación o distribución
+        # Mostrar tasa de aceptación
         if total_renuentes > 0:
             total_contactados = total_real + total_renuentes
             tasa_aceptacion = (total_real / total_contactados) * 100

@@ -1,5 +1,5 @@
 """
-vistas/population.py - Análisis poblacional
+vistas/population.py - Análisis poblacional con lógica temporal
 """
 
 import streamlit as st
@@ -36,16 +36,16 @@ def show_population_tab(combined_data, COLORS):
 
 
 def calculate_municipal_coverage(combined_data):
-    """Calcula cobertura real por municipio"""
+    """Calcula cobertura real por municipio con lógica temporal"""
     population_by_mun = combined_data["population"]["por_municipio"]
-    individual_by_mun = combined_data["individual"]["por_municipio"]
+    individual_by_mun = combined_data["individual_pre"]["por_municipio"]
     barridos_by_mun = combined_data["barridos"]["vacunados_barrido"]["por_municipio"]
     renuentes_by_mun = combined_data["barridos"]["renuentes"]["por_municipio"]
 
     coverage_data = []
 
     for municipio, poblacion_asegurada in population_by_mun.items():
-        # Contar vacunados del municipio
+        # Contar vacunados del municipio (combinación temporal sin duplicados)
         individual_count = individual_by_mun.get(municipio, 0)
         barridos_count = barridos_by_mun.get(municipio, 0)
         renuentes_count = renuentes_by_mun.get(municipio, 0)
@@ -77,8 +77,8 @@ def calculate_municipal_coverage(combined_data):
             {
                 "Municipio": municipio,
                 "Poblacion_Asegurada": poblacion_asegurada,
-                "Individual": individual_count,
-                "Barridos": barridos_count,
+                "PRE_Emergencia": individual_count,
+                "DURANTE_Emergencia": barridos_count,
                 "Total_Vacunados": total_vacunados,
                 "Renuentes": renuentes_count,
                 "Cobertura_Real": cobertura_real,
@@ -98,7 +98,7 @@ def show_main_metrics(combined_data, coverage_data, COLORS):
     col1, col2, col3, col4 = st.columns(4)
 
     total_poblacion = combined_data["population"]["total"]
-    total_vacunados = combined_data["total_general"]
+    total_vacunados = combined_data["total_real_combinado"]
     total_renuentes = combined_data["total_renuentes"]
 
     with col1:
@@ -108,7 +108,7 @@ def show_main_metrics(combined_data, coverage_data, COLORS):
         cobertura_general = (
             (total_vacunados / total_poblacion) * 100 if total_poblacion > 0 else 0
         )
-        st.metric("Cobertura General", f"{cobertura_general:.1f}%")
+        st.metric("Cobertura Real General", f"{cobertura_general:.1f}%")
 
     with col3:
         meta_general = total_poblacion * 0.8
@@ -120,6 +120,14 @@ def show_main_metrics(combined_data, coverage_data, COLORS):
     with col4:
         municipios_count = len(coverage_data)
         st.metric("Municipios Analizados", f"{municipios_count}")
+
+    # Información adicional sobre la lógica
+    st.info(
+        f"💡 **Cobertura calculada con datos combinados sin duplicados:** "
+        f"PRE-emergencia ({combined_data['total_individual_pre']:,}) + "
+        f"DURANTE emergencia ({combined_data['total_barridos']:,}) = "
+        f"Total Real ({total_vacunados:,})"
+    )
 
 
 def show_population_distribution(coverage_data, COLORS):
@@ -190,7 +198,7 @@ def show_population_distribution(coverage_data, COLORS):
 
 
 def show_coverage_analysis(coverage_data, COLORS):
-    """Muestra análisis de cobertura corregido"""
+    """Muestra análisis de cobertura temporal"""
     st.subheader("🎯 Análisis de Cobertura por Municipios")
 
     df_coverage = pd.DataFrame(coverage_data)
@@ -229,18 +237,68 @@ def show_coverage_analysis(coverage_data, COLORS):
 
     st.plotly_chart(fig, use_container_width=True)
 
-    # Tabla detallada SIN duplicaciones
+    # Análisis temporal de cobertura
+    st.subheader("⏰ Análisis Temporal de Cobertura")
+
+    # Gráfico de barras apiladas temporal
+    fig_temporal = go.Figure()
+
+    fig_temporal.add_trace(
+        go.Bar(
+            name="PRE-Emergencia",
+            x=df_coverage["Municipio"][:15],  # Top 15
+            y=[
+                (pre / pob) * 100 if pob > 0 else 0
+                for pre, pob in zip(
+                    df_coverage["PRE_Emergencia"][:15],
+                    df_coverage["Poblacion_Asegurada"][:15],
+                )
+            ],
+            marker_color=COLORS["primary"],
+        )
+    )
+
+    fig_temporal.add_trace(
+        go.Bar(
+            name="DURANTE Emergencia",
+            x=df_coverage["Municipio"][:15],
+            y=[
+                (durante / pob) * 100 if pob > 0 else 0
+                for durante, pob in zip(
+                    df_coverage["DURANTE_Emergencia"][:15],
+                    df_coverage["Poblacion_Asegurada"][:15],
+                )
+            ],
+            marker_color=COLORS["warning"],
+        )
+    )
+
+    fig_temporal.update_layout(
+        title="Cobertura por Período Temporal - Top 15 Municipios",
+        xaxis_title="Municipio",
+        yaxis_title="Cobertura (%)",
+        barmode="stack",
+        plot_bgcolor=COLORS["white"],
+        paper_bgcolor=COLORS["white"],
+        height=400,
+        xaxis={"tickangle": 45},
+    )
+
+    st.plotly_chart(fig_temporal, use_container_width=True)
+
+    # Tabla detallada
     st.subheader("📋 Detalle de Cobertura por Municipios")
 
-    # Preparar tabla con métricas claras y diferentes
+    # Preparar tabla con métricas claras
     tabla_display = df_coverage[
         [
             "Municipio",
             "Poblacion_Asegurada",
+            "PRE_Emergencia",
+            "DURANTE_Emergencia",
             "Total_Vacunados",
             "Cobertura_Real",
             "Avance_Meta",
-            "Faltante_Meta",
             "Renuentes",
         ]
     ].copy()
@@ -253,10 +311,11 @@ def show_coverage_analysis(coverage_data, COLORS):
     tabla_display = tabla_display.rename(
         columns={
             "Poblacion_Asegurada": "Población Asegurada",
+            "PRE_Emergencia": "PRE-Emergencia",
+            "DURANTE_Emergencia": "DURANTE Emergencia",
             "Total_Vacunados": "Total Vacunados",
             "Cobertura_Real": "Cobertura Real (%)",
             "Avance_Meta": "Avance Meta 80% (%)",
-            "Faltante_Meta": "Faltante para Meta",
             "Renuentes": "Renuentes",
         }
     )
@@ -268,6 +327,12 @@ def show_coverage_analysis(coverage_data, COLORS):
             "Población Asegurada": st.column_config.NumberColumn(
                 "Población Asegurada", format="%d"
             ),
+            "PRE-Emergencia": st.column_config.NumberColumn(
+                "PRE-Emergencia", format="%d"
+            ),
+            "DURANTE Emergencia": st.column_config.NumberColumn(
+                "DURANTE Emergencia", format="%d"
+            ),
             "Total Vacunados": st.column_config.NumberColumn(
                 "Total Vacunados", format="%d"
             ),
@@ -277,11 +342,9 @@ def show_coverage_analysis(coverage_data, COLORS):
             "Avance Meta 80% (%)": st.column_config.NumberColumn(
                 "Avance Meta 80% (%)", format="%.1f%%"
             ),
-            "Faltante para Meta": st.column_config.NumberColumn(
-                "Faltante para Meta", format="%d"
-            ),
             "Renuentes": st.column_config.NumberColumn("Renuentes", format="%d"),
         },
+        hide_index=True,
     )
 
     # Insights de cobertura
@@ -318,20 +381,20 @@ def show_basic_population_analysis(combined_data, COLORS):
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        st.metric("Total Individual", f"{combined_data['total_individual']:,}")
+        st.metric("PRE-Emergencia", f"{combined_data['total_individual_pre']:,}")
 
     with col2:
-        st.metric("Total Barridos", f"{combined_data['total_barridos']:,}")
+        st.metric("DURANTE Emergencia", f"{combined_data['total_barridos']:,}")
 
     with col3:
-        st.metric("Total General", f"{combined_data['total_general']:,}")
+        st.metric("Total Real Combinado", f"{combined_data['total_real_combinado']:,}")
 
     # Mostrar distribución por rangos de edad si disponible
-    individual_edad = combined_data["individual"]["por_edad"]
+    individual_edad = combined_data["individual_pre"]["por_edad"]
     barridos_edad = combined_data["barridos"]["vacunados_barrido"]["por_edad"]
 
     if individual_edad or barridos_edad:
-        st.subheader("📈 Distribución por Rangos de Edad")
+        st.subheader("📈 Distribución por Rangos de Edad (Sin Duplicados)")
 
         # Combinar datos de edad
         age_data = []
@@ -345,8 +408,8 @@ def show_basic_population_analysis(combined_data, COLORS):
                 age_data.append(
                     {
                         "Rango": rango,
-                        "Individual": individual_count,
-                        "Barridos": barridos_count,
+                        "PRE-Emergencia": individual_count,
+                        "DURANTE Emergencia": barridos_count,
                         "Total": individual_count + barridos_count,
                     }
                 )
@@ -357,16 +420,99 @@ def show_basic_population_analysis(combined_data, COLORS):
             fig = px.bar(
                 df_age,
                 x="Rango",
-                y=["Individual", "Barridos"],
-                title="Distribución por Rango de Edad",
+                y=["PRE-Emergencia", "DURANTE Emergencia"],
+                title="Distribución por Rango de Edad (Combinación Temporal)",
                 color_discrete_map={
-                    "Individual": COLORS["primary"],
-                    "Barridos": COLORS["warning"],
+                    "PRE-Emergencia": COLORS["primary"],
+                    "DURANTE Emergencia": COLORS["warning"],
                 },
             )
 
             fig.update_layout(
-                plot_bgcolor=COLORS["white"], paper_bgcolor=COLORS["white"], height=400
+                plot_bgcolor=COLORS["white"],
+                paper_bgcolor=COLORS["white"],
+                height=400,
+                xaxis_title="Rango de Edad",
+                yaxis_title="Cantidad de Vacunados",
             )
 
             st.plotly_chart(fig, use_container_width=True)
+
+    # Análisis de municipios sin datos poblacionales
+    st.subheader("🗺️ Distribución Territorial (Sin Población)")
+
+    individual_municipios = combined_data["individual_pre"]["por_municipio"]
+    barridos_municipios = combined_data["barridos"]["vacunados_barrido"][
+        "por_municipio"
+    ]
+
+    if individual_municipios or barridos_municipios:
+        # Combinar municipios
+        all_municipios = set(individual_municipios.keys()) | set(
+            barridos_municipios.keys()
+        )
+
+        municipio_data = []
+        for municipio in all_municipios:
+            pre_count = individual_municipios.get(municipio, 0)
+            durante_count = barridos_municipios.get(municipio, 0)
+            total = pre_count + durante_count
+
+            if total > 0:
+                municipio_data.append(
+                    {
+                        "Municipio": municipio,
+                        "PRE-Emergencia": pre_count,
+                        "DURANTE Emergencia": durante_count,
+                        "Total": total,
+                    }
+                )
+
+        if municipio_data:
+            df_municipios = pd.DataFrame(municipio_data)
+            df_municipios = df_municipios.sort_values("Total", ascending=False)
+
+            # Top 10 municipios
+            top_10 = df_municipios.head(10)
+
+            fig_municipios = px.bar(
+                top_10,
+                x="Total",
+                y="Municipio",
+                orientation="h",
+                title="Top 10 Municipios - Total Vacunados (Sin Duplicados)",
+                color_discrete_sequence=[COLORS["success"]],
+                text="Total",
+            )
+
+            fig_municipios.update_traces(
+                texttemplate="%{text:,}", textposition="outside"
+            )
+            fig_municipios.update_layout(
+                plot_bgcolor=COLORS["white"],
+                paper_bgcolor=COLORS["white"],
+                height=400,
+                yaxis={"categoryorder": "total ascending"},
+            )
+
+            st.plotly_chart(fig_municipios, use_container_width=True)
+
+            # Estadísticas básicas
+            total_municipios = len(df_municipios)
+            municipio_lider = df_municipios.iloc[0]
+            total_general = df_municipios["Total"].sum()
+
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+                st.metric("Municipios con Vacunación", f"{total_municipios}")
+
+            with col2:
+                st.metric(
+                    "Municipio Líder",
+                    municipio_lider["Municipio"],
+                    delta=f"{municipio_lider['Total']:,} vacunados",
+                )
+
+            with col3:
+                st.metric("Total Territorial", f"{total_general:,}")

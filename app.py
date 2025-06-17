@@ -1,5 +1,6 @@
 """
 app.py - Dashboard de Vacunación Fiebre Amarilla - Tolima
+VERSIÓN CORREGIDA - Lógica temporal sin duplicados
 """
 
 import streamlit as st
@@ -47,6 +48,74 @@ RANGOS_EDAD = {
     "51-59": "51-59 años",
     "60+": "60 años y más",
 }
+
+
+def setup_sidebar():
+    """Configura la barra lateral con información institucional"""
+    with st.sidebar:
+        # Logo institucional
+        st.markdown(
+            """
+            <div style="text-align: center; padding: 20px;">
+                <div style="background: linear-gradient(135deg, #7D0F2B, #F2A900); 
+                           color: white; padding: 20px; border-radius: 10px; margin-bottom: 20px;">
+                    <h2 style="margin: 0; font-size: 18px;">🏛️ GOBERNACIÓN</h2>
+                    <h3 style="margin: 5px 0; font-size: 16px;">DEL TOLIMA</h3>
+                    <p style="margin: 0; font-size: 12px;">Secretaría de Salud</p>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        # Título del dashboard
+        st.markdown("### 💉 Dashboard Vacunación")
+        st.markdown("#### 🦠 Fiebre Amarilla")
+
+        st.markdown("---")
+
+        # Información de la lógica
+        st.markdown("#### 📊 **Lógica del Sistema**")
+        st.info("**Combinación temporal sin duplicados**")
+
+        st.markdown("**🏥 PRE-emergencia:**")
+        st.markdown("• Vacunación individual histórica")
+        st.markdown("• Hasta día anterior al 1er barrido")
+
+        st.markdown("**🚨 DURANTE emergencia:**")
+        st.markdown("• Solo vacunas aplicadas en barridos")
+        st.markdown("• Intensificación por emergencia")
+
+        st.markdown("---")
+
+        # Información del desarrollador
+        st.markdown("#### 👨‍💻 **Desarrollado por:**")
+        st.markdown("**Ing. José Miguel Santos**")
+        st.markdown("*Secretaría de Salud del Tolima*")
+
+        st.markdown("---")
+
+        # Información adicional
+        st.markdown("#### 📋 **Características**")
+        st.markdown("✅ Análisis territorial")
+        st.markdown("✅ Distribución por edad")
+        st.markdown("✅ Sin duplicados temporales")
+        st.markdown("✅ Datos más reales")
+        st.markdown("✅ Análisis de renuentes")
+
+        st.markdown("---")
+
+        # Copyright
+        st.markdown(
+            """
+            <div style="text-align: center; padding: 10px; 
+                       background-color: #f0f0f0; border-radius: 5px; margin-top: 20px;">
+                <small><strong>Secretaría de Salud del Tolima</strong><br>
+                © 2025 - Todos los derechos reservados</small>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
 
 def calculate_current_age(fecha_nacimiento):
@@ -189,7 +258,7 @@ def determine_cutoff_date(df_barridos):
 
 
 def detect_barridos_columns(df):
-    """Detecta columnas de la sección de vacunados en barrido (4ta sección)"""
+    """Detecta columnas de vacunados en barrido (TPVB) y renuentes (TPNVP)"""
 
     # Patrones para rangos de edad
     age_patterns = {
@@ -207,12 +276,12 @@ def detect_barridos_columns(df):
     }
 
     result = {
-        "vacunados_barrido": {},  # 4ta sección: vacunados durante el barrido
-        "renuentes": {},  # 3ra sección: renuentes/no vacunados
+        "vacunados_barrido": {},  # TPVB: vacunados durante el barrido
+        "renuentes": {},  # TPNVP: renuentes/no vacunados
         "consolidation_needed": [],
     }
 
-    # Detectar columnas de edad (buscar 4ta sección = vacunados en barrido)
+    # Detectar columnas por sección
     for age_range, patterns in age_patterns.items():
         found_cols = []
 
@@ -232,10 +301,11 @@ def detect_barridos_columns(df):
                 found_cols.append(col)
 
         if found_cols:
-            # Asignar 4ta columna como "vacunados en barrido" y 3ra como "renuentes"
-            if len(found_cols) >= 4:  # 4ta sección
+            # 4ta sección = TPVB (vacunados en barrido)
+            if len(found_cols) >= 4:
                 result["vacunados_barrido"][age_range] = found_cols[3]
-            if len(found_cols) >= 3:  # 3ra sección
+            # 3ra sección = TPNVP (renuentes)
+            if len(found_cols) >= 3:
                 result["renuentes"][age_range] = found_cols[2]
 
             # Marcar para consolidación si es 60+ adicional
@@ -285,7 +355,7 @@ def process_individual_pre_barridos(df_individual, fecha_corte):
 
 
 def process_barridos_data(df_barridos):
-    """Procesa datos de barridos (vacunados + renuentes)"""
+    """Procesa datos de barridos (TPVB + TPNVP)"""
     if df_barridos.empty:
         return {
             "vacunados_barrido": {"total": 0, "por_edad": {}, "por_municipio": {}},
@@ -300,7 +370,7 @@ def process_barridos_data(df_barridos):
         "columns_info": columns_info,
     }
 
-    # Procesar vacunados en barrido (4ta sección)
+    # Procesar TPVB (vacunados en barrido)
     for rango, col_name in columns_info["vacunados_barrido"].items():
         if col_name in df_barridos.columns:
             valores = pd.to_numeric(df_barridos[col_name], errors="coerce").fillna(0)
@@ -308,7 +378,7 @@ def process_barridos_data(df_barridos):
             result["vacunados_barrido"]["por_edad"][rango] = total_rango
             result["vacunados_barrido"]["total"] += total_rango
 
-    # Procesar renuentes (3ra sección)
+    # Procesar TPNVP (renuentes)
     for rango, col_name in columns_info["renuentes"].items():
         if col_name in df_barridos.columns:
             valores = pd.to_numeric(df_barridos[col_name], errors="coerce").fillna(0)
@@ -337,9 +407,7 @@ def process_barridos_data(df_barridos):
                     df_mun = df_barridos[df_barridos["MUNICIPIO"] == municipio]
                     total_municipio = 0
 
-                    section_cols = (
-                        columns_info[section] if section in columns_info else {}
-                    )
+                    section_cols = columns_info.get(section, {})
                     for col_name in section_cols.values():
                         if col_name in df_mun.columns:
                             valores = pd.to_numeric(
@@ -385,22 +453,12 @@ def process_population_data(df_population):
 
 def main():
     """Función principal del dashboard"""
+    # Configurar barra lateral mejorada
+    setup_sidebar()
+
+    # Título principal
     st.title("🏥 Dashboard de Vacunación Fiebre Amarilla")
     st.markdown("**Departamento del Tolima - Combinación Temporal Sin Duplicados**")
-
-    # Sidebar
-    with st.sidebar:
-        st.image(
-            "https://via.placeholder.com/150x100/7D0F2B/FFFFFF?text=TOLIMA", width=150
-        )
-        st.title("Dashboard Vacunación")
-        st.subheader("Fiebre Amarilla")
-        st.markdown("---")
-        st.markdown("**Lógica:** Combinación temporal")
-        st.markdown("**PRE-emergencia:** Individuales")
-        st.markdown("**DURANTE emergencia:** Barridos")
-        st.markdown("---")
-        st.markdown("Secretaría de Salud del Tolima © 2025")
 
     # Cargar datos
     st.markdown("### 📥 Cargando datos...")

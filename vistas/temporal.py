@@ -1,12 +1,14 @@
 """
 vistas/temporal.py - Análisis temporal con separación PRE vs DURANTE
 Enfocado en mostrar la fecha de corte y evitar duplicados
+VERSIÓN CORREGIDA - Fix para TypeError con Timestamps
 """
 
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+from datetime import datetime
 
 
 def show_temporal_tab(combined_data, df_individual, df_barridos, COLORS):
@@ -16,18 +18,26 @@ def show_temporal_tab(combined_data, df_individual, df_barridos, COLORS):
     fecha_corte = combined_data.get("fecha_corte")
 
     if fecha_corte:
+        # Convertir timestamp a datetime para evitar errores con Plotly
+        if hasattr(fecha_corte, "to_pydatetime"):
+            fecha_corte_dt = fecha_corte.to_pydatetime()
+        else:
+            fecha_corte_dt = fecha_corte
+
         st.success(
             f"🎯 **Fecha de corte:** {fecha_corte.strftime('%d/%m/%Y')} - Inicio de emergencia sanitaria"
         )
 
         # Mostrar evolución PRE-emergencia
-        show_pre_emergency_evolution(df_individual, fecha_corte, COLORS)
+        show_pre_emergency_evolution(df_individual, fecha_corte_dt, COLORS)
 
         # Mostrar evolución DURANTE emergencia
-        show_during_emergency_evolution(df_barridos, fecha_corte, COLORS)
+        show_during_emergency_evolution(df_barridos, fecha_corte_dt, COLORS)
 
         # Mostrar comparación temporal combinada
-        show_combined_temporal_analysis(df_individual, df_barridos, fecha_corte, COLORS)
+        show_combined_temporal_analysis(
+            df_individual, df_barridos, fecha_corte_dt, COLORS
+        )
 
     else:
         st.warning("⚠️ No se pudo determinar fecha de corte")
@@ -35,7 +45,7 @@ def show_temporal_tab(combined_data, df_individual, df_barridos, COLORS):
         show_basic_temporal_analysis(df_individual, df_barridos, COLORS)
 
 
-def show_pre_emergency_evolution(df_individual, fecha_corte, COLORS):
+def show_pre_emergency_evolution(df_individual, fecha_corte_dt, COLORS):
     """Muestra evolución PRE-emergencia (vacunación individual)"""
     st.subheader("🏥 Período PRE-Emergencia (Vacunación Individual)")
 
@@ -43,14 +53,21 @@ def show_pre_emergency_evolution(df_individual, fecha_corte, COLORS):
         st.warning("⚠️ No hay datos de vacunación individual disponibles")
         return
 
+    # Convertir fecha_corte_dt a timestamp para comparación
+    if isinstance(fecha_corte_dt, datetime):
+        fecha_corte_ts = pd.Timestamp(fecha_corte_dt)
+    else:
+        fecha_corte_ts = fecha_corte_dt
+
     # Filtrar solo datos PRE-emergencia
     df_pre = df_individual[
-        (df_individual["FA UNICA"].notna()) & (df_individual["FA UNICA"] < fecha_corte)
+        (df_individual["FA UNICA"].notna())
+        & (df_individual["FA UNICA"] < fecha_corte_ts)
     ].copy()
 
     if df_pre.empty:
         st.info(
-            f"ℹ️ No hay vacunación individual antes de {fecha_corte.strftime('%d/%m/%Y')}"
+            f"ℹ️ No hay vacunación individual antes de {fecha_corte_dt.strftime('%d/%m/%Y')}"
         )
         return
 
@@ -75,9 +92,9 @@ def show_pre_emergency_evolution(df_individual, fecha_corte, COLORS):
             color_discrete_sequence=[COLORS["primary"]],
         )
 
-        # Agregar línea vertical de fecha de corte
+        # Agregar línea vertical de fecha de corte (convertida a string para Plotly)
         fig.add_vline(
-            x=fecha_corte,
+            x=fecha_corte_dt.strftime("%Y-%m-%d"),
             line_dash="dash",
             line_color="red",
             annotation_text="Inicio Emergencia",
@@ -99,9 +116,9 @@ def show_pre_emergency_evolution(df_individual, fecha_corte, COLORS):
             color_discrete_sequence=[COLORS["primary"]],
         )
 
-        # Agregar línea vertical de fecha de corte
+        # Agregar línea vertical de fecha de corte (convertida a string para Plotly)
         fig_acum.add_vline(
-            x=fecha_corte,
+            x=fecha_corte_dt.strftime("%Y-%m-%d"),
             line_dash="dash",
             line_color="red",
             annotation_text="Inicio Emergencia",
@@ -131,11 +148,17 @@ def show_pre_emergency_evolution(df_individual, fecha_corte, COLORS):
         st.metric("Total PRE-Emergencia", f"{total_vacunados_pre:,}")
 
     with col4:
-        duracion_pre = (fecha_corte - fecha_inicio_pre).days
+        # Calcular duración usando timedelta
+        if isinstance(fecha_inicio_pre, pd.Timestamp):
+            fecha_inicio_dt = fecha_inicio_pre.to_pydatetime()
+        else:
+            fecha_inicio_dt = fecha_inicio_pre
+
+        duracion_pre = (fecha_corte_dt - fecha_inicio_dt).days
         st.metric("Duración Período", f"{duracion_pre} días")
 
 
-def show_during_emergency_evolution(df_barridos, fecha_corte, COLORS):
+def show_during_emergency_evolution(df_barridos, fecha_corte_dt, COLORS):
     """Muestra evolución DURANTE emergencia (barridos territoriales)"""
     st.subheader("🚨 Período DURANTE Emergencia (Barridos Territoriales)")
 
@@ -143,16 +166,22 @@ def show_during_emergency_evolution(df_barridos, fecha_corte, COLORS):
         st.warning("⚠️ No hay datos de barridos disponibles")
         return
 
+    # Convertir fecha_corte_dt a timestamp para comparación
+    if isinstance(fecha_corte_dt, datetime):
+        fecha_corte_ts = pd.Timestamp(fecha_corte_dt)
+    else:
+        fecha_corte_ts = fecha_corte_dt
+
     # Filtrar solo datos DURANTE emergencia
     df_durante = df_barridos[
-        (df_barridos["FECHA"].notna()) & (df_barridos["FECHA"] >= fecha_corte)
+        (df_barridos["FECHA"].notna()) & (df_barridos["FECHA"] >= fecha_corte_ts)
     ].copy()
 
     if df_durante.empty:
-        st.info(f"ℹ️ No hay barridos desde {fecha_corte.strftime('%d/%m/%Y')}")
+        st.info(f"ℹ️ No hay barridos desde {fecha_corte_dt.strftime('%d/%m/%Y')}")
         return
 
-    # Detectar columnas de vacunados en barrido (4ta sección)
+    # Detectar columnas de TPVB (vacunados en barrido)
     vacunados_cols = []
     age_patterns = [
         "<1",
@@ -172,12 +201,12 @@ def show_during_emergency_evolution(df_barridos, fecha_corte, COLORS):
             if age_pattern in str(col):
                 found_cols.append(col)
 
-        # Tomar la 4ta columna (índice 3) como vacunados en barrido
+        # Tomar la 4ta columna (índice 3) como TPVB
         if len(found_cols) >= 4:
             vacunados_cols.append(found_cols[3])
 
     if not vacunados_cols:
-        st.warning("⚠️ No se encontraron columnas de vacunados en barridos")
+        st.warning("⚠️ No se encontraron columnas de TPVB en barridos")
         return
 
     # Calcular vacunados por día
@@ -273,15 +302,21 @@ def show_during_emergency_evolution(df_barridos, fecha_corte, COLORS):
         st.metric("Total DURANTE", f"{total_vacunados_durante:,}")
 
 
-def show_combined_temporal_analysis(df_individual, df_barridos, fecha_corte, COLORS):
+def show_combined_temporal_analysis(df_individual, df_barridos, fecha_corte_dt, COLORS):
     """Muestra análisis temporal combinado con línea de corte"""
     st.subheader("⚖️ Análisis Temporal Combinado")
+
+    # Convertir fecha_corte_dt a timestamp para comparaciones
+    if isinstance(fecha_corte_dt, datetime):
+        fecha_corte_ts = pd.Timestamp(fecha_corte_dt)
+    else:
+        fecha_corte_ts = fecha_corte_dt
 
     # Preparar datos PRE-emergencia
     if "FA UNICA" in df_individual.columns:
         df_pre = df_individual[
             (df_individual["FA UNICA"].notna())
-            & (df_individual["FA UNICA"] < fecha_corte)
+            & (df_individual["FA UNICA"] < fecha_corte_ts)
         ]
 
         if not df_pre.empty:
@@ -296,7 +331,7 @@ def show_combined_temporal_analysis(df_individual, df_barridos, fecha_corte, COL
     # Preparar datos DURANTE emergencia (simplificado)
     if "FECHA" in df_barridos.columns:
         df_durante = df_barridos[
-            (df_barridos["FECHA"].notna()) & (df_barridos["FECHA"] >= fecha_corte)
+            (df_barridos["FECHA"].notna()) & (df_barridos["FECHA"] >= fecha_corte_ts)
         ]
 
         if not df_durante.empty:
@@ -337,9 +372,9 @@ def show_combined_temporal_analysis(df_individual, df_barridos, fecha_corte, COL
             )
         )
 
-    # Agregar línea vertical de fecha de corte
+    # Agregar línea vertical de fecha de corte (convertida a string para Plotly)
     fig.add_vline(
-        x=fecha_corte,
+        x=fecha_corte_dt.strftime("%Y-%m-%d"),
         line_dash="dash",
         line_color="red",
         line_width=3,
@@ -367,7 +402,16 @@ def show_combined_temporal_analysis(df_individual, df_barridos, fecha_corte, COL
 
     with col1:
         if not pre_daily.empty:
-            periodo_pre = f"{pre_daily['Fecha'].min().strftime('%d/%m/%Y')} - {(fecha_corte - pd.Timedelta(days=1)).strftime('%d/%m/%Y')}"
+            fecha_inicio = pre_daily["Fecha"].min()
+            if isinstance(fecha_inicio, pd.Timestamp):
+                fecha_inicio_dt = fecha_inicio.to_pydatetime()
+            else:
+                fecha_inicio_dt = fecha_inicio
+
+            # Calcular fecha fin del período PRE
+            fecha_fin_pre = fecha_corte_dt - pd.Timedelta(days=1)
+
+            periodo_pre = f"{fecha_inicio_dt.strftime('%d/%m/%Y')} - {fecha_fin_pre.strftime('%d/%m/%Y')}"
             total_pre = pre_daily["Individual"].sum()
             st.metric(
                 "Período PRE-Emergencia", periodo_pre, delta=f"{total_pre:,} vacunados"
@@ -375,7 +419,13 @@ def show_combined_temporal_analysis(df_individual, df_barridos, fecha_corte, COL
 
     with col2:
         if not durante_daily.empty:
-            periodo_durante = f"{fecha_corte.strftime('%d/%m/%Y')} - {durante_daily['Fecha'].max().strftime('%d/%m/%Y')}"
+            fecha_max = durante_daily["Fecha"].max()
+            if isinstance(fecha_max, pd.Timestamp):
+                fecha_max_dt = fecha_max.to_pydatetime()
+            else:
+                fecha_max_dt = fecha_max
+
+            periodo_durante = f"{fecha_corte_dt.strftime('%d/%m/%Y')} - {fecha_max_dt.strftime('%d/%m/%Y')}"
             total_barridos = durante_daily["Barridos_Realizados"].sum()
             st.metric(
                 "Período DURANTE Emergencia",
