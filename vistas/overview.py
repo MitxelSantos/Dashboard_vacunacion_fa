@@ -1,361 +1,377 @@
+"""
+vistas/overview.py - Vista de resumen con lógica temporal
+Enfocada en combinación sin duplicados
+"""
+
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from src.visualization.charts import create_bar_chart, create_pie_chart
-from src.data.preprocessor import prepare_dashboard_data, apply_filters
+import plotly.graph_objects as go
 
 
-def create_metrics(data, fuente_poblacion="DANE"):
-    """Create main metrics with simplified calculations"""
-    try:
-        # Si data es un diccionario, extraer los DataFrames
-        if isinstance(data, dict):
-            df_vacunacion = data.get("vacunacion", pd.DataFrame())
-            df_poblacion = data.get("poblacion", pd.DataFrame())
-            df_metricas = data.get("metricas", pd.DataFrame())
-        else:
-            # Si data es un DataFrame simple, usarlo como vacunación
-            df_vacunacion = data if isinstance(data, pd.DataFrame) else pd.DataFrame()
-            df_poblacion = pd.DataFrame()
-            df_metricas = pd.DataFrame()
+def show_overview_tab(combined_data, COLORS, RANGOS_EDAD):
+    """Muestra resumen general con lógica de combinación temporal"""
+    st.header("📊 Resumen General - Datos Combinados Sin Duplicados")
 
-        # Calcular métricas básicas
-        total_vacunados = len(df_vacunacion) if not df_vacunacion.empty else 0
+    # Métricas principales con lógica temporal
+    show_main_metrics_temporal(combined_data, COLORS)
 
-        # Calcular población total
-        if not df_metricas.empty and fuente_poblacion in df_metricas.columns:
-            total_poblacion = df_metricas[fuente_poblacion].sum()
-        elif not df_poblacion.empty:
-            # Buscar columna de total en población
-            total_cols = [col for col in df_poblacion.columns if "total" in col.lower()]
-            if total_cols:
-                total_poblacion = df_poblacion[total_cols[0]].sum()
-            else:
-                total_poblacion = len(df_poblacion) * 100  # Estimación
-        else:
-            total_poblacion = total_vacunados * 2  # Estimación conservadora
+    # Distribución por rangos de edad (combinada)
+    show_combined_age_distribution(combined_data, COLORS, RANGOS_EDAD)
 
-        cobertura = (
-            (total_vacunados / total_poblacion * 100) if total_poblacion > 0 else 0
+    # Análisis de períodos
+    show_periods_analysis(combined_data, COLORS)
+
+    # Análisis territorial si hay población
+    if combined_data["population"]["por_municipio"]:
+        show_territorial_summary_combined(combined_data, COLORS)
+
+
+def show_main_metrics_temporal(combined_data, COLORS):
+    """Muestra métricas principales con lógica temporal"""
+    col1, col2, col3, col4 = st.columns(4)
+
+    total_pre = combined_data["total_individual_pre"]
+    total_barridos = combined_data["total_barridos"]
+    total_renuentes = combined_data["total_renuentes"]
+    total_real = combined_data["total_real_combinado"]
+
+    with col1:
+        st.metric(
+            "🏥 PRE-Emergencia",
+            f"{total_pre:,}",
+            delta="Individual sin duplicados" if total_pre > 0 else "Sin datos",
         )
-        susceptibles = max(0, total_poblacion - total_vacunados)
 
-        return {
-            "total_vacunados": total_vacunados,
-            "total_poblacion": int(total_poblacion),
-            "cobertura": round(cobertura, 2),
-            "susceptibles": int(susceptibles),
-        }
+    with col2:
+        st.metric(
+            "🚨 DURANTE Emergencia",
+            f"{total_barridos:,}",
+            delta="Barridos territoriales" if total_barridos > 0 else "Sin datos",
+        )
 
-    except Exception as e:
-        st.error(f"Error calculando métricas: {str(e)}")
-        return {
-            "total_vacunados": 0,
-            "total_poblacion": 0,
-            "cobertura": 0,
-            "susceptibles": 0,
-        }
+    with col3:
+        st.metric(
+            "📈 TOTAL REAL",
+            f"{total_real:,}",
+            delta="Combinado sin duplicados" if total_real > 0 else "Sin datos",
+        )
 
-
-def show(data, filters, colors, fuente_poblacion="DANE"):
-    """Función principal para la vista general"""
-    st.title("📊 Visión General")
-
-    # Validar formato de datos
-    if data is None:
-        st.error("❌ No hay datos disponibles")
-        return
-
-    try:
-        # Preparar datos en formato consistente
-        if isinstance(data, pd.DataFrame):
-            # Si es un DataFrame simple, convertir a formato diccionario
-            dashboard_data = prepare_dashboard_data(data, None, fuente_poblacion)
-        elif isinstance(data, dict):
-            dashboard_data = data
+    with col4:
+        # Mostrar tasa de aceptación
+        if total_renuentes > 0:
+            total_contactados = total_real + total_renuentes
+            tasa_aceptacion = (total_real / total_contactados) * 100
+            st.metric(
+                "✅ Tasa de Aceptación",
+                f"{tasa_aceptacion:.1f}%",
+                delta=f"{total_renuentes:,} renuentes",
+            )
         else:
-            st.error("❌ Formato de datos no válido")
-            return
-
-        # Aplicar filtros si existen
-        if filters:
-            dashboard_data = apply_filters(dashboard_data, filters)
-
-        # Verificar que tenemos datos después de filtros
-        df_vacunacion = dashboard_data.get("vacunacion", pd.DataFrame())
-        if df_vacunacion.empty:
-            st.warning("⚠️ No hay datos de vacunación para mostrar")
-            return
-
-        # Calcular métricas
-        metrics = create_metrics(dashboard_data, fuente_poblacion)
-
-        # Mostrar métricas principales
-        st.subheader("📊 Métricas Principales")
-        col1, col2, col3, col4 = st.columns(4)
-
-        with col1:
-            st.metric(
-                "Población Total",
-                f"{metrics['total_poblacion']:,}".replace(",", "."),
-                delta=f"Fuente: {fuente_poblacion}",
-            )
-        with col2:
-            st.metric("Vacunados", f"{metrics['total_vacunados']:,}".replace(",", "."))
-        with col3:
-            st.metric("Cobertura", f"{metrics['cobertura']:.1f}%", delta="del total")
-        with col4:
-            st.metric(
-                "Susceptibles",
-                f"{metrics['susceptibles']:,}".replace(",", "."),
-                delta="por vacunar",
-            )
-
-        # Gráficos principales
-        col1, col2 = st.columns(2)
-
-        with col1:
-            # Cobertura por municipio
-            try:
-                df_metricas = dashboard_data.get("metricas", pd.DataFrame())
-
-                if not df_metricas.empty and "DPMP" in df_metricas.columns:
-                    cobertura_col = f"Cobertura_{fuente_poblacion}"
-
-                    if cobertura_col in df_metricas.columns:
-                        # Top 15 municipios por cobertura
-                        top_municipios = df_metricas.nlargest(15, cobertura_col)
-
-                        fig = create_bar_chart(
-                            data=top_municipios,
-                            x="DPMP",
-                            y=cobertura_col,
-                            title="Top 15 Municipios por Cobertura",
-                            color=colors.get("primary", "#7D0F2B"),
-                            height=400,
-                        )
-                        st.plotly_chart(fig, use_container_width=True)
-                    else:
-                        st.info(
-                            f"📊 Datos de cobertura por {fuente_poblacion} no disponibles"
-                        )
-                else:
-                    # Fallback: mostrar distribución por municipio
-                    municipio_col = None
-                    for col in ["NombreMunicipioResidencia", "Municipio", "MUNICIPIO"]:
-                        if col in df_vacunacion.columns:
-                            municipio_col = col
-                            break
-
-                    if municipio_col:
-                        municipio_counts = (
-                            df_vacunacion[municipio_col]
-                            .value_counts()
-                            .head(15)
-                            .reset_index()
-                        )
-                        municipio_counts.columns = ["Municipio", "Vacunados"]
-
-                        fig = create_bar_chart(
-                            data=municipio_counts,
-                            x="Municipio",
-                            y="Vacunados",
-                            title="Top 15 Municipios por Vacunados",
-                            color=colors.get("primary", "#7D0F2B"),
-                            height=400,
-                        )
-                        st.plotly_chart(fig, use_container_width=True)
-                    else:
-                        st.info("📊 Datos de municipio no disponibles")
-
-            except Exception as e:
-                st.error(f"Error creando gráfico de municipios: {str(e)}")
-
-        with col2:
-            # Distribución por edad
-            try:
-                edad_cols = ["Grupo_Edad", "grupo_edad", "GrupoEdad"]
-                edad_col = None
-
-                for col in edad_cols:
-                    if col in df_vacunacion.columns:
-                        edad_col = col
-                        break
-
-                if edad_col:
-                    # Limpiar datos de edad
-                    df_edad_clean = df_vacunacion.copy()
-                    df_edad_clean[edad_col] = df_edad_clean[edad_col].fillna("Sin dato")
-
-                    edad_counts = df_edad_clean[edad_col].value_counts().reset_index()
-                    edad_counts.columns = ["Grupo_Edad", "Cantidad"]
-
-                    # Tomar top 8 grupos para mejor visualización
-                    edad_counts = edad_counts.head(8)
-
-                    fig = create_pie_chart(
-                        data=edad_counts,
-                        names="Grupo_Edad",
-                        values="Cantidad",
-                        title="Distribución por Grupo de Edad",
-                        color_map={},
-                        height=400,
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
-                else:
-                    st.info("📊 Datos de grupo de edad no disponibles")
-
-            except Exception as e:
-                st.error(f"Error creando gráfico de edad: {str(e)}")
-
-        # Información adicional
-        st.markdown("---")
-        st.subheader("ℹ️ Información Adicional")
-
-        col1, col2, col3 = st.columns(3)
-
-        with col1:
-            # Número de municipios con datos
-            municipio_col = None
-            for col in ["NombreMunicipioResidencia", "Municipio", "MUNICIPIO"]:
-                if col in df_vacunacion.columns:
-                    municipio_col = col
-                    break
-
-            if municipio_col:
-                num_municipios = df_vacunacion[municipio_col].nunique()
+            # Mostrar distribución PRE vs DURANTE
+            if total_real > 0:
+                prop_pre = (total_pre / total_real) * 100
                 st.metric(
-                    "Municipios con Datos", num_municipios, delta="de 47 en Tolima"
+                    "📊 % PRE-Emergencia", f"{prop_pre:.1f}%", delta=f"del total real"
                 )
 
-        with col2:
-            # Período de datos
-            fecha_cols = ["FA UNICA", "FechaVacunacion", "Fecha", "FECHA"]
-            fecha_col = None
-
-            for col in fecha_cols:
-                if col in df_vacunacion.columns:
-                    fecha_col = col
-                    break
-
-            if fecha_col:
-                try:
-                    fechas = pd.to_datetime(df_vacunacion[fecha_col], errors="coerce")
-                    fechas_validas = fechas.dropna()
-
-                    if len(fechas_validas) > 0:
-                        periodo_dias = (
-                            fechas_validas.max() - fechas_validas.min()
-                        ).days + 1
-                        st.metric(
-                            "Período de Datos",
-                            f"{periodo_dias} días",
-                            delta=f"Del {fechas_validas.min().strftime('%d/%m/%Y')} al {fechas_validas.max().strftime('%d/%m/%Y')}",
-                        )
-                except:
-                    st.metric("Período de Datos", "No disponible")
-
-        with col3:
-            # Promedio diario
-            if fecha_col and metrics["total_vacunados"] > 0:
-                try:
-                    fechas = pd.to_datetime(df_vacunacion[fecha_col], errors="coerce")
-                    fechas_validas = fechas.dropna()
-
-                    if len(fechas_validas) > 0:
-                        periodo_dias = (
-                            fechas_validas.max() - fechas_validas.min()
-                        ).days + 1
-                        promedio_diario = (
-                            metrics["total_vacunados"] / periodo_dias
-                            if periodo_dias > 0
-                            else 0
-                        )
-                        st.metric(
-                            "Promedio Diario",
-                            f"{promedio_diario:.1f}",
-                            delta="vacunados/día",
-                        )
-                except:
-                    st.metric("Promedio Diario", "No disponible")
-
-    except Exception as e:
-        st.error(f"❌ Error general en vista overview: {str(e)}")
-
-        # Mostrar información de debug
-        with st.expander("🔧 Información de debug"):
-            st.write("**Tipo de datos recibidos:**", type(data))
-            if isinstance(data, dict):
-                st.write("**Claves en diccionario:**", list(data.keys()))
-                for key, value in data.items():
-                    if isinstance(value, pd.DataFrame):
-                        st.write(
-                            f"**{key}:** DataFrame con {len(value)} filas y {len(value.columns)} columnas"
-                        )
-                    else:
-                        st.write(f"**{key}:** {type(value)}")
-            elif isinstance(data, pd.DataFrame):
-                st.write(
-                    "**DataFrame:** ",
-                    f"{len(data)} filas, {len(data.columns)} columnas",
-                )
-                st.write("**Columnas:**", list(data.columns))
+    # Información de fecha de corte
+    if combined_data.get("fecha_corte"):
+        fecha_corte = combined_data["fecha_corte"]
+        st.success(
+            f"🎯 **Fecha de corte:** {fecha_corte.strftime('%d/%m/%Y')} - Inicio de la emergencia sanitaria"
+        )
 
 
-def mostrar_overview(data):
-    """
-    Función de compatibilidad hacia atrás
-    """
-    st.header("📊 Overview del Dashboard de Vacunación")
+def show_combined_age_distribution(combined_data, COLORS, RANGOS_EDAD):
+    """Muestra distribución combinada por rangos de edad"""
+    st.subheader("👥 Distribución por Rangos de Edad (Combinada Sin Duplicados)")
 
-    if data is None or (isinstance(data, pd.DataFrame) and data.empty):
-        st.warning("No hay datos disponibles para mostrar")
+    # Preparar datos combinados por edad
+    individual_edad = combined_data["individual_pre"]["por_edad"]
+    barridos_edad = combined_data["barridos"]["vacunados_barrido"]["por_edad"]
+
+    age_data = []
+    for rango in RANGOS_EDAD.keys():
+        individual_count = individual_edad.get(rango, 0)
+        barridos_count = barridos_edad.get(rango, 0)
+        total_rango = individual_count + barridos_count
+
+        if total_rango > 0:  # Solo mostrar rangos con datos
+            age_data.append(
+                {
+                    "Rango": rango,
+                    "Descripción": RANGOS_EDAD[rango],
+                    "PRE-Emergencia": individual_count,
+                    "DURANTE Emergencia": barridos_count,
+                    "Total Real": total_rango,
+                    "% del Total": (
+                        (total_rango / combined_data["total_real_combinado"] * 100)
+                        if combined_data["total_real_combinado"] > 0
+                        else 0
+                    ),
+                }
+            )
+
+    if not age_data:
+        st.warning("⚠️ No se encontraron datos de distribución por edad")
         return
 
-    try:
-        # Estadísticas básicas
-        if isinstance(data, pd.DataFrame):
-            total_vacunados = len(data)
-            st.metric("Total de Vacunados", f"{total_vacunados:,}".replace(",", "."))
+    df_age = pd.DataFrame(age_data)
+    df_age = df_age.sort_values("Total Real", ascending=False)
 
-            # Mostrar información adicional si está disponible
-            if "NombreMunicipioResidencia" in data.columns:
-                municipios = data["NombreMunicipioResidencia"].nunique()
-                st.metric("Municipios", municipios)
+    col1, col2 = st.columns(2)
 
-            # Gráfico simple si hay datos de municipio
-            municipio_cols = ["NombreMunicipioResidencia", "Municipio", "MUNICIPIO"]
-            municipio_col = None
-
-            for col in municipio_cols:
-                if col in data.columns:
-                    municipio_col = col
-                    break
-
-            if municipio_col:
-                municipio_counts = data[municipio_col].value_counts().head(10)
-                fig = px.bar(
-                    x=municipio_counts.index,
-                    y=municipio_counts.values,
-                    title="Top 10 Municipios por Vacunación",
-                )
-                st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("Formato de datos no reconocido para overview básico")
-
-    except Exception as e:
-        st.error(f"Error en overview básico: {str(e)}")
-
-
-# En cualquier vista, puedes mostrar esta información:
-def show_temporal_info(metadata):
-    if metadata and "cutoff_date" in metadata:
-        cutoff_date = metadata["cutoff_date"]
-        st.info(
-            f"""
-        📅 **División Temporal Automática:**
-        - **Fecha de corte:** {cutoff_date.strftime('%d de %B de %Y')}
-        - **Pre-emergencia:** Datos anteriores al {cutoff_date.strftime('%d/%m/%Y')}
-        - **Emergencia:** Brigadas desde el {cutoff_date.strftime('%d/%m/%Y')}
-        """
+    with col1:
+        # Gráfico de barras apiladas temporal
+        fig = px.bar(
+            df_age,
+            x="Rango",
+            y=["PRE-Emergencia", "DURANTE Emergencia"],
+            title="Vacunación por Período y Rango de Edad",
+            color_discrete_map={
+                "PRE-Emergencia": COLORS["primary"],
+                "DURANTE Emergencia": COLORS["warning"],
+            },
         )
+
+        fig.update_layout(
+            plot_bgcolor=COLORS["white"],
+            paper_bgcolor=COLORS["white"],
+            height=400,
+            xaxis_title="Rango de Edad",
+            yaxis_title="Cantidad de Vacunados",
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
+
+    with col2:
+        # Gráfico circular de distribución total
+        fig_pie = px.pie(
+            df_age,
+            values="Total Real",
+            names="Descripción",
+            title="Distribución % Total Real por Edad",
+            color_discrete_sequence=px.colors.qualitative.Set3,
+        )
+
+        fig_pie.update_traces(textposition="inside", textinfo="percent+label")
+        fig_pie.update_layout(height=400)
+
+        st.plotly_chart(fig_pie, use_container_width=True)
+
+    # Tabla resumen
+    st.markdown("**📋 Resumen por Rangos de Edad (Datos Reales Sin Duplicados):**")
+
+    # Preparar tabla para mostrar
+    tabla_display = df_age[
+        [
+            "Descripción",
+            "PRE-Emergencia",
+            "DURANTE Emergencia",
+            "Total Real",
+            "% del Total",
+        ]
+    ].copy()
+    tabla_display["% del Total"] = tabla_display["% del Total"].round(1)
+
+    # Agregar fila de totales
+    fila_total = {
+        "Descripción": "**TOTAL GENERAL**",
+        "PRE-Emergencia": df_age["PRE-Emergencia"].sum(),
+        "DURANTE Emergencia": df_age["DURANTE Emergencia"].sum(),
+        "Total Real": df_age["Total Real"].sum(),
+        "% del Total": 100.0,
+    }
+    tabla_display = pd.concat(
+        [tabla_display, pd.DataFrame([fila_total])], ignore_index=True
+    )
+
+    st.dataframe(
+        tabla_display,
+        use_container_width=True,
+        column_config={
+            "Descripción": st.column_config.TextColumn("Rango de Edad"),
+            "PRE-Emergencia": st.column_config.NumberColumn(
+                "PRE-Emergencia", format="%d"
+            ),
+            "DURANTE Emergencia": st.column_config.NumberColumn(
+                "DURANTE Emergencia", format="%d"
+            ),
+            "Total Real": st.column_config.NumberColumn("Total Real", format="%d"),
+            "% del Total": st.column_config.NumberColumn(
+                "% del Total", format="%.1f%%"
+            ),
+        },
+        hide_index=True,
+    )
+
+
+def show_periods_analysis(combined_data, COLORS):
+    """Muestra análisis de períodos temporales"""
+    st.subheader("⏰ Análisis de Períodos")
+
+    total_pre = combined_data["total_individual_pre"]
+    total_barridos = combined_data["total_barridos"]
+    total_real = combined_data["total_real_combinado"]
+
+    if total_real == 0:
+        st.warning("⚠️ No hay datos para analizar períodos")
+        return
+
+    # Calcular proporciones
+    prop_pre = (total_pre / total_real) * 100
+    prop_durante = (total_barridos / total_real) * 100
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        # Gráfico de comparación temporal
+        periodos = ["PRE-Emergencia\n(Individual)", "DURANTE Emergencia\n(Barridos)"]
+        valores = [total_pre, total_barridos]
+
+        fig = go.Figure(
+            data=[
+                go.Bar(
+                    x=periodos,
+                    y=valores,
+                    text=[
+                        f"{val:,}<br>({prop:.1f}%)"
+                        for val, prop in zip(valores, [prop_pre, prop_durante])
+                    ],
+                    textposition="auto",
+                    marker_color=[COLORS["primary"], COLORS["warning"]],
+                )
+            ]
+        )
+
+        fig.update_layout(
+            title="Comparación de Períodos",
+            xaxis_title="Período",
+            yaxis_title="Cantidad de Vacunados",
+            plot_bgcolor=COLORS["white"],
+            paper_bgcolor=COLORS["white"],
+            height=400,
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
+
+    with col2:
+        # Gráfico de dona temporal
+        fig_donut = go.Figure(
+            data=[
+                go.Pie(
+                    labels=periodos,
+                    values=valores,
+                    hole=0.4,
+                    marker_colors=[COLORS["primary"], COLORS["warning"]],
+                    textinfo="percent+label",
+                )
+            ]
+        )
+
+        fig_donut.update_layout(
+            title="Proporción Temporal",
+            height=400,
+            annotations=[
+                dict(
+                    text=f"Total Real<br>{total_real:,}",
+                    x=0.5,
+                    y=0.5,
+                    font_size=16,
+                    showarrow=False,
+                )
+            ],
+        )
+
+        st.plotly_chart(fig_donut, use_container_width=True)
+
+    # Insights estratégicos temporales
+    st.markdown("**🎯 Análisis Estratégico Temporal:**")
+
+    insights = []
+
+    if prop_pre > 60:
+        insights.append(
+            "✅ **Respuesta temprana efectiva:** La mayoría de vacunación ocurrió antes de la emergencia"
+        )
+    elif prop_durante > 60:
+        insights.append(
+            "🚨 **Intervención de emergencia crucial:** Los barridos fueron fundamentales para la cobertura"
+        )
+    else:
+        insights.append(
+            "⚖️ **Respuesta equilibrada:** Combinación efectiva de estrategias PRE y DURANTE emergencia"
+        )
+
+    if total_barridos > total_pre:
+        insights.append(
+            "📍 **Intensificación exitosa:** Los barridos superaron la vacunación pre-emergencia"
+        )
+
+    # Mostrar insights
+    for insight in insights:
+        st.markdown(insight)
+
+
+def show_territorial_summary_combined(combined_data, COLORS):
+    """Muestra resumen territorial con datos combinados"""
+    st.subheader("🗺️ Resumen Territorial (Datos Combinados)")
+
+    total_poblacion = combined_data["population"]["total"]
+    total_vacunados = combined_data["total_real_combinado"]
+
+    if total_poblacion == 0:
+        return
+
+    # Calcular métricas territoriales
+    cobertura_real = (total_vacunados / total_poblacion) * 100
+    meta_80 = total_poblacion * 0.8
+    avance_meta = (total_vacunados / meta_80) * 100
+    faltante_meta = max(0, meta_80 - total_vacunados)
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        st.metric("Población Asegurada", f"{total_poblacion:,}")
+
+    with col2:
+        st.metric("Cobertura Real Combinada", f"{cobertura_real:.1f}%")
+
+    with col3:
+        st.metric("Avance Meta 80%", f"{avance_meta:.1f}%")
+
+    with col4:
+        st.metric("Faltante para Meta", f"{faltante_meta:,.0f}")
+
+    # Análisis de municipios
+    municipios_con_datos = len(combined_data["population"]["por_municipio"])
+
+    st.markdown(
+        f"**📊 Análisis de {municipios_con_datos} municipios con población asegurada registrada**"
+    )
+
+    # Mostrar concentración poblacional
+    poblacion_municipios = combined_data["population"]["por_municipio"]
+    top_5_poblacion = sorted(
+        poblacion_municipios.items(), key=lambda x: x[1], reverse=True
+    )[:5]
+
+    if top_5_poblacion:
+        st.markdown("**🏘️ Top 5 Municipios por Población Asegurada:**")
+        for i, (municipio, poblacion) in enumerate(top_5_poblacion, 1):
+            pct_total = (poblacion / total_poblacion) * 100
+
+            # Calcular vacunados combinados del municipio
+            individual_mun = combined_data["individual_pre"]["por_municipio"].get(
+                municipio, 0
+            )
+            barridos_mun = combined_data["barridos"]["vacunados_barrido"][
+                "por_municipio"
+            ].get(municipio, 0)
+            total_mun = individual_mun + barridos_mun
+            cobertura_mun = (total_mun / poblacion) * 100 if poblacion > 0 else 0
+
+            st.write(
+                f"{i}. **{municipio}**: {poblacion:,} hab. ({pct_total:.1f}%) - Cobertura: {cobertura_mun:.1f}%"
+            )

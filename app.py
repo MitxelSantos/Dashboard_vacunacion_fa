@@ -1,496 +1,563 @@
 """
 app.py - Dashboard de Vacunación Fiebre Amarilla - Tolima
-Version optimizada y simplificada con mejor manejo de errores
+VERSIÓN CORREGIDA - Lógica temporal sin duplicados
 """
 
 import streamlit as st
-import logging
 import pandas as pd
 import numpy as np
-from pathlib import Path
-from datetime import datetime, date, timedelta  # ← AGREGADO
-import traceback
+import plotly.express as px
+import plotly.graph_objects as go
+from datetime import datetime, date, timedelta
 import os
-from typing import Union, Optional, Dict, Any  # ← AGREGADO
+from pathlib import Path
 
-# Single set_page_config call
+# Configuración de página
 st.set_page_config(
-    page_title="Dashboard Fiebre Amarilla",
+    page_title="Dashboard Vacunación Fiebre Amarilla - Tolima",
     page_icon="💉",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# Simplified logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[logging.FileHandler("dashboard.log"), logging.StreamHandler()],
-)
-logger = logging.getLogger(__name__)
+# Importar vistas
+from vistas.overview import show_overview_tab
+from vistas.temporal import show_temporal_tab
+from vistas.geographic import show_geographic_tab
+from vistas.population import show_population_tab
 
-# Simplified configuration
-ROOT_DIR = Path(__file__).parent
-DATA_DIR = ROOT_DIR / "data"
-DATA_DIR.mkdir(exist_ok=True)
+# Colores institucionales
+COLORS = {
+    "primary": "#7D0F2B",
+    "secondary": "#F2A900",
+    "accent": "#5A4214",
+    "success": "#509E2F",
+    "warning": "#F7941D",
+    "white": "#FFFFFF",
+}
 
-# Core imports
-try:
-    from src.data.unified_loader import load_and_combine_data
-    from vistas import overview, geographic, insurance
-except ImportError as e:
-    st.error(f"❌ Error importando módulos: {str(e)}")
-    st.error("📋 Verificar que todos los archivos estén en su lugar")
-    st.stop()
+# Rangos de edad definitivos
+RANGOS_EDAD = {
+    "<1": "< 1 año",
+    "1-5": "1-5 años",
+    "6-10": "6-10 años",
+    "11-20": "11-20 años",
+    "21-30": "21-30 años",
+    "31-40": "31-40 años",
+    "41-50": "41-50 años",
+    "51-59": "51-59 años",
+    "60+": "60 años y más",
+}
 
-COLORS = {"primary": "#7D0F2B", "secondary": "#F2A900"}
-
-
-@st.cache_data(ttl=1800)  # Cache por 30 minutos
-def load_data():
-    """
-    Carga unificada de datos con manejo robusto de errores y división temporal automática
-
-    Returns:
-        tuple: (df_combined, df_aseguramiento, fecha_corte, metadata)
-    """
-    try:
-        st.info("🔄 Iniciando carga unificada de datos...")
-
-        # =============================================
-        # PASO 1: DEFINIR RUTAS DE ARCHIVOS
-        # =============================================
-        # Definir rutas como STRINGS (no DataFrames)
-        resumen_path = "data/Resumen.xlsx"
-        historico_path = "data/vacunacion_fa.csv"
-        aseguramiento_path = "data/Poblacion_aseguramiento.xlsx"
-
-        # =============================================
-        # PASO 2: VERIFICAR EXISTENCIA DE ARCHIVOS
-        # =============================================
-        files_status = {}
-        required_files = {
-            "Resumen (Brigadas)": resumen_path,
-            "Histórico": historico_path,
-            "Población EAPB": aseguramiento_path,
-        }
-
-        files_exist = []
-        for name, path in required_files.items():
-            if Path(path).exists():
-                size_mb = Path(path).stat().st_size / (1024 * 1024)
-                files_status[name] = f"✅ Encontrado ({size_mb:.1f} MB)"
-                files_exist.append(path)
-            else:
-                files_status[name] = "❌ No encontrado"
-
-        # Mostrar estado de archivos
-        st.write("📁 **Estado de archivos de datos:**")
-        for name, status in files_status.items():
-            st.write(f"  • {name}: {status}")
-
-        # Verificar que tenemos al menos archivos básicos
-        if not files_exist:
-            st.error("❌ No se encontraron archivos de datos en la carpeta 'data/'")
-            st.info(
+def setup_sidebar():
+    """Configura la barra lateral con información institucional"""
+    with st.sidebar:
+        # Logo institucional - cargar archivo real
+        logo_path = "assets/images/logo_tolima.png"  # Ajusta la ruta según tu estructura
+        
+        if os.path.exists(logo_path):
+            st.image(logo_path, width=150, caption="Gobernación del Tolima")
+        else:
+            # Fallback si no existe el logo
+            st.markdown(
                 """
-            📋 **Archivos requeridos:**
-            - `data/Resumen.xlsx` - Datos de brigadas de emergencia
-            - `data/vacunacion_fa.csv` - Datos históricos de vacunación  
-            - `data/Poblacion_aseguramiento.xlsx` - Datos de población por EAPB
+                <div style="text-align: center; padding: 10px;">
+                    <div style="background: linear-gradient(135deg, #7D0F2B, #F2A900); 
+                               color: white; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                        <h3 style="margin: 0; font-size: 16px;">🏛️ GOBERNACIÓN</h3>
+                        <h4 style="margin: 5px 0; font-size: 14px;">DEL TOLIMA</h4>
+                        <p style="margin: 0; font-size: 11px;">Secretaría de Salud</p>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
             
-            **Nota:** El sistema puede funcionar con archivos parciales.
+            # Mostrar mensaje para agregar logo
+            st.info("💡 Agrega tu logo en: `assets/logo_tolima.png`")
+        
+        # Título del dashboard
+        st.markdown("### 💉 Dashboard Vacunación")
+        st.markdown("#### 🦠 Fiebre Amarilla")
+        
+        st.markdown("---")
+        
+        # Información de la lógica
+        st.markdown("#### 📊 **Lógica del Sistema**")
+        st.info("**Combinación temporal sin duplicados**")
+        
+        st.markdown("**🏥 PRE-emergencia:**")
+        st.markdown("• Vacunación individual histórica")
+        st.markdown("• Hasta día anterior al 1er barrido")
+        
+        st.markdown("**🚨 DURANTE emergencia:**")
+        st.markdown("• Solo vacunas aplicadas en barridos")
+        st.markdown("• Intensificación por emergencia")
+        
+        st.markdown("---")
+        
+        # Información del desarrollador
+        st.markdown("#### 👨‍💻 **Desarrollado por:**")
+        st.markdown("**Ing. José Miguel Santos**")
+        st.markdown("*Secretaría de Salud del Tolima*")
+        
+        st.markdown("---")
+        
+        # Información adicional
+        st.markdown("#### 📋 **Características**")
+        st.markdown("✅ Análisis territorial")
+        st.markdown("✅ Distribución por edad")
+        st.markdown("✅ Sin duplicados temporales")
+        st.markdown("✅ Datos más reales")
+        st.markdown("✅ Análisis de renuentes")
+        
+        st.markdown("---")
+        
+        # Copyright
+        st.markdown(
             """
-            )
-            return None, None, None, None
-
-        # =============================================
-        # PASO 3: CARGAR DATOS CON VALIDACIÓN
-        # =============================================
-        try:
-            # Llamar a la función de carga unificada con STRINGS
-            result = load_and_combine_data(
-                resumen_path,  # String - ruta a brigadas
-                historico_path,  # String - ruta a históricos
-                aseguramiento_path,  # String - ruta a población
-            )
-
-            if result is None:
-                st.error("❌ Error en la función de carga de datos")
-                return None, None, None, None
-
-            # Verificar que tenemos 3 elementos como esperamos
-            if len(result) != 3:
-                st.error(
-                    f"❌ Error en estructura de datos retornada: esperados 3, recibidos {len(result)}"
-                )
-                return None, None, None, None
-
-        except Exception as e:
-            st.error(f"❌ Error crítico llamando load_and_combine_data(): {str(e)}")
-            st.error("🔧 Verifique que las rutas de archivos sean correctas")
-            return None, None, None, None
-
-        # Desempacar resultado
-        df_combined, df_aseguramiento, fecha_corte = result
-
-        # =============================================
-        # PASO 4: VALIDAR DATOS CARGADOS
-        # =============================================
-        validation_results = []
-
-        # Validar datos combinados de vacunación
-        if df_combined is not None and len(df_combined) > 0:
-            validation_results.append(
-                f"✅ Datos de vacunación: {len(df_combined):,} registros".replace(
-                    ",", "."
-                )
-            )
-
-            # Verificar columnas esenciales
-            essential_columns = ["FA UNICA", "NombreMunicipioResidencia"]
-            missing_columns = [
-                col for col in essential_columns if col not in df_combined.columns
-            ]
-
-            if missing_columns:
-                validation_results.append(
-                    f"⚠️ Columnas faltantes en vacunación: {missing_columns}"
-                )
-            else:
-                validation_results.append(
-                    "✅ Columnas esenciales de vacunación presentes"
-                )
-
-        else:
-            validation_results.append("❌ No se cargaron datos de vacunación")
-
-        # Validar datos de aseguramiento/población
-        if df_aseguramiento is not None and len(df_aseguramiento) > 0:
-            validation_results.append(
-                f"✅ Datos de población EAPB: {len(df_aseguramiento):,} registros".replace(
-                    ",", "."
-                )
-            )
-        else:
-            validation_results.append("⚠️ No se cargaron datos de población EAPB")
-
-        # Mostrar resultados de validación
-        st.write("🔍 **Validación de datos:**")
-        for result in validation_results:
-            st.write(f"  • {result}")
-
-        # =============================================
-        # PASO 5: CREAR METADATA CON DIVISIÓN TEMPORAL
-        # =============================================
-        metadata = {
-            "loading_date": datetime.now(),
-            "cutoff_date": fecha_corte,
-            "files_loaded": files_exist,
-            "total_vaccination_records": (
-                len(df_combined) if df_combined is not None else 0
-            ),
-            "total_population_records": (
-                len(df_aseguramiento) if df_aseguramiento is not None else 0
-            ),
-            "has_temporal_division": fecha_corte is not None,
-            "system_version": "unified_v1.0",
-        }
-
-        # Información sobre división temporal
-        if fecha_corte is not None:
-            # Calcular estadísticas de períodos si tenemos datos de vacunación
-            if df_combined is not None and "FA UNICA" in df_combined.columns:
-                try:
-                    # Convertir fechas para análisis
-                    df_combined_temp = df_combined.copy()
-                    df_combined_temp["FA UNICA"] = pd.to_datetime(
-                        df_combined_temp["FA UNICA"], errors="coerce"
-                    )
-                    fechas_validas = df_combined_temp["FA UNICA"].dropna()
-
-                    if len(fechas_validas) > 0:
-                        # Separar por períodos
-                        pre_emergency = fechas_validas[fechas_validas < fecha_corte]
-                        emergency = fechas_validas[fechas_validas >= fecha_corte]
-
-                        metadata.update(
-                            {
-                                "pre_emergency_count": len(pre_emergency),
-                                "emergency_count": len(emergency),
-                                "pre_emergency_start": (
-                                    pre_emergency.min()
-                                    if len(pre_emergency) > 0
-                                    else None
-                                ),
-                                "pre_emergency_end": (
-                                    pre_emergency.max()
-                                    if len(pre_emergency) > 0
-                                    else None
-                                ),
-                                "emergency_start": (
-                                    emergency.min() if len(emergency) > 0 else None
-                                ),
-                                "emergency_end": (
-                                    emergency.max() if len(emergency) > 0 else None
-                                ),
-                            }
-                        )
-
-                except Exception as e:
-                    st.warning(f"⚠️ Error calculando estadísticas temporales: {str(e)}")
-
-        # =============================================
-        # PASO 6: MOSTRAR RESUMEN DE CARGA EXITOSA
-        # =============================================
-        st.success("✅ Datos cargados exitosamente")
-
-        # Información de carga
-        col1, col2, col3 = st.columns(3)
-
-        with col1:
-            st.metric(
-                "Registros Vacunación",
-                f"{metadata['total_vaccination_records']:,}".replace(",", "."),
-                delta="registros totales",
-            )
-
-        with col2:
-            st.metric(
-                "Registros Población",
-                f"{metadata['total_population_records']:,}".replace(",", "."),
-                delta="por EAPB",
-            )
-
-        with col3:
-            if fecha_corte:
-                st.metric(
-                    "División Temporal",
-                    "Activada",
-                    delta=f"Corte: {fecha_corte.strftime('%d/%m/%Y')}",
-                )
-            else:
-                st.metric("División Temporal", "No disponible")
-
-        # Información detallada de división temporal
-        if metadata["has_temporal_division"]:
-            st.info(
-                f"""
-            📅 **División Temporal Automática:**
-            
-            • **Fecha de corte:** {fecha_corte.strftime('%d de %B de %Y')}
-            • **Pre-emergencia:** Vacunación regular (antes del corte)
-            • **Emergencia:** Brigadas territoriales (desde el corte)
-            """
-            )
-
-            # Solo mostrar estadísticas si están disponibles
-            if "pre_emergency_count" in metadata and "emergency_count" in metadata:
-                col1, col2 = st.columns(2)
-
-                with col1:
-                    st.write("**📚 Período Pre-emergencia:**")
-                    st.write(
-                        f"• Registros: {metadata['pre_emergency_count']:,}".replace(
-                            ",", "."
-                        )
-                    )
-                    if metadata.get("pre_emergency_start"):
-                        st.write(
-                            f"• Desde: {metadata['pre_emergency_start'].strftime('%d/%m/%Y')}"
-                        )
-                    if metadata.get("pre_emergency_end"):
-                        st.write(
-                            f"• Hasta: {metadata['pre_emergency_end'].strftime('%d/%m/%Y')}"
-                        )
-
-                with col2:
-                    st.write("**🚨 Período Emergencia:**")
-                    st.write(
-                        f"• Registros: {metadata['emergency_count']:,}".replace(
-                            ",", "."
-                        )
-                    )
-                    if metadata.get("emergency_start"):
-                        st.write(
-                            f"• Desde: {metadata['emergency_start'].strftime('%d/%m/%Y')}"
-                        )
-                    if metadata.get("emergency_end"):
-                        st.write(
-                            f"• Hasta: {metadata['emergency_end'].strftime('%d/%m/%Y')}"
-                        )
-
-        return df_combined, df_aseguramiento, fecha_corte, metadata
-
-    except Exception as e:
-        logger.error(f"Error crítico cargando datos: {str(e)}")
-        st.error(f"❌ Error crítico cargando datos: {str(e)}")
-
-        # Mostrar detalles técnicos en un expander
-        with st.expander("🔧 Detalles técnicos del error"):
-            st.code(traceback.format_exc())
-
-        # Información de diagnóstico
-        st.info(
-            """
-        🔧 **Pasos de diagnóstico:**
-        1. Verificar que los archivos existan en la carpeta `data/`
-        2. Verificar que los archivos no estén corruptos
-        3. Verificar permisos de lectura en los archivos
-        4. Revisar los logs del sistema para más detalles
-        5. Verificar que las rutas sean strings, no objetos DataFrame
-        """
+            <div style="text-align: center; padding: 8px; 
+                       background-color: #f0f0f0; border-radius: 5px;">
+                <small><strong>Secretaría de Salud del Tolima</strong><br>
+                © 2025 - Todos los derechos reservados</small>
+            </div>
+            """,
+            unsafe_allow_html=True
         )
 
-        return None, None, None, None
+def calculate_current_age(fecha_nacimiento):
+    """Calcula la edad ACTUAL desde fecha de nacimiento"""
+    if pd.isna(fecha_nacimiento):
+        return None
+
+    try:
+        hoy = datetime.now()
+        edad = hoy.year - fecha_nacimiento.year
+
+        # Ajustar si no ha llegado el cumpleaños este año
+        if (hoy.month, hoy.day) < (fecha_nacimiento.month, fecha_nacimiento.day):
+            edad -= 1
+
+        return max(0, edad)
+    except:
+        return None
 
 
-def show_file_status():
-    """
-    Muestra el estado de los archivos de datos
-    """
-    st.subheader("📁 Estado de Archivos de Datos")
+def classify_age_group(edad):
+    """Clasifica edad en rango correspondiente"""
+    if pd.isna(edad) or edad is None:
+        return None
 
-    required_files = {
-        "data/Resumen.xlsx": "Datos de brigadas de emergencia",
-        "data/vacunacion_fa.csv": "Datos históricos de vacunación",
-        "data/Poblacion_aseguramiento.xlsx": "Datos de población por EAPB",
+    if edad < 1:
+        return "<1"
+    elif 1 <= edad <= 5:
+        return "1-5"
+    elif 6 <= edad <= 10:
+        return "6-10"
+    elif 11 <= edad <= 20:
+        return "11-20"
+    elif 21 <= edad <= 30:
+        return "21-30"
+    elif 31 <= edad <= 40:
+        return "31-40"
+    elif 41 <= edad <= 50:
+        return "41-50"
+    elif 51 <= edad <= 59:
+        return "51-59"
+    else:
+        return "60+"
+
+
+@st.cache_data
+def load_individual_data():
+    """Carga datos de vacunación individual"""
+    file_path = "data/vacunacion_fa.csv"
+
+    if not os.path.exists(file_path):
+        st.error(f"❌ Archivo no encontrado: {file_path}")
+        return pd.DataFrame()
+
+    try:
+        df = pd.read_csv(file_path, low_memory=False, encoding="utf-8")
+
+        # Procesar fechas
+        if "FechaNacimiento" in df.columns:
+            df["FechaNacimiento"] = pd.to_datetime(
+                df["FechaNacimiento"], errors="coerce"
+            )
+        if "FA UNICA" in df.columns:
+            df["FA UNICA"] = pd.to_datetime(df["FA UNICA"], errors="coerce")
+
+        st.success(f"✅ Datos individuales: {len(df):,} registros")
+        return df
+
+    except Exception as e:
+        st.error(f"❌ Error cargando datos individuales: {str(e)}")
+        return pd.DataFrame()
+
+
+@st.cache_data
+def load_barridos_data():
+    """Carga datos de barridos territoriales"""
+    file_path = "data/Resumen.xlsx"
+
+    if not os.path.exists(file_path):
+        st.error(f"❌ Archivo no encontrado: {file_path}")
+        return pd.DataFrame()
+
+    try:
+        # Intentar diferentes hojas
+        for sheet in ["Barridos", "Vacunacion", 0]:
+            try:
+                df = pd.read_excel(file_path, sheet_name=sheet)
+                break
+            except:
+                continue
+        else:
+            st.error("❌ No se pudo leer el archivo de barridos")
+            return pd.DataFrame()
+
+        # Procesar fechas
+        if "FECHA" in df.columns:
+            df["FECHA"] = pd.to_datetime(df["FECHA"], errors="coerce")
+
+        st.success(f"✅ Datos de barridos: {len(df):,} registros")
+        return df
+
+    except Exception as e:
+        st.error(f"❌ Error cargando barridos: {str(e)}")
+        return pd.DataFrame()
+
+
+@st.cache_data
+def load_population_data():
+    """Carga datos de población (opcional)"""
+    file_path = "data/Poblacion_aseguramiento.xlsx"
+
+    if not os.path.exists(file_path):
+        st.info("📊 Archivo de población no encontrado - análisis básico")
+        return pd.DataFrame()
+
+    try:
+        df = pd.read_excel(file_path)
+        st.success(f"✅ Datos de población: {len(df):,} registros")
+        return df
+
+    except Exception as e:
+        st.info(f"📊 Error cargando población: {str(e)} - análisis básico")
+        return pd.DataFrame()
+
+
+def determine_cutoff_date(df_barridos):
+    """Determina fecha de corte (primer barrido) para evitar duplicados"""
+    if df_barridos.empty or "FECHA" not in df_barridos.columns:
+        return None
+
+    fechas_validas = df_barridos["FECHA"].dropna()
+
+    if len(fechas_validas) == 0:
+        return None
+
+    # Fecha del primer barrido = inicio de emergencia
+    fecha_corte = fechas_validas.min()
+
+    return fecha_corte
+
+
+def detect_barridos_columns(df):
+    """Detecta columnas de vacunados en barrido (TPVB) y renuentes (TPNVP)"""
+
+    # Patrones para rangos de edad
+    age_patterns = {
+        "<1": ["< 1", "<1", "MENOR 1", "LACTANTE"],
+        "1-5": ["1-5", "1 A 5", "PREESCOLAR"],
+        "6-10": ["6-10", "6 A 10", "ESCOLAR"],
+        "11-20": ["11-20", "11 A 20", "ADOLESCENTE"],
+        "21-30": ["21-30", "21 A 30"],
+        "31-40": ["31-40", "31 A 40"],
+        "41-50": ["41-50", "41 A 50"],
+        "51-59": ["51-59", "51 A 59"],
+        "60+": ["60+", "60 Y MAS", "MAYOR 60"],
+        "60-69": ["60-69", "60 A 69"],
+        "70+": ["70+", "70 Y MAS", "MAYOR 70"],
     }
 
-    for file_path, description in required_files.items():
-        path = Path(file_path)
-        if path.exists():
-            size_mb = path.stat().st_size / (1024 * 1024)
-            st.success(f"✅ **{description}**")
-            st.caption(f"   📄 {file_path} ({size_mb:.1f} MB)")
-        else:
-            st.error(f"❌ **{description}**")
-            st.caption(f"   📄 {file_path} - Archivo no encontrado")
+    result = {
+        "vacunados_barrido": {},  # TPVB: vacunados durante el barrido
+        "renuentes": {},  # TPNVP: renuentes/no vacunados
+        "consolidation_needed": [],
+    }
+
+    # Detectar columnas por sección
+    for age_range, patterns in age_patterns.items():
+        found_cols = []
+
+        for col in df.columns:
+            col_str = str(col).upper().strip()
+            if any(pattern in col_str for pattern in patterns):
+                # Evitar conflictos
+                if age_range == "1-5" and any(
+                    conflict in col_str for conflict in ["41-50", "51-59"]
+                ):
+                    continue
+                if age_range == "60+" and any(
+                    conflict in col_str for conflict in ["60-69"]
+                ):
+                    continue
+
+                found_cols.append(col)
+
+        if found_cols:
+            # 4ta sección = TPVB (vacunados en barrido)
+            if len(found_cols) >= 4:
+                result["vacunados_barrido"][age_range] = found_cols[3]
+            # 3ra sección = TPNVP (renuentes)
+            if len(found_cols) >= 3:
+                result["renuentes"][age_range] = found_cols[2]
+
+            # Marcar para consolidación si es 60+ adicional
+            if age_range in ["60-69", "70+"]:
+                result["consolidation_needed"].extend(found_cols)
+
+    return result
+
+
+def process_individual_pre_barridos(df_individual, fecha_corte):
+    """Procesa datos individuales PRE-barridos (sin duplicados)"""
+    if df_individual.empty:
+        return {"total": 0, "por_edad": {}, "por_municipio": {}}
+
+    # Filtrar solo vacunas ANTES del primer barrido
+    if fecha_corte and "FA UNICA" in df_individual.columns:
+        mask_pre = df_individual["FA UNICA"] < fecha_corte
+        df_pre = df_individual[mask_pre].copy()
+        st.info(
+            f"📅 Usando vacunas individuales antes de {fecha_corte.strftime('%d/%m/%Y')}"
+        )
+    else:
+        df_pre = df_individual.copy()
+        st.warning("⚠️ No hay fecha de corte - usando todos los datos individuales")
+
+    result = {"total": len(df_pre), "por_edad": {}, "por_municipio": {}}
+
+    if df_pre.empty:
+        return result
+
+    # Calcular edades actuales
+    if "FechaNacimiento" in df_pre.columns:
+        df_pre["edad_actual"] = df_pre["FechaNacimiento"].apply(calculate_current_age)
+        df_pre["rango_edad"] = df_pre["edad_actual"].apply(classify_age_group)
+
+        # Contar por rangos de edad
+        age_counts = df_pre["rango_edad"].value_counts()
+        for rango in RANGOS_EDAD.keys():
+            result["por_edad"][rango] = age_counts.get(rango, 0)
+
+    # Contar por municipio
+    if "NombreMunicipioResidencia" in df_pre.columns:
+        municipio_counts = df_pre["NombreMunicipioResidencia"].value_counts()
+        result["por_municipio"] = municipio_counts.to_dict()
+
+    return result
+
+
+def process_barridos_data(df_barridos):
+    """Procesa datos de barridos (TPVB + TPNVP)"""
+    if df_barridos.empty:
+        return {
+            "vacunados_barrido": {"total": 0, "por_edad": {}, "por_municipio": {}},
+            "renuentes": {"total": 0, "por_edad": {}, "por_municipio": {}},
+        }
+
+    columns_info = detect_barridos_columns(df_barridos)
+
+    result = {
+        "vacunados_barrido": {"total": 0, "por_edad": {}, "por_municipio": {}},
+        "renuentes": {"total": 0, "por_edad": {}, "por_municipio": {}},
+        "columns_info": columns_info,
+    }
+
+    # Procesar TPVB (vacunados en barrido)
+    for rango, col_name in columns_info["vacunados_barrido"].items():
+        if col_name in df_barridos.columns:
+            valores = pd.to_numeric(df_barridos[col_name], errors="coerce").fillna(0)
+            total_rango = valores.sum()
+            result["vacunados_barrido"]["por_edad"][rango] = total_rango
+            result["vacunados_barrido"]["total"] += total_rango
+
+    # Procesar TPNVP (renuentes)
+    for rango, col_name in columns_info["renuentes"].items():
+        if col_name in df_barridos.columns:
+            valores = pd.to_numeric(df_barridos[col_name], errors="coerce").fillna(0)
+            total_rango = valores.sum()
+            result["renuentes"]["por_edad"][rango] = total_rango
+            result["renuentes"]["total"] += total_rango
+
+    # Consolidar rangos 60+
+    for section in ["vacunados_barrido", "renuentes"]:
+        total_60_plus = 0
+        for rango_60 in ["60+", "60-69", "70+"]:
+            if rango_60 in result[section]["por_edad"]:
+                total_60_plus += result[section]["por_edad"][rango_60]
+
+        if total_60_plus > 0:
+            result[section]["por_edad"]["60+"] = total_60_plus
+            # Eliminar subrangos
+            for subrango in ["60-69", "70+"]:
+                result[section]["por_edad"].pop(subrango, None)
+
+        # Procesar por municipio
+        if "MUNICIPIO" in df_barridos.columns:
+            municipio_totals = {}
+            for municipio in df_barridos["MUNICIPIO"].unique():
+                if pd.notna(municipio):
+                    df_mun = df_barridos[df_barridos["MUNICIPIO"] == municipio]
+                    total_municipio = 0
+
+                    section_cols = columns_info.get(section, {})
+                    for col_name in section_cols.values():
+                        if col_name in df_mun.columns:
+                            valores = pd.to_numeric(
+                                df_mun[col_name], errors="coerce"
+                            ).fillna(0)
+                            total_municipio += valores.sum()
+
+                    if total_municipio > 0:
+                        municipio_totals[municipio] = total_municipio
+
+            result[section]["por_municipio"] = municipio_totals
+
+    return result
+
+
+def process_population_data(df_population):
+    """Procesa datos de población agrupando por municipio"""
+    if df_population.empty:
+        return {"por_municipio": {}, "total": 0}
+
+    # Identificar columnas
+    municipio_col = None
+    total_col = None
+
+    for col in df_population.columns:
+        col_upper = str(col).upper()
+        if "MUNICIPIO" in col_upper:
+            municipio_col = col
+        elif "TOTAL" in col_upper:
+            total_col = col
+
+    if not municipio_col or not total_col:
+        return {"por_municipio": {}, "total": 0}
+
+    # Agrupar por municipio sumando todas las EAPB
+    poblacion_municipios = df_population.groupby(municipio_col)[total_col].sum()
+
+    return {
+        "por_municipio": poblacion_municipios.to_dict(),
+        "total": poblacion_municipios.sum(),
+    }
 
 
 def main():
-    """Función principal corregida para manejar 4 elementos de retorno"""
-    try:
-        # Título principal
-        st.title("🏥 Dashboard de Vacunación Fiebre Amarilla - Tolima")
-        st.markdown("---")
+    """Función principal del dashboard"""
+    # Configurar barra lateral mejorada
+    setup_sidebar()
+    
+    # Título principal
+    st.title("🏥 Dashboard de Vacunación Fiebre Amarilla")
+    st.markdown("**Departamento del Tolima - Combinación Temporal Sin Duplicados**")
 
-        # Load data - ACTUALIZADO para recibir 4 elementos
-        data_result = load_data()
+    # Cargar datos
+    st.markdown("### 📥 Cargando datos...")
 
-        if data_result is None or all(x is None for x in data_result[:3]):
-            st.error("❌ No se pudieron cargar los datos del sistema")
-            show_file_status()
+    with st.spinner("Cargando datos..."):
+        df_individual = load_individual_data()
+        df_barridos = load_barridos_data()
+        df_population = load_population_data()
 
-            # Opción para mostrar datos de ejemplo
-            if st.button("📊 Mostrar Dashboard con Datos de Ejemplo"):
-                st.info("🔄 Cargando dashboard con datos simulados...")
-                st.warning("⚠️ Funcionalidad de datos de ejemplo no implementada aún")
-            return
+    # Verificar datos mínimos
+    if df_individual.empty and df_barridos.empty:
+        st.error("❌ Sin datos suficientes para mostrar el dashboard")
+        return
 
-        # Desempacar TODOS los elementos (incluye metadata)
-        df_combined, df_aseguramiento, fecha_corte, metadata = data_result
+    # Determinar fecha de corte
+    fecha_corte = determine_cutoff_date(df_barridos)
 
-        # Verificar que tenemos datos válidos
-        has_vaccination_data = df_combined is not None and len(df_combined) > 0
-        has_population_data = df_aseguramiento is not None and len(df_aseguramiento) > 0
-
-        if not has_vaccination_data and not has_population_data:
-            st.error("❌ Los archivos de datos están vacíos o corruptos")
-            show_file_status()
-            return
-
-        # Información de los datos cargados CON METADATA
-        with st.expander("ℹ️ Información de Datos Cargados", expanded=False):
-            col1, col2, col3, col4 = st.columns(4)
-
-            with col1:
-                if has_vaccination_data:
-                    st.metric(
-                        "Registros de Vacunación",
-                        f"{len(df_combined):,}".replace(",", "."),
-                    )
-                else:
-                    st.metric("Registros de Vacunación", "No disponible")
-
-            with col2:
-                if has_population_data:
-                    st.metric(
-                        "Registros de Población",
-                        f"{len(df_aseguramiento):,}".replace(",", "."),
-                    )
-                else:
-                    st.metric("Registros de Población", "No disponible")
-
-            with col3:
-                if fecha_corte:
-                    st.metric("Fecha de Corte", fecha_corte.strftime("%d/%m/%Y"))
-                else:
-                    st.metric("Fecha de Corte", "No disponible")
-
-            with col4:
-                if metadata and "system_version" in metadata:
-                    st.metric("Versión Sistema", metadata["system_version"])
-                else:
-                    st.metric("Versión Sistema", "No disponible")
-
-        # Create tabs
-        tab_general, tab_geo, tab_insurance = st.tabs(
-            ["📊 General", "🗺️ Geográfico", "🏥 Aseguramiento"]
+    if fecha_corte:
+        st.success(
+            f"📅 **Fecha de corte (inicio emergencia):** {fecha_corte.strftime('%d/%m/%Y')}"
         )
-
-        with tab_general:
-            try:
-                if has_vaccination_data:
-                    overview.show(df_combined, {}, COLORS)
-                else:
-                    st.warning(
-                        "⚠️ No hay datos de vacunación disponibles para la vista general"
-                    )
-            except Exception as e:
-                st.error(f"❌ Error en vista general: {str(e)}")
-                logger.error(f"Error en overview: {str(e)}")
-
-        with tab_geo:
-            try:
-                if has_vaccination_data:
-                    geographic.show(df_combined, {}, COLORS)
-                else:
-                    st.warning(
-                        "⚠️ No hay datos de vacunación disponibles para la vista geográfica"
-                    )
-            except Exception as e:
-                st.error(f"❌ Error en vista geográfica: {str(e)}")
-                logger.error(f"Error en geographic: {str(e)}")
-
-        with tab_insurance:
-            try:
-                if has_vaccination_data and has_population_data:
-                    insurance.show(df_combined, df_aseguramiento, COLORS)
-                else:
-                    st.warning(
-                        "⚠️ Se necesitan datos de vacunación y población para la vista de aseguramiento"
-                    )
-            except Exception as e:
-                st.error(f"❌ Error en vista de aseguramiento: {str(e)}")
-                logger.error(f"Error en insurance: {str(e)}")
-
-    except Exception as e:
-        logger.error(f"Error crítico en aplicación: {str(e)}")
-        st.error("❌ Error crítico en la aplicación")
-
-        with st.expander("🔧 Detalles técnicos"):
-            st.code(traceback.format_exc())
-
         st.info(
-            """
-        🔧 **Recomendaciones:**
-        1. Recargar la página (F5)
-        2. Verificar los archivos de datos
-        3. Revisar los logs del sistema
-        4. Contactar al administrador del sistema
-        """
+            f"🏥 **Individuales PRE-emergencia:** Antes de {fecha_corte.strftime('%d/%m/%Y')}"
         )
+        st.info(
+            f"🚨 **Barridos DURANTE emergencia:** Desde {fecha_corte.strftime('%d/%m/%Y')}"
+        )
+    else:
+        st.warning("⚠️ No se pudo determinar fecha de corte")
+
+    # Procesar datos
+    st.markdown("### 📊 Procesando información...")
+
+    with st.spinner("Procesando..."):
+        # Datos PRE-emergencia (sin duplicados)
+        individual_data = process_individual_pre_barridos(df_individual, fecha_corte)
+
+        # Datos DURANTE emergencia
+        barridos_data = process_barridos_data(df_barridos)
+
+        # Datos de población
+        population_data = process_population_data(df_population)
+
+    # Preparar datos combinados (SIN DUPLICADOS)
+    combined_data = {
+        "individual_pre": individual_data,
+        "barridos": barridos_data,
+        "population": population_data,
+        "fecha_corte": fecha_corte,
+        # Totales combinados
+        "total_individual_pre": individual_data["total"],
+        "total_barridos": barridos_data["vacunados_barrido"]["total"],
+        "total_renuentes": barridos_data["renuentes"]["total"],
+        "total_real_combinado": individual_data["total"]
+        + barridos_data["vacunados_barrido"]["total"],
+    }
+
+    # Estado de carga con lógica temporal
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        st.metric(
+            "Individual PRE-emergencia", f"{combined_data['total_individual_pre']:,}"
+        )
+    with col2:
+        st.metric("Barridos DURANTE emergencia", f"{combined_data['total_barridos']:,}")
+    with col3:
+        st.metric("Renuentes", f"{combined_data['total_renuentes']:,}")
+    with col4:
+        st.metric(
+            "**TOTAL REAL (Sin duplicados)**",
+            f"{combined_data['total_real_combinado']:,}",
+        )
+
+    st.markdown("---")
+
+    # Tabs principales
+    tab1, tab2, tab3, tab4 = st.tabs(
+        ["📊 Resumen", "📅 Temporal", "🗺️ Geográfico", "🏘️ Poblacional"]
+    )
+
+    with tab1:
+        show_overview_tab(combined_data, COLORS, RANGOS_EDAD)
+
+    with tab2:
+        show_temporal_tab(combined_data, df_individual, df_barridos, COLORS)
+
+    with tab3:
+        show_geographic_tab(combined_data, COLORS)
+
+    with tab4:
+        show_population_tab(combined_data, COLORS)
 
 
 if __name__ == "__main__":
