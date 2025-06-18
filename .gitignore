@@ -1,42 +1,43 @@
-# Entornos virtuales
-venv/
-env/
-.env/
+# Dashboard Fiebre Amarilla - Tolima
+# Versión 2.5 - SIN análisis EAPB
 
-# Archivos de caché de Python
-__pycache__/
-*.py[cod]
-*$py.class
-.pytest_cache/
-
-# Distribución / empaquetado
-dist/
-build/
-*.egg-info/
-
-# Archivos y carpetas de datos (para proteger información sensible)
-data/vacunacion_fa.csv
-data/processed/
+# Datos sensibles
 data/*.csv
 data/*.xlsx
+data/*.xls
+!data/ejemplo_*
+!data/README.md
 
-# Logs
-logs/
-*.log
+# Archivos temporales
+temp/
+logs/*.log
+__pycache__/
+*.pyc
+*.pyo
 
-# Archivos de configuración local
+# Streamlit
 .streamlit/secrets.toml
 
-# Archivos de sistema operativo
+# Jupyter Notebooks
+.ipynb_checkpoints/
+*.ipynb
+
+# Sistema
 .DS_Store
 Thumbs.db
 
-# Archivos de IDE
-.idea/
+# Entornos virtuales
+venv/
+env/
+.env
+
+# IDE
 .vscode/
+.idea/
 *.swp
 *.swo
 
-
-*.pyc
-
+# Assets opcionales
+assets/images/*.png
+assets/images/*.jpg
+!assets/images/*placeholder*

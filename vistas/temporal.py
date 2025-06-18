@@ -1,6 +1,11 @@
 """
 vistas/temporal.py - Análisis temporal con separación PRE vs DURANTE
+<<<<<<< HEAD
 VERSIÓN CORREGIDA FINAL - Fix completo para TypeError con Timestamps
+=======
+Enfocado en mostrar la fecha de corte y evitar duplicados
+VERSIÓN CORREGIDA - Fix para TypeError con Timestamps
+>>>>>>> 473c13cb41e69bac105a2353395993231aa3b7ac
 """
 
 import streamlit as st
@@ -18,6 +23,7 @@ def show_temporal_tab(combined_data, df_individual, df_barridos, COLORS):
 
     if fecha_corte:
         # Convertir timestamp a datetime para evitar errores con Plotly
+<<<<<<< HEAD
         if hasattr(fecha_corte, 'to_pydatetime'):
             fecha_corte_dt = fecha_corte.to_pydatetime()
         elif isinstance(fecha_corte, pd.Timestamp):
@@ -27,6 +33,15 @@ def show_temporal_tab(combined_data, df_individual, df_barridos, COLORS):
             
         st.success(
             f"🎯 **Fecha de corte:** {fecha_corte_dt.strftime('%d/%m/%Y')} - Inicio de emergencia sanitaria"
+=======
+        if hasattr(fecha_corte, "to_pydatetime"):
+            fecha_corte_dt = fecha_corte.to_pydatetime()
+        else:
+            fecha_corte_dt = fecha_corte
+
+        st.success(
+            f"🎯 **Fecha de corte:** {fecha_corte.strftime('%d/%m/%Y')} - Inicio de emergencia sanitaria"
+>>>>>>> 473c13cb41e69bac105a2353395993231aa3b7ac
         )
 
         # Mostrar evolución PRE-emergencia
@@ -36,7 +51,13 @@ def show_temporal_tab(combined_data, df_individual, df_barridos, COLORS):
         show_during_emergency_evolution(df_barridos, fecha_corte_dt, COLORS)
 
         # Mostrar comparación temporal combinada
+<<<<<<< HEAD
         show_combined_temporal_analysis(df_individual, df_barridos, fecha_corte_dt, COLORS)
+=======
+        show_combined_temporal_analysis(
+            df_individual, df_barridos, fecha_corte_dt, COLORS
+        )
+>>>>>>> 473c13cb41e69bac105a2353395993231aa3b7ac
 
     else:
         st.warning("⚠️ No se pudo determinar fecha de corte")
@@ -60,7 +81,12 @@ def show_pre_emergency_evolution(df_individual, fecha_corte_dt, COLORS):
 
     # Filtrar solo datos PRE-emergencia
     df_pre = df_individual[
+<<<<<<< HEAD
         (df_individual["FA UNICA"].notna()) & (df_individual["FA UNICA"] < fecha_corte_ts)
+=======
+        (df_individual["FA UNICA"].notna())
+        & (df_individual["FA UNICA"] < fecha_corte_ts)
+>>>>>>> 473c13cb41e69bac105a2353395993231aa3b7ac
     ].copy()
 
     if df_pre.empty:
@@ -90,6 +116,7 @@ def show_pre_emergency_evolution(df_individual, fecha_corte_dt, COLORS):
             color_discrete_sequence=[COLORS["primary"]],
         )
 
+<<<<<<< HEAD
         # Agregar línea vertical usando shapes (más robusto)
         fig.add_shape(
             type="line",
@@ -118,6 +145,18 @@ def show_pre_emergency_evolution(df_individual, fecha_corte_dt, COLORS):
             plot_bgcolor=COLORS["white"], 
             paper_bgcolor=COLORS["white"], 
             height=400
+=======
+        # Agregar línea vertical de fecha de corte (convertida a string para Plotly)
+        fig.add_vline(
+            x=fecha_corte_dt.strftime("%Y-%m-%d"),
+            line_dash="dash",
+            line_color="red",
+            annotation_text="Inicio Emergencia",
+        )
+
+        fig.update_layout(
+            plot_bgcolor=COLORS["white"], paper_bgcolor=COLORS["white"], height=400
+>>>>>>> 473c13cb41e69bac105a2353395993231aa3b7ac
         )
 
         st.plotly_chart(fig, use_container_width=True)
@@ -132,6 +171,7 @@ def show_pre_emergency_evolution(df_individual, fecha_corte_dt, COLORS):
             color_discrete_sequence=[COLORS["primary"]],
         )
 
+<<<<<<< HEAD
         # Agregar línea vertical usando shapes
         fig_acum.add_shape(
             type="line",
@@ -160,6 +200,18 @@ def show_pre_emergency_evolution(df_individual, fecha_corte_dt, COLORS):
             plot_bgcolor=COLORS["white"], 
             paper_bgcolor=COLORS["white"], 
             height=400
+=======
+        # Agregar línea vertical de fecha de corte (convertida a string para Plotly)
+        fig_acum.add_vline(
+            x=fecha_corte_dt.strftime("%Y-%m-%d"),
+            line_dash="dash",
+            line_color="red",
+            annotation_text="Inicio Emergencia",
+        )
+
+        fig_acum.update_layout(
+            plot_bgcolor=COLORS["white"], paper_bgcolor=COLORS["white"], height=400
+>>>>>>> 473c13cb41e69bac105a2353395993231aa3b7ac
         )
 
         st.plotly_chart(fig_acum, use_container_width=True)
@@ -187,7 +239,11 @@ def show_pre_emergency_evolution(df_individual, fecha_corte_dt, COLORS):
             fecha_inicio_dt = fecha_inicio_pre.to_pydatetime()
         else:
             fecha_inicio_dt = fecha_inicio_pre
+<<<<<<< HEAD
         
+=======
+
+>>>>>>> 473c13cb41e69bac105a2353395993231aa3b7ac
         duracion_pre = (fecha_corte_dt - fecha_inicio_dt).days
         st.metric("Duración Período", f"{duracion_pre} días")
 
@@ -294,9 +350,13 @@ def show_during_emergency_evolution(df_barridos, fecha_corte_dt, COLORS):
         )
 
         fig.update_layout(
+<<<<<<< HEAD
             plot_bgcolor=COLORS["white"], 
             paper_bgcolor=COLORS["white"], 
             height=400
+=======
+            plot_bgcolor=COLORS["white"], paper_bgcolor=COLORS["white"], height=400
+>>>>>>> 473c13cb41e69bac105a2353395993231aa3b7ac
         )
 
         st.plotly_chart(fig, use_container_width=True)
@@ -312,9 +372,13 @@ def show_during_emergency_evolution(df_barridos, fecha_corte_dt, COLORS):
         )
 
         fig_acum.update_layout(
+<<<<<<< HEAD
             plot_bgcolor=COLORS["white"], 
             paper_bgcolor=COLORS["white"], 
             height=400
+=======
+            plot_bgcolor=COLORS["white"], paper_bgcolor=COLORS["white"], height=400
+>>>>>>> 473c13cb41e69bac105a2353395993231aa3b7ac
         )
 
         st.plotly_chart(fig_acum, use_container_width=True)
@@ -410,6 +474,7 @@ def show_combined_temporal_analysis(df_individual, df_barridos, fecha_corte_dt, 
             )
         )
 
+<<<<<<< HEAD
     # Agregar línea vertical usando shapes (más robusto)
     fig.add_shape(
         type="line",
@@ -433,6 +498,16 @@ def show_combined_temporal_analysis(df_individual, df_barridos, fecha_corte_dt, 
         bgcolor="white",
         bordercolor="red",
         font=dict(color="red", size=12),
+=======
+    # Agregar línea vertical de fecha de corte (convertida a string para Plotly)
+    fig.add_vline(
+        x=fecha_corte_dt.strftime("%Y-%m-%d"),
+        line_dash="dash",
+        line_color="red",
+        line_width=3,
+        annotation_text="INICIO EMERGENCIA",
+        annotation_position="top",
+>>>>>>> 473c13cb41e69bac105a2353395993231aa3b7ac
     )
 
     fig.update_layout(
@@ -455,16 +530,27 @@ def show_combined_temporal_analysis(df_individual, df_barridos, fecha_corte_dt, 
 
     with col1:
         if not pre_daily.empty:
+<<<<<<< HEAD
             fecha_inicio = pre_daily['Fecha'].min()
+=======
+            fecha_inicio = pre_daily["Fecha"].min()
+>>>>>>> 473c13cb41e69bac105a2353395993231aa3b7ac
             if isinstance(fecha_inicio, pd.Timestamp):
                 fecha_inicio_dt = fecha_inicio.to_pydatetime()
             else:
                 fecha_inicio_dt = fecha_inicio
+<<<<<<< HEAD
             
             # Calcular fecha fin del período PRE
             from datetime import timedelta
             fecha_fin_pre = fecha_corte_dt - timedelta(days=1)
             
+=======
+
+            # Calcular fecha fin del período PRE
+            fecha_fin_pre = fecha_corte_dt - pd.Timedelta(days=1)
+
+>>>>>>> 473c13cb41e69bac105a2353395993231aa3b7ac
             periodo_pre = f"{fecha_inicio_dt.strftime('%d/%m/%Y')} - {fecha_fin_pre.strftime('%d/%m/%Y')}"
             total_pre = pre_daily["Individual"].sum()
             st.metric(
@@ -473,12 +559,20 @@ def show_combined_temporal_analysis(df_individual, df_barridos, fecha_corte_dt, 
 
     with col2:
         if not durante_daily.empty:
+<<<<<<< HEAD
             fecha_max = durante_daily['Fecha'].max()
+=======
+            fecha_max = durante_daily["Fecha"].max()
+>>>>>>> 473c13cb41e69bac105a2353395993231aa3b7ac
             if isinstance(fecha_max, pd.Timestamp):
                 fecha_max_dt = fecha_max.to_pydatetime()
             else:
                 fecha_max_dt = fecha_max
+<<<<<<< HEAD
                 
+=======
+
+>>>>>>> 473c13cb41e69bac105a2353395993231aa3b7ac
             periodo_durante = f"{fecha_corte_dt.strftime('%d/%m/%Y')} - {fecha_max_dt.strftime('%d/%m/%Y')}"
             total_barridos = durante_daily["Barridos_Realizados"].sum()
             st.metric(
@@ -526,4 +620,8 @@ def show_basic_temporal_analysis(df_individual, df_barridos, COLORS):
                 "Barridos Territoriales",
                 f"{fecha_min_barr.strftime('%d/%m/%Y')} - {fecha_max_barr.strftime('%d/%m/%Y')}",
                 delta=f"{total_barr} barridos",
+<<<<<<< HEAD
             )
+=======
+            )
+>>>>>>> 473c13cb41e69bac105a2353395993231aa3b7ac

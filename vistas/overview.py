@@ -374,4 +374,8 @@ def show_territorial_summary_combined(combined_data, COLORS):
 
             st.write(
                 f"{i}. **{municipio}**: {poblacion:,} hab. ({pct_total:.1f}%) - Cobertura: {cobertura_mun:.1f}%"
+<<<<<<< HEAD
             )
+=======
+            )
+>>>>>>> 473c13cb41e69bac105a2353395993231aa3b7ac

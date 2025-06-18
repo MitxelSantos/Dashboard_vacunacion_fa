@@ -147,7 +147,6 @@ def classify_age_group(edad):
     """Clasifica edad en rango correspondiente"""
     if pd.isna(edad) or edad is None:
         return None
-
     if edad < 1:
         return "<1"
     elif 1 <= edad <= 5:
@@ -482,7 +481,6 @@ def main():
 
     # Determinar fecha de corte
     fecha_corte = determine_cutoff_date(df_barridos)
-
     if fecha_corte:
         st.success(
             f"📅 **Fecha de corte (inicio emergencia):** {fecha_corte.strftime('%d/%m/%Y')}"

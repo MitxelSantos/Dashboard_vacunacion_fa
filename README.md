@@ -1,56 +1,111 @@
 # Dashboard de Vacunación - Fiebre Amarilla del Tolima
 
-Dashboard interactivo para el análisis de la vacunación contra la fiebre amarilla en el departamento del Tolima.
+Dashboard interactivo para análisis de vacunación contra fiebre amarilla en el departamento del Tolima.
 
-## Estructura de archivos necesarios
+**Desarrollado por:** Ing. José Miguel Santos  
+**Secretaría de Salud del Tolima**
 
-Para que el dashboard funcione correctamente, asegúrate de tener los siguientes archivos:
+## Características
 
-1. `data/POBLACION.xlsx`: Archivo Excel con la población de cada municipio del Tolima según DANE y SISBEN
-   - Debe contener una hoja llamada "Poblacion"
-   - Columnas requeridas: DPMP (municipio), SISBEN, DANE, CODMUN/DIVIPOLA/COD DANE
+- **Análisis territorial** por municipios
+- **Distribución por rangos de edad** (9 rangos consolidados)
+- **Comparación de modalidades**: Individual vs Barridos territoriales
+- **Análisis temporal** de evolución de vacunación
+- **Cálculo automático de edad** desde fecha de nacimiento
 
-2. `data/vacunacion_fa.csv`: Archivo CSV con los datos de vacunación de fiebre amarilla
-   - Columnas requeridas: IdPaciente, TipoIdentificacion, Documento, PrimerNombre, PrimerApellido, Sexo, 
-     FechaNacimiento, NombreMunicipioNacimiento, NombreDptoNacimiento, NombreMunicipioResidencia, 
-     NombreDptoResidencia, GrupoEtnico, Desplazado, Discapacitado, RegimenAfiliacion, NombreAseguradora, 
-     FA UNICA, Edad_Vacunacion, Grupo_Edad
+## Datos Requeridos
 
-3. `assets/images/logo_gobernacion.png`: Logo de la Gobernación del Tolima
+### Obligatorios:
+1. **`data/vacunacion_fa.csv`** - Vacunación individual
+   - Columnas críticas: `FechaNacimiento`, `FA UNICA`, `NombreMunicipioResidencia`
 
-## Instalación y ejecución
+2. **`data/Resumen.xlsx`** - Barridos territoriales  
+   - Columnas por rangos de edad: `<1`, `1-5`, `6-10`, `11-20`, `21-30`, `31-40`, `41-50`, `51-59`, `60+`
+   - Secciones: TPVB (vacunados en barrido), TPNVP (renuentes)
 
-1. Clona este repositorio:
+### Opcionales:
+3. **`data/Poblacion_aseguramiento.xlsx`** - Población por municipios
+   - Para análisis de cobertura territorial completo
 
-git clone https://github.com/jose-santos/dashboard-vacunacion-fa.git
-cd dashboard-vacunacion-fa
+## Instalación
 
-2. Crea un entorno virtual e instala las dependencias:
+```bash
+# 1. Clonar repositorio
+git clone [tu-repo]
+cd dashboard
 
-python -m venv venv
-source venv/bin/activate  # En Windows: venv\Scripts\activate
+# 2. Instalar dependencias  
 pip install -r requirements.txt
 
-3. Coloca los archivos de datos en la carpeta `data/`
+# 3. Colocar archivos de datos en carpeta data/
 
-4. Ejecuta la aplicación:
-
+# 4. Ejecutar dashboard
 streamlit run app.py
+```
 
-## Despliegue en producción
+## Estructura
 
-Para desplegar la aplicación en Streamlit Cloud:
+```
+/dashboard
+├── app.py                 # Aplicación principal
+├── vistas/
+│   ├── overview.py       # Resumen general
+│   ├── temporal.py       # Análisis temporal
+│   ├── geographic.py     # Análisis geográfico  
+│   └── population.py     # Análisis poblacional
+├── requirements.txt      # Dependencias
+└── README.md            # Documentación
+```
 
-1. Sube este repositorio a GitHub
-2. Inicia sesión en [Streamlit Cloud](https://streamlit.io/cloud)
-3. Haz clic en "New app" y selecciona tu repositorio
-4. Configura las opciones de despliegue:
-- Main file path: app.py
-- Python version: 3.9
-5. Haz clic en "Deploy"
+## Funcionamiento
 
-## Notas importantes
+### Lógica de Datos:
 
-- Asegúrate de que las carpetas `data/` y `assets/images/` existan y contengan los archivos necesarios
-- No se incluyen datos de ejemplo por razones de privacidad y confidencialidad
+1. **Vacunación Individual**: Cada fila = 1 persona vacunada
+   - Edad calculada desde `FechaNacimiento` a fecha actual
+   - Agrupación por municipio de residencia
 
+2. **Barridos Territoriales**: Cada fila = 1 barrido en vereda
+   - Sección TPVB: Vacunados durante el barrido  
+   - Sección TPNVP: Renuentes (rechazan vacunación)
+   - Cantidades por rangos de edad preestablecidos
+
+3. **Población**: Suma de todas las EAPB por municipio
+   - Base para cálculo de cobertura territorial
+
+### Métricas Calculadas:
+
+- **Cobertura Real** = (Vacunados municipio / Población asegurada municipio) × 100
+- **Meta 80%** = Población asegurada × 0.8  
+- **Tasa de Aceptación** = Vacunados / (Vacunados + Renuentes) × 100
+
+## Rangos de Edad
+
+| Código | Descripción | Criterio |
+|--------|-------------|----------|
+| <1     | < 1 año     | 0-11 meses |
+| 1-5    | 1-5 años    | 1-5 años |
+| 6-10   | 6-10 años   | 6-10 años |
+| 11-20  | 11-20 años  | 11-20 años |
+| 21-30  | 21-30 años  | 21-30 años |  
+| 31-40  | 31-40 años  | 31-40 años |
+| 41-50  | 41-50 años  | 41-50 años |
+| 51-59  | 51-59 años  | 51-59 años |
+| 60+    | 60+ años    | 60+ años |
+
+## Vistas del Dashboard
+
+1. **📊 Resumen**: Métricas principales y distribución por edad
+2. **📅 Temporal**: Evolución de vacunación individual vs barridos  
+3. **🗺️ Geográfico**: Distribución por municipios
+4. **🏘️ Poblacional**: Análisis de cobertura territorial
+
+## Notas Técnicas
+
+- Datos de población opcionales (dashboard funciona sin ellos)
+- Consolidación automática de rangos 60-69 y 70+ en "60+"
+- Detección automática de columnas de barridos por secciones
+
+---
+
+**Secretaría de Salud del Tolima © 2025**
