@@ -1,7 +1,4 @@
-"""
-app.py - Dashboard de Vacunación Fiebre Amarilla - Tolima
-VERSIÓN CORREGIDA - Carga de población adaptativa funcionando al 100%
-"""
+"""app.py - Dashboard de Vacunación Fiebre Amarilla - Tolima"""
 
 import streamlit as st
 import pandas as pd
@@ -114,7 +111,7 @@ def setup_sidebar():
         )
 
 def calculate_age_robust(birth_date):
-    """Función ROBUSTA para calcular edad - 100% fiable"""
+    """Función para calcular edad"""
     if pd.isna(birth_date):
         return None
     
@@ -135,7 +132,7 @@ def calculate_age_robust(birth_date):
         return None
 
 def classify_age_group_robust(age):
-    """Clasificación ROBUSTA por rangos de edad - 100% fiable"""
+    """Clasificación por rangos de edad"""
     if pd.isna(age) or age is None:
         return None
     if age < 1:
@@ -190,7 +187,7 @@ def detect_population_columns(df):
     return municipio_col, poblacion_cols
 
 def load_data_smart():
-    """Carga datos de forma inteligente con conversión ROBUSTA"""
+    """Carga datos de forma inteligente con conversión"""
     # Intentar Google Drive primero
     try:
         available, message = check_drive_availability()
@@ -218,7 +215,7 @@ def load_data_smart():
     return load_local_data_robust()
 
 def apply_robust_date_conversion(df, is_barridos=False):
-    """Aplica conversión ROBUSTA de fechas garantizando datetime objects"""
+    """Aplica conversión de fechas garantizando datetime objects"""
     if df.empty:
         return df
     
@@ -226,14 +223,14 @@ def apply_robust_date_conversion(df, is_barridos=False):
     
     # Convertir FechaNacimiento si existe
     if "FechaNacimiento" in df_converted.columns:
-        # Conversión ROBUSTA usando el formato identificado por el validador
+        # Conversión usando el formato identificado por el validador
         df_converted["FechaNacimiento"] = pd.to_datetime(
             df_converted["FechaNacimiento"], 
             format='%Y-%m-%d',  # Formato identificado por el validador
             errors='coerce'
         )
         
-        # VERIFICACIÓN CRÍTICA: Asegurar que es datetime object
+        # VERIFICACIÓN: Asegurar que es datetime object
         if not pd.api.types.is_datetime64_any_dtype(df_converted["FechaNacimiento"]):
             st.error("❌ CRÍTICO: FechaNacimiento no se convirtió a datetime")
         else:
@@ -248,7 +245,7 @@ def apply_robust_date_conversion(df, is_barridos=False):
             errors='coerce'
         )
         
-        # VERIFICACIÓN CRÍTICA
+        # VERIFICACIÓN
         if not pd.api.types.is_datetime64_any_dtype(df_converted["FA UNICA"]):
             st.error("❌ CRÍTICO: FA UNICA no se convirtió a datetime")
         else:
@@ -285,7 +282,7 @@ def load_local_data_robust():
 
 @st.cache_data
 def load_individual_data_robust():
-    """Carga datos individuales con conversión ROBUSTA garantizada"""
+    """Carga datos individuales con conversión"""
     file_path = "data/vacunacion_fa.csv"
 
     if not os.path.exists(file_path):
@@ -309,7 +306,7 @@ def load_individual_data_robust():
 
 @st.cache_data  
 def load_barridos_data_robust():
-    """Carga datos de barridos con conversión ROBUSTA"""
+    """Carga datos de barridos con conversión"""
     file_path = "data/Resumen.xlsx"
 
     if not os.path.exists(file_path):
@@ -384,7 +381,7 @@ def load_population_data_robust():
         return pd.DataFrame()
 
 def safe_date_comparison(date_series, cutoff_date, operation="less"):
-    """Comparación ROBUSTA de fechas - 100% confiable"""
+    """Comparación de fechas"""
     try:
         if cutoff_date is None:
             return pd.Series([False] * len(date_series))
@@ -439,7 +436,7 @@ def determine_cutoff_date(df_barridos):
     return fecha_corte
 
 def process_individual_pre_barridos_robust(df_individual, fecha_corte):
-    """Procesamiento ROBUSTO de datos individuales - 100% fiable"""
+    """Procesamiento de datos individuales"""
     if df_individual.empty:
         return {"total": 0, "por_edad": {}, "por_municipio": {}}
 
@@ -550,7 +547,7 @@ def detect_barridos_columns(df):
     return result
 
 def process_barridos_data(df_barridos):
-    """Procesa datos de barridos (función existente sin cambios críticos)"""
+    """Procesa datos de barridos"""
     if df_barridos.empty:
         return {
             "vacunados_barrido": {"total": 0, "por_edad": {}, "por_municipio": {}},
@@ -728,28 +725,13 @@ def process_population_data_robust(df_population):
         return {"por_municipio": {}, "total": 0}
 
 def main():
-    """Función principal del dashboard con población corregida"""
+    """Función principal del dashboard"""
     # Configurar barra lateral
     setup_sidebar()
     
     # Título principal con indicador de fiabilidad
     st.title("🏥 Dashboard de Vacunación Fiebre Amarilla")
-    st.markdown("**Departamento del Tolima - Datos 100% Verificados**")
-    
-    # Indicador de fiabilidad prominente
-    st.markdown(
-        """
-        <div style="background: linear-gradient(90deg, #4CAF50, #45a049); 
-                   color: white; padding: 10px; border-radius: 8px; margin-bottom: 20px; text-align: center;">
-            <strong>🎯 GARANTÍA DE FIABILIDAD: 97.53% de datos procesados correctamente</strong><br>
-            <small>Validado por sistema de integridad de datos médicos</small>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-    # Cargar datos con conversión robusta
-    st.markdown("### 📥 Cargando datos con verificación de integridad...")
+    st.markdown("**Departamento del Tolima**")
 
     with st.spinner("Cargando y verificando datos..."):
         try:
@@ -772,9 +754,6 @@ def main():
         st.info(f"🚨 **Barridos DURANTE emergencia:** Desde {fecha_corte_str}")
     else:
         st.warning("⚠️ No se pudo determinar fecha de corte")
-
-    # Procesar datos con funciones robustas
-    st.markdown("### 📊 Procesando información con verificación de integridad...")
 
     with st.spinner("Procesando datos..."):
         try:
