@@ -787,36 +787,36 @@ def main():
 
     with col1:
         st.metric(
-            "Individual PRE-emergencia", 
+            "PRE-emergencia", 
             f"{combined_data['total_individual_pre']:,}",
-            help="Datos verificados al 100%"
+            help="Datos de vacunación historica"
         )
     with col2:
         st.metric(
-            "Barridos DURANTE emergencia", 
+            "Barridos durante emergencia", 
             f"{combined_data['total_barridos']:,}",
-            help="Datos procesados correctamente"
+            help="Datos de vacunación de barridos"
         )
     with col3:
         st.metric(
             "Renuentes", 
             f"{combined_data['total_renuentes']:,}",
-            help="Personas que rechazaron vacunación"
+            help="Personas que rechazaron vacunación durante los barridos"
         )
     with col4:
         # Mostrar cobertura si hay población
         if population_data["total"] > 0:
             cobertura_general = (combined_data["total_real_combinado"] / population_data["total"]) * 100
             st.metric(
-                "**Cobertura Real**",
+                "**Cobertura total**",
                 f"{cobertura_general:.1f}%",
                 help=f"Basado en {population_data['total']:,} habitantes"
             )
         else:
             st.metric(
-                "**TOTAL REAL (Sin duplicados)**",
+                "**TOTAL**",
                 f"{combined_data['total_real_combinado']:,}",
-                help="Fiabilidad garantizada: 97.53%"
+                help="Fiabilidad garantizada"
             )
 
     st.markdown("---")
