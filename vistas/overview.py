@@ -1,6 +1,6 @@
 """
 vistas/overview.py - Vista de resumen con lógica temporal
-VERSIÓN CORREGIDA - Con normalización de municipios
+VERSIÓN LIMPIA - Sin mensajes informativos excesivos
 """
 
 import streamlit as st
@@ -126,13 +126,6 @@ def show_main_metrics_temporal(combined_data, COLORS):
                 st.metric(
                     "📊 % PRE-Emergencia", f"{prop_pre:.1f}%", delta=f"del total real"
                 )
-
-    # Información de fecha de corte
-    if combined_data.get("fecha_corte"):
-        fecha_corte = combined_data["fecha_corte"]
-        st.success(
-            f"🎯 **Fecha de corte:** {fecha_corte.strftime('%d/%m/%Y')} - Inicio de la emergencia sanitaria"
-        )
 
 
 def show_combined_age_distribution(combined_data, COLORS, RANGOS_EDAD):
@@ -367,7 +360,7 @@ def show_periods_analysis(combined_data, COLORS):
 
 
 def show_territorial_summary_combined(combined_data, COLORS):
-    """Muestra resumen territorial con datos combinados - VERSIÓN CORREGIDA"""
+    """Muestra resumen territorial con datos combinados - VERSIÓN LIMPIA"""
     st.subheader("🗺️ Resumen Territorial (Datos Combinados)")
 
     total_poblacion = combined_data["population"]["total"]
@@ -470,17 +463,6 @@ def show_territorial_summary_combined(combined_data, COLORS):
                 f"({data['pct_poblacion']:.1f}%) - "
                 f"Vacunados: {data['vacunados']:,} - "
                 f"**Cobertura: {data['cobertura']:.1f}%**"
-            )
-
-        # Mostrar insight sobre normalización
-        municipios_con_cobertura = len([d for d in top_5_data if d["vacunados"] > 0])
-        if municipios_con_cobertura > 0:
-            st.success(
-                f"✅ **Normalización exitosa:** {municipios_con_cobertura}/5 municipios principales con datos"
-            )
-        else:
-            st.warning(
-                "⚠️ **Problema de normalización:** Los municipios principales no tienen datos conectados"
             )
     else:
         st.warning("⚠️ No se pudieron calcular datos territoriales")

@@ -192,24 +192,16 @@ def load_data_smart():
     try:
         available, message = check_drive_availability()
         if available:
-            st.info("🔄 Cargando datos desde Google Drive...")
             results = load_from_drive("all")
             
             if results["status"]["vacunacion"] and results["status"]["barridos"]:
-                st.success("✅ Datos cargados exitosamente desde Google Drive")
-                
                 # Aplicar conversión robusta a los datos de Google Drive
                 df_individual = apply_robust_date_conversion(results["vacunacion"])
                 df_barridos = apply_robust_date_conversion(results["barridos"], is_barridos=True)
                 
                 return df_individual, df_barridos, results["poblacion"]
-            else:
-                st.warning("⚠️ Google Drive configurado pero faltan datos críticos")
-        else:
-            st.info("📁 Google Drive no disponible, intentando archivos locales...")
-    except Exception as e:
-        st.warning(f"⚠️ Error con Google Drive: {str(e)}")
-        st.info("📁 Intentando cargar archivos locales...")
+    except Exception:
+        pass
 
     # Fallback a archivos locales
     return load_local_data_robust()
@@ -223,34 +215,27 @@ def apply_robust_date_conversion(df, is_barridos=False):
     
     # Convertir FechaNacimiento si existe
     if "FechaNacimiento" in df_converted.columns:
-        # Conversión usando el formato identificado por el validador
         df_converted["FechaNacimiento"] = pd.to_datetime(
             df_converted["FechaNacimiento"], 
-            format='%Y-%m-%d',  # Formato identificado por el validador
+            format='%Y-%m-%d',
             errors='coerce'
         )
         
         # VERIFICACIÓN: Asegurar que es datetime object
         if not pd.api.types.is_datetime64_any_dtype(df_converted["FechaNacimiento"]):
             st.error("❌ CRÍTICO: FechaNacimiento no se convirtió a datetime")
-        else:
-            converted_count = df_converted["FechaNacimiento"].notna().sum()
-            st.info(f"✅ FechaNacimiento convertida: {converted_count:,} fechas válidas")
     
     # Convertir FA UNICA si existe
     if "FA UNICA" in df_converted.columns:
         df_converted["FA UNICA"] = pd.to_datetime(
             df_converted["FA UNICA"], 
-            format='%Y-%m-%d',  # Formato identificado por el validador
+            format='%Y-%m-%d',
             errors='coerce'
         )
         
         # VERIFICACIÓN
         if not pd.api.types.is_datetime64_any_dtype(df_converted["FA UNICA"]):
             st.error("❌ CRÍTICO: FA UNICA no se convirtió a datetime")
-        else:
-            converted_count = df_converted["FA UNICA"].notna().sum()
-            st.info(f"✅ FA UNICA convertida: {converted_count:,} fechas válidas")
     
     # Convertir FECHA para barridos
     if is_barridos and "FECHA" in df_converted.columns:
@@ -261,9 +246,6 @@ def apply_robust_date_conversion(df, is_barridos=False):
         
         if not pd.api.types.is_datetime64_any_dtype(df_converted["FECHA"]):
             st.error("❌ CRÍTICO: FECHA de barridos no se convirtió a datetime")
-        else:
-            converted_count = df_converted["FECHA"].notna().sum()
-            st.info(f"✅ FECHA barridos convertida: {converted_count:,} fechas válidas")
     
     return df_converted
 
@@ -297,7 +279,6 @@ def load_individual_data_robust():
         # Aplicar conversión robusta
         df_converted = apply_robust_date_conversion(df)
         
-        st.success(f"✅ Datos individuales cargados: {len(df_converted):,} registros")
         return df_converted
 
     except Exception as e:
@@ -329,7 +310,6 @@ def load_barridos_data_robust():
         # Aplicar conversión robusta para barridos
         df_converted = apply_robust_date_conversion(df, is_barridos=True)
 
-        st.success(f"✅ Datos de barridos: {len(df_converted):,} registros")
         return df_converted
 
     except Exception as e:
@@ -345,39 +325,15 @@ def load_population_data_robust():
     file_path = "data/Poblacion_aseguramiento.xlsx"
 
     if not os.path.exists(file_path):
-        st.info("📊 Archivo de población no encontrado - análisis básico")
         return pd.DataFrame()
 
     try:
         # Cargar Excel con análisis de estructura
         df = pd.read_excel(file_path)
-        
-        st.info(f"📊 Archivo de población cargado: {len(df):,} registros")
-        st.info(f"📋 Columnas encontradas: {len(df.columns)}")
-        
-        # Análisis automático de estructura
-        st.write("🔍 **Análisis automático de estructura:**")
-        for i, col in enumerate(df.columns):
-            dtype = df[col].dtype
-            non_null = df[col].notna().sum()
-            unique_vals = df[col].nunique()
-            
-            # Mostrar info condensada
-            st.write(f"   {i+1}. `{col}`: {dtype}, {non_null}/{len(df)} válidos, {unique_vals} únicos")
-            
-            # Mostrar muestra si no es muy larga
-            if unique_vals <= 10 and dtype != 'object':
-                sample = df[col].value_counts().head(3)
-                st.write(f"      Muestra: {dict(sample)}")
-            elif dtype == 'object':
-                sample = df[col].dropna().head(3).tolist()
-                st.write(f"      Muestra: {sample}")
-        
         return df
 
     except Exception as e:
         st.error(f"❌ Error cargando población: {str(e)}")
-        st.info("💡 Archivo de población opcional - dashboard funcionará sin él")
         return pd.DataFrame()
 
 def safe_date_comparison(date_series, cutoff_date, operation="less"):
@@ -444,12 +400,8 @@ def process_individual_pre_barridos_robust(df_individual, fecha_corte):
     if fecha_corte and "FA UNICA" in df_individual.columns:
         mask_pre = safe_date_comparison(df_individual["FA UNICA"], fecha_corte, "less")
         df_pre = df_individual[mask_pre].copy()
-        
-        fecha_corte_str = fecha_corte.strftime('%d/%m/%Y') if hasattr(fecha_corte, 'strftime') else str(fecha_corte)
-        st.info(f"📅 Datos PRE-emergencia: {len(df_pre):,} registros antes de {fecha_corte_str}")
     else:
         df_pre = df_individual.copy()
-        st.warning("⚠️ Sin fecha de corte - usando todos los datos individuales")
 
     result = {"total": len(df_pre), "por_edad": {}, "por_municipio": {}}
 
@@ -467,32 +419,15 @@ def process_individual_pre_barridos_robust(df_individual, fecha_corte):
         df_pre["edad_actual"] = df_pre["FechaNacimiento"].apply(calculate_age_robust)
         df_pre["rango_edad"] = df_pre["edad_actual"].apply(classify_age_group_robust)
 
-        # Verificar éxito del cálculo
-        edades_calculadas = df_pre["edad_actual"].notna().sum()
-        fechas_validas = df_pre["FechaNacimiento"].notna().sum()
-        
-        if edades_calculadas == fechas_validas:
-            st.success(f"✅ PERFECTO: {edades_calculadas:,} edades calculadas (100% éxito)")
-        else:
-            st.warning(f"⚠️ {edades_calculadas:,} de {fechas_validas:,} edades calculadas")
-
         # Contar por rangos de edad
         age_counts = df_pre["rango_edad"].value_counts()
         for rango in RANGOS_EDAD.keys():
             result["por_edad"][rango] = age_counts.get(rango, 0)
-        
-        # Verificación de integridad
-        total_clasificados = sum(result["por_edad"].values())
-        if total_clasificados == edades_calculadas:
-            st.success(f"✅ PERFECTO: {total_clasificados:,} rangos de edad clasificados")
-        else:
-            st.error(f"❌ DISCREPANCIA: {total_clasificados:,} vs {edades_calculadas:,}")
 
     # Contar por municipio
     if "NombreMunicipioResidencia" in df_pre.columns:
         municipio_counts = df_pre["NombreMunicipioResidencia"].value_counts()
         result["por_municipio"] = municipio_counts.to_dict()
-        st.info(f"📍 Municipios únicos: {len(municipio_counts)}")
 
     return result
 
@@ -619,44 +554,26 @@ def process_population_data_robust(df_population):
     VERSIÓN ADAPTATIVA - Se ajusta a diferentes estructuras de archivos
     """
     if df_population.empty:
-        st.info("📊 Sin datos de población - análisis básico")
         return {"por_municipio": {}, "total": 0}
-
-    st.info(f"📊 Datos de población cargados: {len(df_population):,} registros")
-    st.info(f"🔍 Columnas disponibles: {list(df_population.columns)}")
     
     # Detectar automáticamente las columnas
     municipio_col, poblacion_cols = detect_population_columns(df_population)
     
     if not municipio_col:
-        st.error("❌ No se pudo identificar columna de municipio/identificador")
-        st.write("💡 Columnas disponibles:", list(df_population.columns))
-        st.write("💡 Se esperaban patrones como: MUNICIPIO, DANE, DPMP, CODMUN")
-        
         # Intentar usar la primera columna como municipio si parece razonable
         primera_col = df_population.columns[0]
         if df_population[primera_col].nunique() > 10:  # Si tiene varios valores únicos
-            st.warning(f"⚠️ Usando '{primera_col}' como identificador de municipio")
             municipio_col = primera_col
         else:
             return {"por_municipio": {}, "total": 0}
     
     if not poblacion_cols:
-        st.error("❌ No se pudieron identificar columnas de población")
-        st.write("💡 Columnas numéricas disponibles:", 
-                 [col for col in df_population.columns if pd.api.types.is_numeric_dtype(df_population[col])])
-        st.write("💡 Se esperaban patrones como: TOTAL, POBLACION, CONTRIBUTIVO, SUBSIDIADO")
-        
         # Usar todas las columnas numéricas como respaldo
         numeric_cols = [col for col in df_population.columns if pd.api.types.is_numeric_dtype(df_population[col])]
         if numeric_cols:
-            st.warning(f"⚠️ Usando todas las columnas numéricas: {numeric_cols}")
             poblacion_cols = numeric_cols
         else:
             return {"por_municipio": {}, "total": 0}
-    
-    st.success(f"✅ Columna de municipio detectada: '{municipio_col}'")
-    st.success(f"✅ Columnas de población detectadas: {poblacion_cols}")
     
     try:
         # Crear columna de población total sumando las columnas detectadas
@@ -666,7 +583,6 @@ def process_population_data_robust(df_population):
         for col in poblacion_cols:
             valores_numericos = pd.to_numeric(df_work[col], errors='coerce').fillna(0)
             df_work['poblacion_total_calculada'] += valores_numericos
-            st.info(f"   - Sumando '{col}': {valores_numericos.sum():,}")
             
         # Agrupar por municipio sumando población
         poblacion_municipios = df_work.groupby(municipio_col)['poblacion_total_calculada'].sum()
@@ -674,25 +590,6 @@ def process_population_data_robust(df_population):
         # Verificar resultados
         municipios_unicos = len(poblacion_municipios)
         total_poblacion = poblacion_municipios.sum()
-        
-        st.success(f"✅ Población procesada exitosamente:")
-        st.success(f"   - Municipios: {municipios_unicos}")
-        st.success(f"   - Población total: {total_poblacion:,}")
-        
-        # Mostrar muestra de datos procesados
-        if municipios_unicos > 0:
-            muestra = poblacion_municipios.head(5)
-            st.info(f"📋 Muestra de datos procesados:")
-            for municipio, poblacion in muestra.items():
-                st.info(f"   - {str(municipio)[:50]}: {poblacion:,}")
-        
-        # Validar que los datos son razonables
-        if total_poblacion < 10000:
-            st.warning(f"⚠️ Población total ({total_poblacion:,}) parece baja. Verificar columnas de población.")
-        elif total_poblacion > 5000000:
-            st.warning(f"⚠️ Población total ({total_poblacion:,}) parece alta. Verificar duplicados.")
-        else:
-            st.success("🎯 Población total en rango esperado para Tolima")
 
         return {
             "por_municipio": poblacion_municipios.to_dict(),
@@ -705,23 +602,6 @@ def process_population_data_robust(df_population):
 
     except Exception as e:
         st.error(f"❌ Error procesando población: {str(e)}")
-        st.write("💡 Intentando análisis alternativo...")
-        
-        # Análisis de respaldo - mostrar estructura del archivo
-        st.write("🔍 **Análisis de estructura del archivo:**")
-        for col in df_population.columns:
-            dtype = df_population[col].dtype
-            unique_count = df_population[col].nunique()
-            try:
-                if pd.api.types.is_numeric_dtype(df_population[col]):
-                    total_sum = df_population[col].sum()
-                    st.write(f"   - {col}: {dtype}, {unique_count} únicos, suma: {total_sum:,}")
-                else:
-                    sample_values = df_population[col].dropna().head(3).tolist()
-                    st.write(f"   - {col}: {dtype}, {unique_count} únicos, muestra: {sample_values}")
-            except:
-                st.write(f"   - {col}: {dtype}, {unique_count} únicos")
-        
         return {"por_municipio": {}, "total": 0}
 
 def main():
@@ -747,13 +627,6 @@ def main():
 
     # Determinar fecha de corte con verificación robusta
     fecha_corte = determine_cutoff_date(df_barridos)
-    if fecha_corte:
-        fecha_corte_str = fecha_corte.strftime('%d/%m/%Y')
-        st.success(f"📅 **Fecha de corte (inicio emergencia):** {fecha_corte_str}")
-        st.info(f"🏥 **Individuales PRE-emergencia:** Antes de {fecha_corte_str}")
-        st.info(f"🚨 **Barridos DURANTE emergencia:** Desde {fecha_corte_str}")
-    else:
-        st.warning("⚠️ No se pudo determinar fecha de corte")
 
     with st.spinner("Procesando datos..."):
         try:
