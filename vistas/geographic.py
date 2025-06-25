@@ -327,24 +327,16 @@ def show_territorial_comparison(combined_data, COLORS):
         )
 
     with col3:
-<<<<<<< HEAD
-        st.metric("Estrategia Mixta", estrategia_counts.get("Estrategia Temporal Mixta", 0))
-=======
         st.metric(
             "Estrategia Mixta", estrategia_counts.get("Estrategia Temporal Mixta", 0)
         )
->>>>>>> 473c13cb41e69bac105a2353395993231aa3b7ac
 
     # Municipios destacados por estrategia
     if len(df_comparison) > 0:
         municipio_mas_pre = df_comparison.loc[df_comparison["Prop_PRE"].idxmax()]
-<<<<<<< HEAD
-        municipio_mas_durante = df_comparison.loc[df_comparison["Prop_DURANTE"].idxmax()]
-=======
         municipio_mas_durante = df_comparison.loc[
             df_comparison["Prop_DURANTE"].idxmax()
         ]
->>>>>>> 473c13cb41e69bac105a2353395993231aa3b7ac
 
         col1, col2 = st.columns(2)
 
@@ -360,32 +352,18 @@ def show_territorial_comparison(combined_data, COLORS):
 
     # Información sobre renuentes si disponible
     renuentes_municipios = combined_data["barridos"]["renuentes"]["por_municipio"]
-<<<<<<< HEAD
     
     if renuentes_municipios:
         st.markdown("**🚫 Análisis de Renuentes por Municipio:**")
         
-=======
-
-    if renuentes_municipios:
-        st.markdown("**🚫 Análisis de Renuentes por Municipio:**")
-
->>>>>>> 473c13cb41e69bac105a2353395993231aa3b7ac
         df_renuentes = pd.DataFrame(
             list(renuentes_municipios.items()), columns=["Municipio", "Renuentes"]
         )
         df_renuentes = df_renuentes.sort_values("Renuentes", ascending=False).head(10)
-<<<<<<< HEAD
         
         if not df_renuentes.empty:
             col1, col2 = st.columns(2)
             
-=======
-
-        if not df_renuentes.empty:
-            col1, col2 = st.columns(2)
-
->>>>>>> 473c13cb41e69bac105a2353395993231aa3b7ac
             with col1:
                 fig_renuentes = px.bar(
                     df_renuentes,
@@ -396,30 +374,16 @@ def show_territorial_comparison(combined_data, COLORS):
                     color_discrete_sequence=[COLORS["accent"]],
                     text="Renuentes",
                 )
-<<<<<<< HEAD
-                
-                fig_renuentes.update_traces(texttemplate="%{text:,}", textposition="outside")
-=======
 
                 fig_renuentes.update_traces(
                     texttemplate="%{text:,}", textposition="outside"
                 )
->>>>>>> 473c13cb41e69bac105a2353395993231aa3b7ac
                 fig_renuentes.update_layout(
                     plot_bgcolor=COLORS["white"],
                     paper_bgcolor=COLORS["white"],
                     height=400,
                     yaxis={"categoryorder": "total ascending"},
                 )
-<<<<<<< HEAD
-                
-                st.plotly_chart(fig_renuentes, use_container_width=True)
-            
-            with col2:
-                total_renuentes = df_renuentes["Renuentes"].sum()
-                municipio_max_renuentes = df_renuentes.iloc[0]
-                
-=======
 
                 st.plotly_chart(fig_renuentes, use_container_width=True)
 
@@ -427,14 +391,9 @@ def show_territorial_comparison(combined_data, COLORS):
                 total_renuentes = df_renuentes["Renuentes"].sum()
                 municipio_max_renuentes = df_renuentes.iloc[0]
 
->>>>>>> 473c13cb41e69bac105a2353395993231aa3b7ac
                 st.metric("Total Renuentes (Top 10)", f"{total_renuentes:,}")
                 st.metric(
                     "Municipio con Más Renuentes",
                     f"{municipio_max_renuentes['Renuentes']:,}",
                     delta=municipio_max_renuentes["Municipio"],
-<<<<<<< HEAD
                 )
-=======
-                )
->>>>>>> 473c13cb41e69bac105a2353395993231aa3b7ac

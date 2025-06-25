@@ -1,6 +1,6 @@
 """
 google_drive_loader.py - Carga de datos desde Google Drive
-Versión 2.5 - SIN análisis por EAPB, enfocado en municipios y rangos de edad
+VERSIÓN CORREGIDA - Compatible con la configuración de secretos actual
 """
 
 import streamlit as st
@@ -21,29 +21,29 @@ def validate_secrets():
     Valida que los secretos de Google Drive estén configurados correctamente
     """
     try:
-        # IDs de archivos en Google Drive (se configuran en secrets.toml)
+        # IDs de archivos en Google Drive (nombres actualizados)
         file_ids = {
-            "vacunacion_csv_id": st.secrets.get("google_drive", {}).get(
-                "vacunacion_csv_id"
+            "vacunacion_csv": st.secrets.get("google_drive", {}).get("vacunacion_csv"),
+            "resumen_barridos_xlsx": st.secrets.get("google_drive", {}).get(
+                "resumen_barridos_xlsx"
             ),
-            "barridos_xlsx_id": st.secrets.get("google_drive", {}).get(
-                "barridos_xlsx_id"
-            ),
-            "poblacion_xlsx_id": st.secrets.get("google_drive", {}).get(
-                "poblacion_xlsx_id"
+            "poblacion_xlsx": st.secrets.get("google_drive", {}).get(
+                "poblacion_xlsx"
             ),  # OPCIONAL
-            "logo_id": st.secrets.get("google_drive", {}).get("logo_id"),
+            "logo_gobernacion": st.secrets.get("google_drive", {}).get(
+                "logo_gobernacion"
+            ),  # OPCIONAL
         }
 
         # Verificar que al menos los archivos críticos estén configurados
-        critical_files = ["vacunacion_csv_id", "barridos_xlsx_id"]
+        critical_files = ["vacunacion_csv", "resumen_barridos_xlsx"]
         missing_critical = [key for key in critical_files if not file_ids.get(key)]
 
         if missing_critical:
             return False, f"Faltan IDs críticos: {missing_critical}"
 
         # Verificar opcional
-        optional_files = ["poblacion_xlsx_id", "logo_id"]
+        optional_files = ["poblacion_xlsx", "logo_gobernacion"]
         missing_optional = [key for key in optional_files if not file_ids.get(key)]
 
         if missing_optional:
@@ -100,8 +100,8 @@ def load_vaccination_data():
     Carga datos históricos de vacunación individual desde Google Drive
     """
     try:
-        # Obtener ID del archivo
-        file_id = st.secrets.get("google_drive", {}).get("vacunacion_csv_id")
+        # Obtener ID del archivo (nombre actualizado)
+        file_id = st.secrets.get("google_drive", {}).get("vacunacion_csv")
 
         if not file_id:
             logger.error("ID de archivo de vacunación no configurado")
@@ -146,8 +146,8 @@ def load_barridos_data():
     Carga datos de barridos territoriales desde Google Drive
     """
     try:
-        # Obtener ID del archivo
-        file_id = st.secrets.get("google_drive", {}).get("barridos_xlsx_id")
+        # Obtener ID del archivo (nombre actualizado)
+        file_id = st.secrets.get("google_drive", {}).get("resumen_barridos_xlsx")
 
         if not file_id:
             logger.error("ID de archivo de barridos no configurado")
@@ -219,8 +219,8 @@ def load_population_data():
     Carga datos de población por municipios desde Google Drive (OPCIONAL)
     """
     try:
-        # Obtener ID del archivo (opcional)
-        file_id = st.secrets.get("google_drive", {}).get("poblacion_xlsx_id")
+        # Obtener ID del archivo (nombre actualizado, opcional)
+        file_id = st.secrets.get("google_drive", {}).get("poblacion_xlsx")
 
         if not file_id:
             logger.info("ID de archivo de población no configurado (opcional)")
@@ -261,12 +261,6 @@ def load_population_data():
         else:
             logger.warning("No se encontró columna de población total")
 
-        # NOTA: Se ignora columna EAPB intencionalmente en v2.5
-        if "EAPB" in df.columns:
-            logger.info(
-                "Columna EAPB encontrada pero será ignorada (v2.5 sin análisis EAPB)"
-            )
-
         return df
 
     except Exception as e:
@@ -279,8 +273,8 @@ def load_logo():
     Descarga logo desde Google Drive (OPCIONAL)
     """
     try:
-        # Obtener ID del archivo (opcional)
-        file_id = st.secrets.get("google_drive", {}).get("logo_id")
+        # Obtener ID del archivo (nombre actualizado, opcional)
+        file_id = st.secrets.get("google_drive", {}).get("logo_gobernacion")
 
         if not file_id:
             logger.info("ID de logo no configurado (opcional)")
@@ -396,26 +390,24 @@ def get_drive_file_info():
     """
     try:
         file_ids = {
-            "vacunacion_csv_id": st.secrets.get("google_drive", {}).get(
-                "vacunacion_csv_id"
+            "vacunacion_csv": st.secrets.get("google_drive", {}).get("vacunacion_csv"),
+            "resumen_barridos_xlsx": st.secrets.get("google_drive", {}).get(
+                "resumen_barridos_xlsx"
             ),
-            "barridos_xlsx_id": st.secrets.get("google_drive", {}).get(
-                "barridos_xlsx_id"
+            "poblacion_xlsx": st.secrets.get("google_drive", {}).get("poblacion_xlsx"),
+            "logo_gobernacion": st.secrets.get("google_drive", {}).get(
+                "logo_gobernacion"
             ),
-            "poblacion_xlsx_id": st.secrets.get("google_drive", {}).get(
-                "poblacion_xlsx_id"
-            ),
-            "logo_id": st.secrets.get("google_drive", {}).get("logo_id"),
         }
 
         info = {
             "configurados": sum(1 for file_id in file_ids.values() if file_id),
             "total": len(file_ids),
             "criticos_configurados": all(
-                file_ids[key] for key in ["vacunacion_csv_id", "barridos_xlsx_id"]
+                file_ids[key] for key in ["vacunacion_csv", "resumen_barridos_xlsx"]
             ),
             "opcionales_configurados": sum(
-                1 for key in ["poblacion_xlsx_id", "logo_id"] if file_ids[key]
+                1 for key in ["poblacion_xlsx", "logo_gobernacion"] if file_ids[key]
             ),
             "detalles": file_ids,
         }
@@ -432,35 +424,6 @@ def get_drive_file_info():
             "detalles": {},
             "error": str(e),
         }
-
-
-# Funciones de utilidad para migración desde versiones con EAPB
-def migrate_from_eapb_version():
-    """
-    Función de ayuda para migrar desde versiones anteriores que usaban EAPB
-    """
-    migration_notes = {
-        "removed_features": [
-            "Análisis por EAPB/Aseguradoras",
-            "Métricas de cobertura por aseguradora",
-            "Validaciones obligatorias de EAPB",
-            "Dependencia crítica de datos poblacionales con EAPB",
-        ],
-        "new_features": [
-            "Análisis territorial por municipios",
-            "Categorización automática de municipios por tamaño",
-            "Datos de población opcionales",
-            "Enfoque en rangos de edad",
-            "Análisis de concentración poblacional",
-        ],
-        "file_changes": {
-            "poblacion_xlsx": "Ahora es OPCIONAL - dashboard funciona sin él",
-            "vacunacion_csv": "Debe incluir FechaNacimiento para cálculo de edad",
-            "barridos_xlsx": "Sin cambios en estructura",
-        },
-    }
-
-    return migration_notes
 
 
 if __name__ == "__main__":
@@ -483,18 +446,8 @@ if __name__ == "__main__":
     for key, value in info["detalles"].items():
         status = "✅" if value else "❌"
         optional = (
-            "(opcional)" if key in ["poblacion_xlsx_id", "logo_id"] else "(crítico)"
+            "(opcional)"
+            if key in ["poblacion_xlsx", "logo_gobernacion"]
+            else "(crítico)"
         )
         print(f"  {status} {key}: {optional}")
-
-    # Información de migración
-    migration = migrate_from_eapb_version()
-    print(f"\n📋 CAMBIOS VERSIÓN 2.5:")
-    print("Funciones eliminadas:")
-    for item in migration["removed_features"]:
-        print(f"  ❌ {item}")
-
-    print("\nNuevas funciones:")
-    for item in migration["new_features"]:
-        print(f"  ✅ {item}")
-
