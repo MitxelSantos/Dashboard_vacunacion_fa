@@ -1,6 +1,6 @@
 """
 app.py - Dashboard de Vacunación Fiebre Amarilla - Tolima
-VERSIÓN CORREGIDA - Lógica temporal sin duplicados
+VERSIÓN CON GOOGLE DRIVE - Compatible con Streamlit Cloud
 """
 
 import streamlit as st
@@ -26,6 +26,9 @@ from vistas.temporal import show_temporal_tab
 from vistas.geographic import show_geographic_tab
 from vistas.population import show_population_tab
 
+# Importar cargador de Google Drive
+from google_drive_loader import load_from_drive, check_drive_availability
+
 # Colores institucionales
 COLORS = {
     "primary": "#7D0F2B",
@@ -49,12 +52,15 @@ RANGOS_EDAD = {
     "60+": "60 años y más",
 }
 
+
 def setup_sidebar():
     """Configura la barra lateral con información institucional"""
     with st.sidebar:
         # Logo institucional - cargar archivo real
-        logo_path = "assets/images/logo_tolima.png"  # Ajusta la ruta según tu estructura
-        
+        logo_path = (
+            "assets/images/logo_tolima.png"  # Ajusta la ruta según tu estructura
+        )
+
         if os.path.exists(logo_path):
             st.image(logo_path, width=150, caption="Gobernación del Tolima")
         else:
@@ -73,19 +79,16 @@ def setup_sidebar():
                 unsafe_allow_html=True,
             )
 
-            # Mostrar mensaje para agregar logo
-            st.info("💡 Agrega tu logo en: `assets/images/logo_tolima.png`")
-
         # Título del dashboard
         st.markdown("### 💉 Dashboard Vacunación - Fiebre Amarilla")
 
         st.markdown("---")
-        
+
         # Información del desarrollador
         st.markdown("#### 👨‍💻 **Desarrollado por:**")
         st.markdown("**Ing. José Miguel Santos**")
         st.markdown("*Secretaría de Salud del Tolima*")
-        
+
         st.markdown("---")
         # Copyright
         st.markdown(
@@ -96,8 +99,9 @@ def setup_sidebar():
                 © 2025 - Todos los derechos reservados</small>
             </div>
             """,
-            unsafe_allow_html=True
+            unsafe_allow_html=True,
         )
+
 
 def calculate_current_age(fecha_nacimiento):
     """Calcula la edad ACTUAL desde fecha de nacimiento"""
@@ -141,13 +145,56 @@ def classify_age_group(edad):
         return "60+"
 
 
+def load_data_smart():
+    """
+    Carga datos de forma inteligente:
+    - Primero intenta Google Drive (para Streamlit Cloud)
+    - Si falla, intenta archivos locales (para desarrollo local)
+    """
+    # Intentar Google Drive primero
+    try:
+        available, message = check_drive_availability()
+        if available:
+            st.info("🔄 Cargando datos desde Google Drive...")
+            results = load_from_drive("all")
+
+            if results["status"]["vacunacion"] and results["status"]["barridos"]:
+                st.success("✅ Datos cargados exitosamente desde Google Drive")
+                return results["vacunacion"], results["barridos"], results["poblacion"]
+            else:
+                st.warning("⚠️ Google Drive configurado pero faltan datos críticos")
+        else:
+            st.info("📁 Google Drive no disponible, intentando archivos locales...")
+    except Exception as e:
+        st.warning(f"⚠️ Error con Google Drive: {str(e)}")
+        st.info("📁 Intentando cargar archivos locales...")
+
+    # Fallback a archivos locales
+    return load_local_data()
+
+
+def load_local_data():
+    """Carga datos desde archivos locales (desarrollo)"""
+    # Cargar vacunación individual
+    df_individual = load_individual_data_local()
+
+    # Cargar barridos
+    df_barridos = load_barridos_data_local()
+
+    # Cargar población
+    df_population = load_population_data_local()
+
+    return df_individual, df_barridos, df_population
+
+
 @st.cache_data
-def load_individual_data():
-    """Carga datos de vacunación individual"""
+def load_individual_data_local():
+    """Carga datos de vacunación individual desde archivos locales"""
     file_path = "data/vacunacion_fa.csv"
 
     if not os.path.exists(file_path):
         st.error(f"❌ Archivo no encontrado: {file_path}")
+        st.info("💡 Para Streamlit Cloud, configura Google Drive en Settings > Secrets")
         return pd.DataFrame()
 
     try:
@@ -170,12 +217,13 @@ def load_individual_data():
 
 
 @st.cache_data
-def load_barridos_data():
-    """Carga datos de barridos territoriales"""
+def load_barridos_data_local():
+    """Carga datos de barridos territoriales desde archivos locales"""
     file_path = "data/Resumen.xlsx"
 
     if not os.path.exists(file_path):
         st.error(f"❌ Archivo no encontrado: {file_path}")
+        st.info("💡 Para Streamlit Cloud, configura Google Drive en Settings > Secrets")
         return pd.DataFrame()
 
     try:
@@ -203,8 +251,8 @@ def load_barridos_data():
 
 
 @st.cache_data
-def load_population_data():
-    """Carga datos de población (opcional)"""
+def load_population_data_local():
+    """Carga datos de población desde archivos locales"""
     file_path = "data/Poblacion_aseguramiento.xlsx"
 
     if not os.path.exists(file_path):
@@ -435,22 +483,38 @@ def main():
     """Función principal del dashboard"""
     # Configurar barra lateral mejorada
     setup_sidebar()
-    
+
     # Título principal
     st.title("🏥 Dashboard de Vacunación Fiebre Amarilla")
     st.markdown("**Departamento del Tolima - Combinación Temporal Sin Duplicados**")
 
-    # Cargar datos
+    # Cargar datos de forma inteligente
     st.markdown("### 📥 Cargando datos...")
 
     with st.spinner("Cargando datos..."):
-        df_individual = load_individual_data()
-        df_barridos = load_barridos_data()
-        df_population = load_population_data()
+        df_individual, df_barridos, df_population = load_data_smart()
 
     # Verificar datos mínimos
     if df_individual.empty and df_barridos.empty:
         st.error("❌ Sin datos suficientes para mostrar el dashboard")
+        st.markdown(
+            """
+        ### 🔧 **Soluciones:**
+        
+        **Para Streamlit Cloud:**
+        1. Ve a Settings > Secrets en tu app
+        2. Configura tus IDs de Google Drive:
+        ```toml
+        [google_drive]
+        vacunacion_csv_id = "TU_ID_AQUI"
+        barridos_xlsx_id = "TU_ID_AQUI"
+        poblacion_xlsx_id = "TU_ID_AQUI"  # Opcional
+        ```
+        
+        **Para desarrollo local:**
+        - Coloca los archivos en la carpeta `data/`
+        """
+        )
         return
 
     # Determinar fecha de corte
