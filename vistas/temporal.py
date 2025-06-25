@@ -1,6 +1,6 @@
 """
 vistas/temporal.py - Análisis temporal con separación PRE vs DURANTE
-VERSIÓN CORREGIDA - Con manejo seguro de fechas (sin TypeError)
+VERSIÓN CORREGIDA - Fix para error .dt accessor con manejo robusto de fechas
 """
 
 import streamlit as st
@@ -11,33 +11,22 @@ from datetime import datetime
 
 
 def safe_date_comparison(date_series, cutoff_date, operation="less"):
-    """
-    Realiza comparación de fechas de forma segura
-
-    Args:
-        date_series: Serie de pandas con fechas
-        cutoff_date: Fecha de corte
-        operation: 'less', 'greater_equal'
-
-    Returns:
-        Serie booleana con el resultado de la comparación
-    """
+    """Realiza comparación de fechas de forma segura"""
     try:
-        # Asegurar que ambas fechas están en el mismo formato
         if cutoff_date is None:
             return pd.Series([False] * len(date_series))
-
-        # Convertir fecha de corte a timestamp si es necesario
+        
+        # Convertir fecha de corte a timestamp
         if isinstance(cutoff_date, datetime):
             cutoff_timestamp = pd.Timestamp(cutoff_date)
         elif isinstance(cutoff_date, pd.Timestamp):
             cutoff_timestamp = cutoff_date
         else:
             cutoff_timestamp = pd.Timestamp(cutoff_date)
-
-        # Limpiar la serie de fechas - eliminar NaN y convertir a datetime
-        clean_series = pd.to_datetime(date_series, errors="coerce")
-
+        
+        # Limpiar la serie de fechas - CONVERSIÓN ROBUSTA
+        clean_series = pd.to_datetime(date_series, errors='coerce')
+        
         # Crear máscara booleana según la operación
         if operation == "less":
             mask = clean_series < cutoff_timestamp
@@ -45,16 +34,47 @@ def safe_date_comparison(date_series, cutoff_date, operation="less"):
             mask = clean_series >= cutoff_timestamp
         else:
             mask = clean_series < cutoff_timestamp
-
+        
         # Reemplazar NaN por False
         mask = mask.fillna(False)
-
+        
         return mask
-
+        
     except Exception as e:
         st.error(f"Error en comparación de fechas: {str(e)}")
-        # Retornar máscara vacía en caso de error
         return pd.Series([False] * len(date_series))
+
+
+def safe_group_by_date(df, date_column):
+    """
+    Agrupa por fecha de forma segura, manejando conversiones
+    """
+    try:
+        # Asegurar que la columna es datetime
+        df_clean = df[df[date_column].notna()].copy()
+        
+        if df_clean.empty:
+            return pd.DataFrame(columns=["Fecha", "Count"])
+        
+        # Forzar conversión a datetime
+        df_clean[date_column] = pd.to_datetime(df_clean[date_column], errors='coerce')
+        
+        # Eliminar filas donde la conversión falló
+        df_clean = df_clean[df_clean[date_column].notna()]
+        
+        if df_clean.empty:
+            return pd.DataFrame(columns=["Fecha", "Count"])
+        
+        # Ahora sí podemos usar .dt.date de forma segura
+        grouped = df_clean.groupby(df_clean[date_column].dt.date).size().reset_index()
+        grouped.columns = ["Fecha", "Count"]
+        grouped["Fecha"] = pd.to_datetime(grouped["Fecha"])
+        
+        return grouped.sort_values("Fecha")
+        
+    except Exception as e:
+        st.error(f"Error agrupando por fecha: {str(e)}")
+        return pd.DataFrame(columns=["Fecha", "Count"])
 
 
 def show_temporal_tab(combined_data, df_individual, df_barridos, COLORS):
@@ -65,13 +85,13 @@ def show_temporal_tab(combined_data, df_individual, df_barridos, COLORS):
 
     if fecha_corte:
         # Convertir timestamp a datetime para evitar errores con Plotly
-        if hasattr(fecha_corte, "to_pydatetime"):
+        if hasattr(fecha_corte, 'to_pydatetime'):
             fecha_corte_dt = fecha_corte.to_pydatetime()
         elif isinstance(fecha_corte, pd.Timestamp):
             fecha_corte_dt = fecha_corte.to_pydatetime()
         else:
             fecha_corte_dt = fecha_corte
-
+            
         st.success(
             f"🎯 **Fecha de corte:** {fecha_corte_dt.strftime('%d/%m/%Y')} - Inicio de emergencia sanitaria"
         )
@@ -83,9 +103,7 @@ def show_temporal_tab(combined_data, df_individual, df_barridos, COLORS):
         show_during_emergency_evolution(df_barridos, fecha_corte_dt, COLORS)
 
         # Mostrar comparación temporal combinada
-        show_combined_temporal_analysis(
-            df_individual, df_barridos, fecha_corte_dt, COLORS
-        )
+        show_combined_temporal_analysis(df_individual, df_barridos, fecha_corte_dt, COLORS)
 
     else:
         st.warning("⚠️ No se pudo determinar fecha de corte")
@@ -117,20 +135,14 @@ def show_pre_emergency_evolution(df_individual, fecha_corte_dt, COLORS):
         )
         return
 
-    # Agrupar por fecha
-    df_pre_clean = df_pre[df_pre["FA UNICA"].notna()].copy()
-    if df_pre_clean.empty:
+    # Agrupar por fecha usando función segura
+    daily_pre = safe_group_by_date(df_pre, "FA UNICA")
+    
+    if daily_pre.empty:
         st.info("ℹ️ No hay fechas válidas en datos PRE-emergencia")
         return
 
-    daily_pre = (
-        df_pre_clean.groupby(df_pre_clean["FA UNICA"].dt.date).size().reset_index()
-    )
     daily_pre.columns = ["Fecha", "Vacunados"]
-    daily_pre["Fecha"] = pd.to_datetime(daily_pre["Fecha"])
-    daily_pre = daily_pre.sort_values("Fecha")
-
-    # Calcular acumulado
     daily_pre["Acumulado"] = daily_pre["Vacunados"].cumsum()
 
     col1, col2 = st.columns(2)
@@ -145,7 +157,7 @@ def show_pre_emergency_evolution(df_individual, fecha_corte_dt, COLORS):
             color_discrete_sequence=[COLORS["primary"]],
         )
 
-        # Agregar línea vertical usando shapes (más robusto)
+        # Agregar línea vertical usando shapes
         fig.add_shape(
             type="line",
             x0=fecha_corte_dt,
@@ -170,7 +182,9 @@ def show_pre_emergency_evolution(df_individual, fecha_corte_dt, COLORS):
         )
 
         fig.update_layout(
-            plot_bgcolor=COLORS["white"], paper_bgcolor=COLORS["white"], height=400
+            plot_bgcolor=COLORS["white"], 
+            paper_bgcolor=COLORS["white"], 
+            height=400
         )
 
         st.plotly_chart(fig, use_container_width=True)
@@ -195,7 +209,7 @@ def show_pre_emergency_evolution(df_individual, fecha_corte_dt, COLORS):
             yref="paper",
             line=dict(color="red", width=2, dash="dash"),
         )
-
+        
         # Agregar anotación
         fig_acum.add_annotation(
             x=fecha_corte_dt,
@@ -210,7 +224,9 @@ def show_pre_emergency_evolution(df_individual, fecha_corte_dt, COLORS):
         )
 
         fig_acum.update_layout(
-            plot_bgcolor=COLORS["white"], paper_bgcolor=COLORS["white"], height=400
+            plot_bgcolor=COLORS["white"], 
+            paper_bgcolor=COLORS["white"], 
+            height=400
         )
 
         st.plotly_chart(fig_acum, use_container_width=True)
@@ -258,9 +274,7 @@ def show_during_emergency_evolution(df_barridos, fecha_corte_dt, COLORS):
         fecha_corte_ts = fecha_corte_dt
 
     # Filtrar solo datos DURANTE emergencia usando comparación segura
-    mask_durante = safe_date_comparison(
-        df_barridos["FECHA"], fecha_corte_ts, "greater_equal"
-    )
+    mask_durante = safe_date_comparison(df_barridos["FECHA"], fecha_corte_ts, "greater_equal")
     df_durante = df_barridos[mask_durante].copy()
 
     if df_durante.empty:
@@ -298,11 +312,15 @@ def show_during_emergency_evolution(df_barridos, fecha_corte_dt, COLORS):
     # Calcular vacunados por día
     daily_durante = []
 
+    # Asegurar que FECHA esté en formato datetime
+    df_durante["FECHA"] = pd.to_datetime(df_durante["FECHA"], errors='coerce')
+    df_durante = df_durante[df_durante["FECHA"].notna()]
+
     for _, row in df_durante.iterrows():
         fecha = row["FECHA"]
         if pd.isna(fecha):
             continue
-
+            
         total_vacunados = 0
         total_barridos = 1
 
@@ -349,7 +367,9 @@ def show_during_emergency_evolution(df_barridos, fecha_corte_dt, COLORS):
         )
 
         fig.update_layout(
-            plot_bgcolor=COLORS["white"], paper_bgcolor=COLORS["white"], height=400
+            plot_bgcolor=COLORS["white"], 
+            paper_bgcolor=COLORS["white"], 
+            height=400
         )
 
         st.plotly_chart(fig, use_container_width=True)
@@ -365,7 +385,9 @@ def show_during_emergency_evolution(df_barridos, fecha_corte_dt, COLORS):
         )
 
         fig_acum.update_layout(
-            plot_bgcolor=COLORS["white"], paper_bgcolor=COLORS["white"], height=400
+            plot_bgcolor=COLORS["white"], 
+            paper_bgcolor=COLORS["white"], 
+            height=400
         )
 
         st.plotly_chart(fig_acum, use_container_width=True)
@@ -401,23 +423,15 @@ def show_combined_temporal_analysis(df_individual, df_barridos, fecha_corte_dt, 
     else:
         fecha_corte_ts = fecha_corte_dt
 
-    # Preparar datos PRE-emergencia
+    # Preparar datos PRE-emergencia usando función segura
     if "FA UNICA" in df_individual.columns:
-        mask_pre = safe_date_comparison(
-            df_individual["FA UNICA"], fecha_corte_ts, "less"
-        )
+        mask_pre = safe_date_comparison(df_individual["FA UNICA"], fecha_corte_ts, "less")
         df_pre = df_individual[mask_pre]
 
         if not df_pre.empty:
-            df_pre_clean = df_pre[df_pre["FA UNICA"].notna()].copy()
-            if not df_pre_clean.empty:
-                pre_daily = (
-                    df_pre_clean.groupby(df_pre_clean["FA UNICA"].dt.date)
-                    .size()
-                    .reset_index()
-                )
+            pre_daily = safe_group_by_date(df_pre, "FA UNICA")
+            if not pre_daily.empty:
                 pre_daily.columns = ["Fecha", "Individual"]
-                pre_daily["Fecha"] = pd.to_datetime(pre_daily["Fecha"])
             else:
                 pre_daily = pd.DataFrame(columns=["Fecha", "Individual"])
         else:
@@ -427,17 +441,13 @@ def show_combined_temporal_analysis(df_individual, df_barridos, fecha_corte_dt, 
 
     # Preparar datos DURANTE emergencia (simplificado)
     if "FECHA" in df_barridos.columns:
-        mask_durante = safe_date_comparison(
-            df_barridos["FECHA"], fecha_corte_ts, "greater_equal"
-        )
+        mask_durante = safe_date_comparison(df_barridos["FECHA"], fecha_corte_ts, "greater_equal")
         df_durante = df_barridos[mask_durante]
 
         if not df_durante.empty:
-            df_durante_clean = df_durante[df_durante["FECHA"].notna()].copy()
-            if not df_durante_clean.empty:
-                durante_daily = df_durante_clean.groupby("FECHA").size().reset_index()
+            durante_daily = safe_group_by_date(df_durante, "FECHA")
+            if not durante_daily.empty:
                 durante_daily.columns = ["Fecha", "Barridos_Realizados"]
-                durante_daily["Fecha"] = pd.to_datetime(durante_daily["Fecha"])
             else:
                 durante_daily = pd.DataFrame(columns=["Fecha", "Barridos_Realizados"])
         else:
@@ -474,7 +484,7 @@ def show_combined_temporal_analysis(df_individual, df_barridos, fecha_corte_dt, 
             )
         )
 
-    # Agregar línea vertical usando shapes (más robusto)
+    # Agregar línea vertical usando shapes
     fig.add_shape(
         type="line",
         x0=fecha_corte_dt,
@@ -567,10 +577,13 @@ def show_basic_temporal_analysis(df_individual, df_barridos, COLORS):
 
     # Análisis básico de individuales
     if not df_individual.empty and "FA UNICA" in df_individual.columns:
-        df_ind_valid = df_individual[df_individual["FA UNICA"].notna()]
+        # Usar función segura para obtener fechas válidas
+        fechas_convertidas = pd.to_datetime(df_individual["FA UNICA"], errors='coerce')
+        df_ind_valid = df_individual[fechas_convertidas.notna()]
+        
         if not df_ind_valid.empty:
-            fecha_min_ind = df_ind_valid["FA UNICA"].min()
-            fecha_max_ind = df_ind_valid["FA UNICA"].max()
+            fecha_min_ind = fechas_convertidas.min()
+            fecha_max_ind = fechas_convertidas.max()
             total_ind = len(df_ind_valid)
 
             st.metric(
@@ -581,10 +594,13 @@ def show_basic_temporal_analysis(df_individual, df_barridos, COLORS):
 
     # Análisis básico de barridos
     if not df_barridos.empty and "FECHA" in df_barridos.columns:
-        df_barr_valid = df_barridos[df_barridos["FECHA"].notna()]
+        # Usar función segura para obtener fechas válidas
+        fechas_convertidas = pd.to_datetime(df_barridos["FECHA"], errors='coerce')
+        df_barr_valid = df_barridos[fechas_convertidas.notna()]
+        
         if not df_barr_valid.empty:
-            fecha_min_barr = df_barr_valid["FECHA"].min()
-            fecha_max_barr = df_barr_valid["FECHA"].max()
+            fecha_min_barr = fechas_convertidas.min()
+            fecha_max_barr = fechas_convertidas.max()
             total_barr = len(df_barr_valid)
 
             st.metric(
