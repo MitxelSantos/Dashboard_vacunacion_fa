@@ -54,37 +54,31 @@ def setup_sidebar():
     """Configura la barra lateral con información institucional"""
     with st.sidebar:
         # Logo institucional
-        st.markdown(
-            """
-            <div style="text-align: center; padding: 20px;">
-                <div style="background: linear-gradient(135deg, #7D0F2B, #F2A900); 
-                           color: white; padding: 20px; border-radius: 10px; margin-bottom: 20px;">
-                    <h2 style="margin: 0; font-size: 18px;">🏛️ GOBERNACIÓN</h2>
-                    <h3 style="margin: 5px 0; font-size: 16px;">DEL TOLIMA</h3>
-                    <p style="margin: 0; font-size: 12px;">Secretaría de Salud</p>
+        logo_path = "assets/images/logo_tolima.png"
+
+        if os.path.exists(logo_path):
+            st.image(logo_path, width=150, caption="")
+        else:
+            # Fallback si no existe el logo
+            st.markdown(
+                """
+                <div style="text-align: center; padding: 10px;">
+                    <div style="background: linear-gradient(135deg, #7D0F2B, #F2A900); 
+                               color: white; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                        <h3 style="margin: 0; font-size: 16px;">🏛️ GOBERNACIÓN</h3>
+                        <h4 style="margin: 5px 0; font-size: 14px;">DEL TOLIMA</h4>
+                        <p style="margin: 0; font-size: 11px;">Secretaría de Salud</p>
+                    </div>
                 </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+                """,
+                unsafe_allow_html=True,
+            )
+
+            # Mostrar mensaje para agregar logo
+            st.info("💡 Agrega tu logo en: `assets/images/logo_tolima.png`")
 
         # Título del dashboard
-        st.markdown("### 💉 Dashboard Vacunación")
-        st.markdown("#### 🦠 Fiebre Amarilla")
-
-        st.markdown("---")
-
-        # Información de la lógica
-        st.markdown("#### 📊 **Lógica del Sistema**")
-        st.info("**Combinación temporal sin duplicados**")
-
-        st.markdown("**🏥 PRE-emergencia:**")
-        st.markdown("• Vacunación individual histórica")
-        st.markdown("• Hasta día anterior al 1er barrido")
-
-        st.markdown("**🚨 DURANTE emergencia:**")
-        st.markdown("• Solo vacunas aplicadas en barridos")
-        st.markdown("• Intensificación por emergencia")
+        st.markdown("### 💉 Dashboard Vacunación - Fiebre Amarilla")
 
         st.markdown("---")
 
@@ -95,21 +89,11 @@ def setup_sidebar():
 
         st.markdown("---")
 
-        # Información adicional
-        st.markdown("#### 📋 **Características**")
-        st.markdown("✅ Análisis territorial")
-        st.markdown("✅ Distribución por edad")
-        st.markdown("✅ Sin duplicados temporales")
-        st.markdown("✅ Datos más reales")
-        st.markdown("✅ Análisis de renuentes")
-
-        st.markdown("---")
-
         # Copyright
         st.markdown(
             """
-            <div style="text-align: center; padding: 10px; 
-                       background-color: #f0f0f0; border-radius: 5px; margin-top: 20px;">
+            <div style="text-align: center; padding: 8px; 
+                       background-color: #f0f0f0; border-radius: 5px;">
                 <small><strong>Secretaría de Salud del Tolima</strong><br>
                 © 2025 - Todos los derechos reservados</small>
             </div>

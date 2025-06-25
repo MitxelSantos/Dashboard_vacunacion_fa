@@ -1,7 +1,6 @@
 """
 vistas/temporal.py - Análisis temporal con separación PRE vs DURANTE
-Enfocado en mostrar la fecha de corte y evitar duplicados
-VERSIÓN CORREGIDA - Fix para TypeError con Timestamps
+VERSIÓN CORREGIDA FINAL - Fix completo para TypeError con Timestamps
 """
 
 import streamlit as st
@@ -21,11 +20,13 @@ def show_temporal_tab(combined_data, df_individual, df_barridos, COLORS):
         # Convertir timestamp a datetime para evitar errores con Plotly
         if hasattr(fecha_corte, "to_pydatetime"):
             fecha_corte_dt = fecha_corte.to_pydatetime()
+        elif isinstance(fecha_corte, pd.Timestamp):
+            fecha_corte_dt = fecha_corte.to_pydatetime()
         else:
             fecha_corte_dt = fecha_corte
 
         st.success(
-            f"🎯 **Fecha de corte:** {fecha_corte.strftime('%d/%m/%Y')} - Inicio de emergencia sanitaria"
+            f"🎯 **Fecha de corte:** {fecha_corte_dt.strftime('%d/%m/%Y')} - Inicio de emergencia sanitaria"
         )
 
         # Mostrar evolución PRE-emergencia
@@ -92,12 +93,28 @@ def show_pre_emergency_evolution(df_individual, fecha_corte_dt, COLORS):
             color_discrete_sequence=[COLORS["primary"]],
         )
 
-        # Agregar línea vertical de fecha de corte (convertida a string para Plotly)
-        fig.add_vline(
-            x=fecha_corte_dt.strftime("%Y-%m-%d"),
-            line_dash="dash",
-            line_color="red",
-            annotation_text="Inicio Emergencia",
+        # Agregar línea vertical usando shapes (más robusto)
+        fig.add_shape(
+            type="line",
+            x0=fecha_corte_dt,
+            x1=fecha_corte_dt,
+            y0=0,
+            y1=1,
+            yref="paper",
+            line=dict(color="red", width=2, dash="dash"),
+        )
+
+        # Agregar anotación
+        fig.add_annotation(
+            x=fecha_corte_dt,
+            y=0.9,
+            yref="paper",
+            text="Inicio Emergencia",
+            showarrow=True,
+            arrowhead=2,
+            arrowcolor="red",
+            bgcolor="white",
+            bordercolor="red",
         )
 
         fig.update_layout(
@@ -116,12 +133,28 @@ def show_pre_emergency_evolution(df_individual, fecha_corte_dt, COLORS):
             color_discrete_sequence=[COLORS["primary"]],
         )
 
-        # Agregar línea vertical de fecha de corte (convertida a string para Plotly)
-        fig_acum.add_vline(
-            x=fecha_corte_dt.strftime("%Y-%m-%d"),
-            line_dash="dash",
-            line_color="red",
-            annotation_text="Inicio Emergencia",
+        # Agregar línea vertical usando shapes
+        fig_acum.add_shape(
+            type="line",
+            x0=fecha_corte_dt,
+            x1=fecha_corte_dt,
+            y0=0,
+            y1=1,
+            yref="paper",
+            line=dict(color="red", width=2, dash="dash"),
+        )
+
+        # Agregar anotación
+        fig_acum.add_annotation(
+            x=fecha_corte_dt,
+            y=0.9,
+            yref="paper",
+            text="Inicio Emergencia",
+            showarrow=True,
+            arrowhead=2,
+            arrowcolor="red",
+            bgcolor="white",
+            bordercolor="red",
         )
 
         fig_acum.update_layout(
@@ -372,14 +405,29 @@ def show_combined_temporal_analysis(df_individual, df_barridos, fecha_corte_dt, 
             )
         )
 
-    # Agregar línea vertical de fecha de corte (convertida a string para Plotly)
-    fig.add_vline(
-        x=fecha_corte_dt.strftime("%Y-%m-%d"),
-        line_dash="dash",
-        line_color="red",
-        line_width=3,
-        annotation_text="INICIO EMERGENCIA",
-        annotation_position="top",
+    # Agregar línea vertical usando shapes (más robusto)
+    fig.add_shape(
+        type="line",
+        x0=fecha_corte_dt,
+        x1=fecha_corte_dt,
+        y0=0,
+        y1=1,
+        yref="paper",
+        line=dict(color="red", width=3, dash="dash"),
+    )
+
+    # Agregar anotación
+    fig.add_annotation(
+        x=fecha_corte_dt,
+        y=0.95,
+        yref="paper",
+        text="INICIO EMERGENCIA",
+        showarrow=True,
+        arrowhead=2,
+        arrowcolor="red",
+        bgcolor="white",
+        bordercolor="red",
+        font=dict(color="red", size=12),
     )
 
     fig.update_layout(
@@ -409,7 +457,9 @@ def show_combined_temporal_analysis(df_individual, df_barridos, fecha_corte_dt, 
                 fecha_inicio_dt = fecha_inicio
 
             # Calcular fecha fin del período PRE
-            fecha_fin_pre = fecha_corte_dt - pd.Timedelta(days=1)
+            from datetime import timedelta
+
+            fecha_fin_pre = fecha_corte_dt - timedelta(days=1)
 
             periodo_pre = f"{fecha_inicio_dt.strftime('%d/%m/%Y')} - {fecha_fin_pre.strftime('%d/%m/%Y')}"
             total_pre = pre_daily["Individual"].sum()
