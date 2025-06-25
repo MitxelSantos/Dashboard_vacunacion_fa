@@ -1,6 +1,6 @@
 """
 app.py - Dashboard de Vacunación Fiebre Amarilla - Tolima
-VERSIÓN CON GOOGLE DRIVE - Compatible con Streamlit Cloud
+VERSIÓN CORREGIDA - Fix para TypeError en comparación de fechas
 """
 
 import streamlit as st
@@ -57,9 +57,7 @@ def setup_sidebar():
     """Configura la barra lateral con información institucional"""
     with st.sidebar:
         # Logo institucional - cargar archivo real
-        logo_path = (
-            "assets/images/logo_tolima.png"  # Ajusta la ruta según tu estructura
-        )
+        logo_path = "assets/images/logo_tolima.png"
 
         if os.path.exists(logo_path):
             st.image(logo_path, width=150, caption="Gobernación del Tolima")
@@ -81,7 +79,6 @@ def setup_sidebar():
 
         # Título del dashboard
         st.markdown("### 💉 Dashboard Vacunación - Fiebre Amarilla")
-
         st.markdown("---")
 
         # Información del desarrollador
@@ -200,7 +197,7 @@ def load_individual_data_local():
     try:
         df = pd.read_csv(file_path, low_memory=False, encoding="utf-8")
 
-        # Procesar fechas
+        # Procesar fechas con manejo robusto
         if "FechaNacimiento" in df.columns:
             df["FechaNacimiento"] = pd.to_datetime(
                 df["FechaNacimiento"], errors="coerce"
@@ -238,7 +235,7 @@ def load_barridos_data_local():
             st.error("❌ No se pudo leer el archivo de barridos")
             return pd.DataFrame()
 
-        # Procesar fechas
+        # Procesar fechas con manejo robusto
         if "FECHA" in df.columns:
             df["FECHA"] = pd.to_datetime(df["FECHA"], errors="coerce")
 
@@ -283,6 +280,47 @@ def determine_cutoff_date(df_barridos):
     fecha_corte = fechas_validas.min()
 
     return fecha_corte
+
+
+def safe_date_comparison(date_series, cutoff_date):
+    """
+    Realiza comparación de fechas de forma segura
+
+    Args:
+        date_series: Serie de pandas con fechas
+        cutoff_date: Fecha de corte
+
+    Returns:
+        Serie booleana con el resultado de la comparación
+    """
+    try:
+        # Asegurar que ambas fechas están en el mismo formato
+        if cutoff_date is None:
+            return pd.Series([False] * len(date_series))
+
+        # Convertir fecha de corte a timestamp si es necesario
+        if isinstance(cutoff_date, datetime):
+            cutoff_timestamp = pd.Timestamp(cutoff_date)
+        elif isinstance(cutoff_date, pd.Timestamp):
+            cutoff_timestamp = cutoff_date
+        else:
+            cutoff_timestamp = pd.Timestamp(cutoff_date)
+
+        # Limpiar la serie de fechas - eliminar NaN y convertir a datetime
+        clean_series = pd.to_datetime(date_series, errors="coerce")
+
+        # Crear máscara booleana con manejo de NaN
+        mask = clean_series < cutoff_timestamp
+
+        # Reemplazar NaN por False
+        mask = mask.fillna(False)
+
+        return mask
+
+    except Exception as e:
+        st.error(f"Error en comparación de fechas: {str(e)}")
+        # Retornar máscara vacía en caso de error
+        return pd.Series([False] * len(date_series))
 
 
 def detect_barridos_columns(df):
@@ -344,17 +382,22 @@ def detect_barridos_columns(df):
 
 
 def process_individual_pre_barridos(df_individual, fecha_corte):
-    """Procesa datos individuales PRE-barridos (sin duplicados)"""
+    """Procesa datos individuales PRE-barridos (sin duplicados) - VERSIÓN CORREGIDA"""
     if df_individual.empty:
         return {"total": 0, "por_edad": {}, "por_municipio": {}}
 
-    # Filtrar solo vacunas ANTES del primer barrido
+    # Filtrar solo vacunas ANTES del primer barrido usando comparación segura
     if fecha_corte and "FA UNICA" in df_individual.columns:
-        mask_pre = df_individual["FA UNICA"] < fecha_corte
+        # Usar función de comparación segura
+        mask_pre = safe_date_comparison(df_individual["FA UNICA"], fecha_corte)
         df_pre = df_individual[mask_pre].copy()
-        st.info(
-            f"📅 Usando vacunas individuales antes de {fecha_corte.strftime('%d/%m/%Y')}"
+
+        fecha_corte_str = (
+            fecha_corte.strftime("%d/%m/%Y")
+            if hasattr(fecha_corte, "strftime")
+            else str(fecha_corte)
         )
+        st.info(f"📅 Usando vacunas individuales antes de {fecha_corte_str}")
     else:
         df_pre = df_individual.copy()
         st.warning("⚠️ No hay fecha de corte - usando todos los datos individuales")
@@ -492,7 +535,11 @@ def main():
     st.markdown("### 📥 Cargando datos...")
 
     with st.spinner("Cargando datos..."):
-        df_individual, df_barridos, df_population = load_data_smart()
+        try:
+            df_individual, df_barridos, df_population = load_data_smart()
+        except Exception as e:
+            st.error(f"❌ Error cargando datos: {str(e)}")
+            return
 
     # Verificar datos mínimos
     if df_individual.empty and df_barridos.empty:
@@ -506,9 +553,9 @@ def main():
         2. Configura tus IDs de Google Drive:
         ```toml
         [google_drive]
-        vacunacion_csv_id = "TU_ID_AQUI"
-        barridos_xlsx_id = "TU_ID_AQUI"
-        poblacion_xlsx_id = "TU_ID_AQUI"  # Opcional
+        vacunacion_csv = "TU_ID_AQUI"
+        resumen_barridos_xlsx = "TU_ID_AQUI"
+        poblacion_xlsx = "TU_ID_AQUI"  # Opcional
         ```
         
         **Para desarrollo local:**
@@ -520,15 +567,14 @@ def main():
     # Determinar fecha de corte
     fecha_corte = determine_cutoff_date(df_barridos)
     if fecha_corte:
-        st.success(
-            f"📅 **Fecha de corte (inicio emergencia):** {fecha_corte.strftime('%d/%m/%Y')}"
+        fecha_corte_str = (
+            fecha_corte.strftime("%d/%m/%Y")
+            if hasattr(fecha_corte, "strftime")
+            else str(fecha_corte)
         )
-        st.info(
-            f"🏥 **Individuales PRE-emergencia:** Antes de {fecha_corte.strftime('%d/%m/%Y')}"
-        )
-        st.info(
-            f"🚨 **Barridos DURANTE emergencia:** Desde {fecha_corte.strftime('%d/%m/%Y')}"
-        )
+        st.success(f"📅 **Fecha de corte (inicio emergencia):** {fecha_corte_str}")
+        st.info(f"🏥 **Individuales PRE-emergencia:** Antes de {fecha_corte_str}")
+        st.info(f"🚨 **Barridos DURANTE emergencia:** Desde {fecha_corte_str}")
     else:
         st.warning("⚠️ No se pudo determinar fecha de corte")
 
@@ -536,14 +582,20 @@ def main():
     st.markdown("### 📊 Procesando información...")
 
     with st.spinner("Procesando..."):
-        # Datos PRE-emergencia (sin duplicados)
-        individual_data = process_individual_pre_barridos(df_individual, fecha_corte)
+        try:
+            # Datos PRE-emergencia (sin duplicados)
+            individual_data = process_individual_pre_barridos(
+                df_individual, fecha_corte
+            )
 
-        # Datos DURANTE emergencia
-        barridos_data = process_barridos_data(df_barridos)
+            # Datos DURANTE emergencia
+            barridos_data = process_barridos_data(df_barridos)
 
-        # Datos de población
-        population_data = process_population_data(df_population)
+            # Datos de población
+            population_data = process_population_data(df_population)
+        except Exception as e:
+            st.error(f"❌ Error procesando datos: {str(e)}")
+            return
 
     # Preparar datos combinados (SIN DUPLICADOS)
     combined_data = {
@@ -579,21 +631,26 @@ def main():
     st.markdown("---")
 
     # Tabs principales
-    tab1, tab2, tab3, tab4 = st.tabs(
-        ["📊 Resumen", "📅 Temporal", "🗺️ Geográfico", "🏘️ Poblacional"]
-    )
+    try:
+        tab1, tab2, tab3, tab4 = st.tabs(
+            ["📊 Resumen", "📅 Temporal", "🗺️ Geográfico", "🏘️ Poblacional"]
+        )
 
-    with tab1:
-        show_overview_tab(combined_data, COLORS, RANGOS_EDAD)
+        with tab1:
+            show_overview_tab(combined_data, COLORS, RANGOS_EDAD)
 
-    with tab2:
-        show_temporal_tab(combined_data, df_individual, df_barridos, COLORS)
+        with tab2:
+            show_temporal_tab(combined_data, df_individual, df_barridos, COLORS)
 
-    with tab3:
-        show_geographic_tab(combined_data, COLORS)
+        with tab3:
+            show_geographic_tab(combined_data, COLORS)
 
-    with tab4:
-        show_population_tab(combined_data, COLORS)
+        with tab4:
+            show_population_tab(combined_data, COLORS)
+
+    except Exception as e:
+        st.error(f"❌ Error mostrando pestañas: {str(e)}")
+        st.info("💡 Revisa que todas las vistas estén correctamente configuradas")
 
 
 if __name__ == "__main__":
