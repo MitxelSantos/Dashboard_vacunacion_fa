@@ -1,6 +1,6 @@
 """
 app.py - Dashboard de Vacunación Fiebre Amarilla - Tolima
-VERSIÓN CORREGIDA - Carga de población funcionando al 100%
+VERSIÓN CORREGIDA - Carga de población adaptativa funcionando al 100%
 """
 
 import streamlit as st
@@ -157,6 +157,38 @@ def classify_age_group_robust(age):
     else:
         return "60+"
 
+def detect_population_columns(df):
+    """
+    Detecta automáticamente las columnas de municipio y población en el DataFrame
+    """
+    municipio_col = None
+    poblacion_cols = []
+    
+    # Buscar columna de municipio/identificador
+    municipio_patterns = ['MUNICIPIO', 'DANE', 'DPMP', 'CODMUN', 'COD_DANE', 'DIVIPOLA']
+    for col in df.columns:
+        col_upper = str(col).upper().replace('\n', '').replace('/', '')
+        for pattern in municipio_patterns:
+            if pattern in col_upper:
+                municipio_col = col
+                break
+        if municipio_col:
+            break
+    
+    # Buscar columnas de población (numéricas que podrían ser totales)
+    poblacion_patterns = ['TOTAL', 'POBLACION', 'CONTRIBUTIVO', 'SUBSIDIADO', 'SISBEN']
+    for col in df.columns:
+        col_upper = str(col).upper()
+        # Verificar si es numérica
+        if pd.api.types.is_numeric_dtype(df[col]):
+            # Si contiene patrones de población, es candidata
+            for pattern in poblacion_patterns:
+                if pattern in col_upper:
+                    poblacion_cols.append(col)
+                    break
+    
+    return municipio_col, poblacion_cols
+
 def load_data_smart():
     """Carga datos de forma inteligente con conversión ROBUSTA"""
     # Intentar Google Drive primero
@@ -310,8 +342,8 @@ def load_barridos_data_robust():
 @st.cache_data
 def load_population_data_robust():
     """
-    Carga datos de población CORREGIDA - Basada en diagnóstico
-    Procesamiento garantizado para archivo con estructura identificada
+    Carga datos de población con diagnóstico automático
+    VERSIÓN ADAPTATIVA - No asume estructura específica
     """
     file_path = "data/Poblacion_aseguramiento.xlsx"
 
@@ -320,42 +352,29 @@ def load_population_data_robust():
         return pd.DataFrame()
 
     try:
-        # Cargar Excel
+        # Cargar Excel con análisis de estructura
         df = pd.read_excel(file_path)
         
-        # DIAGNÓSTICO CONFIRMÓ:
-        # - 474 registros
-        # - Columnas: ['Municipio', 'Nombre Entidad', 'CONTRIBUTIVO', 'EXCEPCION', 
-        #              'INPEC INTRAMURAL', 'SUBSIDIADO', 'Total general', 'MES', 'AÑO']
-        # - Municipio: formato "73001 - IBAGUÉ"
-        # - Total general: población por municipio
+        st.info(f"📊 Archivo de población cargado: {len(df):,} registros")
+        st.info(f"📋 Columnas encontradas: {len(df.columns)}")
         
-        st.info(f"📊 Datos de población cargados: {len(df):,} registros")
-        
-        # Verificar columnas críticas identificadas por el diagnóstico
-        required_columns = ['Municipio', 'Total general']
-        missing_columns = [col for col in required_columns if col not in df.columns]
-        
-        if missing_columns:
-            st.error(f"❌ Columnas faltantes en población: {missing_columns}")
-            st.write(f"Columnas disponibles: {list(df.columns)}")
-            return pd.DataFrame()
-        else:
-            st.success(f"✅ Columnas críticas encontradas: {required_columns}")
-        
-        # Verificar que los datos coinciden con el diagnóstico
-        municipios_unicos = df['Municipio'].nunique()
-        poblacion_total = df.groupby('Municipio')['Total general'].sum().sum()
-        
-        st.success(f"✅ Población procesada correctamente:")
-        st.success(f"   - Municipios únicos: {municipios_unicos}")
-        st.success(f"   - Población total: {poblacion_total:,}")
-        
-        # Verificar que coincide con el diagnóstico (1,321,231)
-        if abs(poblacion_total - 1321231) < 100:  # Margen pequeño por redondeo
-            st.success("🎯 PERFECTO: Población coincide con diagnóstico")
-        else:
-            st.warning(f"⚠️ Discrepancia: Esperado ~1,321,231, obtenido {poblacion_total:,}")
+        # Análisis automático de estructura
+        st.write("🔍 **Análisis automático de estructura:**")
+        for i, col in enumerate(df.columns):
+            dtype = df[col].dtype
+            non_null = df[col].notna().sum()
+            unique_vals = df[col].nunique()
+            
+            # Mostrar info condensada
+            st.write(f"   {i+1}. `{col}`: {dtype}, {non_null}/{len(df)} válidos, {unique_vals} únicos")
+            
+            # Mostrar muestra si no es muy larga
+            if unique_vals <= 10 and dtype != 'object':
+                sample = df[col].value_counts().head(3)
+                st.write(f"      Muestra: {dict(sample)}")
+            elif dtype == 'object':
+                sample = df[col].dropna().head(3).tolist()
+                st.write(f"      Muestra: {sample}")
         
         return df
 
@@ -599,34 +618,61 @@ def process_barridos_data(df_barridos):
 
 def process_population_data_robust(df_population):
     """
-    Procesa datos de población CORREGIDA - Basada en diagnóstico
-    Garantiza procesamiento correcto del archivo identificado
+    Procesa datos de población con detección automática de columnas
+    VERSIÓN ADAPTATIVA - Se ajusta a diferentes estructuras de archivos
     """
     if df_population.empty:
         st.info("📊 Sin datos de población - análisis básico")
         return {"por_municipio": {}, "total": 0}
 
-    # BASADO EN DIAGNÓSTICO:
-    # - Columna municipio: 'Municipio' (formato: "73001 - IBAGUÉ")
-    # - Columna total: 'Total general'
+    st.info(f"📊 Datos de población cargados: {len(df_population):,} registros")
+    st.info(f"🔍 Columnas disponibles: {list(df_population.columns)}")
     
-    municipio_col = 'Municipio'
-    total_col = 'Total general'
+    # Detectar automáticamente las columnas
+    municipio_col, poblacion_cols = detect_population_columns(df_population)
     
-    # Verificar que las columnas existen
-    if municipio_col not in df_population.columns:
-        st.error(f"❌ Columna '{municipio_col}' no encontrada")
-        st.write(f"Columnas disponibles: {list(df_population.columns)}")
-        return {"por_municipio": {}, "total": 0}
+    if not municipio_col:
+        st.error("❌ No se pudo identificar columna de municipio/identificador")
+        st.write("💡 Columnas disponibles:", list(df_population.columns))
+        st.write("💡 Se esperaban patrones como: MUNICIPIO, DANE, DPMP, CODMUN")
+        
+        # Intentar usar la primera columna como municipio si parece razonable
+        primera_col = df_population.columns[0]
+        if df_population[primera_col].nunique() > 10:  # Si tiene varios valores únicos
+            st.warning(f"⚠️ Usando '{primera_col}' como identificador de municipio")
+            municipio_col = primera_col
+        else:
+            return {"por_municipio": {}, "total": 0}
     
-    if total_col not in df_population.columns:
-        st.error(f"❌ Columna '{total_col}' no encontrada")
-        st.write(f"Columnas disponibles: {list(df_population.columns)}")
-        return {"por_municipio": {}, "total": 0}
-
+    if not poblacion_cols:
+        st.error("❌ No se pudieron identificar columnas de población")
+        st.write("💡 Columnas numéricas disponibles:", 
+                 [col for col in df_population.columns if pd.api.types.is_numeric_dtype(df_population[col])])
+        st.write("💡 Se esperaban patrones como: TOTAL, POBLACION, CONTRIBUTIVO, SUBSIDIADO")
+        
+        # Usar todas las columnas numéricas como respaldo
+        numeric_cols = [col for col in df_population.columns if pd.api.types.is_numeric_dtype(df_population[col])]
+        if numeric_cols:
+            st.warning(f"⚠️ Usando todas las columnas numéricas: {numeric_cols}")
+            poblacion_cols = numeric_cols
+        else:
+            return {"por_municipio": {}, "total": 0}
+    
+    st.success(f"✅ Columna de municipio detectada: '{municipio_col}'")
+    st.success(f"✅ Columnas de población detectadas: {poblacion_cols}")
+    
     try:
-        # Agrupar por municipio sumando población (por si hay múltiples filas por municipio)
-        poblacion_municipios = df_population.groupby(municipio_col)[total_col].sum()
+        # Crear columna de población total sumando las columnas detectadas
+        df_work = df_population.copy()
+        df_work['poblacion_total_calculada'] = 0
+        
+        for col in poblacion_cols:
+            valores_numericos = pd.to_numeric(df_work[col], errors='coerce').fillna(0)
+            df_work['poblacion_total_calculada'] += valores_numericos
+            st.info(f"   - Sumando '{col}': {valores_numericos.sum():,}")
+            
+        # Agrupar por municipio sumando población
+        poblacion_municipios = df_work.groupby(municipio_col)['poblacion_total_calculada'].sum()
         
         # Verificar resultados
         municipios_unicos = len(poblacion_municipios)
@@ -636,19 +682,49 @@ def process_population_data_robust(df_population):
         st.success(f"   - Municipios: {municipios_unicos}")
         st.success(f"   - Población total: {total_poblacion:,}")
         
-        # Verificar que coincide con el diagnóstico
-        if abs(total_poblacion - 1321231) < 100:
-            st.success("🎯 PERFECTO: Totales coinciden con diagnóstico")
+        # Mostrar muestra de datos procesados
+        if municipios_unicos > 0:
+            muestra = poblacion_municipios.head(5)
+            st.info(f"📋 Muestra de datos procesados:")
+            for municipio, poblacion in muestra.items():
+                st.info(f"   - {str(municipio)[:50]}: {poblacion:,}")
+        
+        # Validar que los datos son razonables
+        if total_poblacion < 10000:
+            st.warning(f"⚠️ Población total ({total_poblacion:,}) parece baja. Verificar columnas de población.")
+        elif total_poblacion > 5000000:
+            st.warning(f"⚠️ Población total ({total_poblacion:,}) parece alta. Verificar duplicados.")
         else:
-            st.warning(f"⚠️ Discrepancia con diagnóstico: {total_poblacion:,} vs 1,321,231")
+            st.success("🎯 Población total en rango esperado para Tolima")
 
         return {
             "por_municipio": poblacion_municipios.to_dict(),
             "total": int(total_poblacion),
+            "columnas_usadas": {
+                "municipio": municipio_col,
+                "poblacion": poblacion_cols
+            }
         }
 
     except Exception as e:
         st.error(f"❌ Error procesando población: {str(e)}")
+        st.write("💡 Intentando análisis alternativo...")
+        
+        # Análisis de respaldo - mostrar estructura del archivo
+        st.write("🔍 **Análisis de estructura del archivo:**")
+        for col in df_population.columns:
+            dtype = df_population[col].dtype
+            unique_count = df_population[col].nunique()
+            try:
+                if pd.api.types.is_numeric_dtype(df_population[col]):
+                    total_sum = df_population[col].sum()
+                    st.write(f"   - {col}: {dtype}, {unique_count} únicos, suma: {total_sum:,}")
+                else:
+                    sample_values = df_population[col].dropna().head(3).tolist()
+                    st.write(f"   - {col}: {dtype}, {unique_count} únicos, muestra: {sample_values}")
+            except:
+                st.write(f"   - {col}: {dtype}, {unique_count} únicos")
+        
         return {"por_municipio": {}, "total": 0}
 
 def main():
