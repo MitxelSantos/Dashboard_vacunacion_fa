@@ -497,3 +497,4 @@ if __name__ == "__main__":
     print("\nNuevas funciones:")
     for item in migration["new_features"]:
         print(f"  ✅ {item}")
+

@@ -352,18 +352,18 @@ def show_territorial_comparison(combined_data, COLORS):
 
     # Información sobre renuentes si disponible
     renuentes_municipios = combined_data["barridos"]["renuentes"]["por_municipio"]
-
+    
     if renuentes_municipios:
         st.markdown("**🚫 Análisis de Renuentes por Municipio:**")
-
+        
         df_renuentes = pd.DataFrame(
             list(renuentes_municipios.items()), columns=["Municipio", "Renuentes"]
         )
         df_renuentes = df_renuentes.sort_values("Renuentes", ascending=False).head(10)
-
+        
         if not df_renuentes.empty:
             col1, col2 = st.columns(2)
-
+            
             with col1:
                 fig_renuentes = px.bar(
                     df_renuentes,

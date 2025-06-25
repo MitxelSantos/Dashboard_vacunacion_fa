@@ -49,15 +49,14 @@ RANGOS_EDAD = {
     "60+": "60 años y más",
 }
 
-
 def setup_sidebar():
     """Configura la barra lateral con información institucional"""
     with st.sidebar:
-        # Logo institucional
-        logo_path = "assets/images/logo_tolima.png"
-
+        # Logo institucional - cargar archivo real
+        logo_path = "assets/images/logo_tolima.png"  # Ajusta la ruta según tu estructura
+        
         if os.path.exists(logo_path):
-            st.image(logo_path, width=150, caption="")
+            st.image(logo_path, width=150, caption="Gobernación del Tolima")
         else:
             # Fallback si no existe el logo
             st.markdown(
@@ -81,14 +80,13 @@ def setup_sidebar():
         st.markdown("### 💉 Dashboard Vacunación - Fiebre Amarilla")
 
         st.markdown("---")
-
+        
         # Información del desarrollador
         st.markdown("#### 👨‍💻 **Desarrollado por:**")
         st.markdown("**Ing. José Miguel Santos**")
         st.markdown("*Secretaría de Salud del Tolima*")
-
+        
         st.markdown("---")
-
         # Copyright
         st.markdown(
             """
@@ -98,9 +96,8 @@ def setup_sidebar():
                 © 2025 - Todos los derechos reservados</small>
             </div>
             """,
-            unsafe_allow_html=True,
+            unsafe_allow_html=True
         )
-
 
 def calculate_current_age(fecha_nacimiento):
     """Calcula la edad ACTUAL desde fecha de nacimiento"""
@@ -124,7 +121,6 @@ def classify_age_group(edad):
     """Clasifica edad en rango correspondiente"""
     if pd.isna(edad) or edad is None:
         return None
-
     if edad < 1:
         return "<1"
     elif 1 <= edad <= 5:
@@ -439,7 +435,7 @@ def main():
     """Función principal del dashboard"""
     # Configurar barra lateral mejorada
     setup_sidebar()
-
+    
     # Título principal
     st.title("🏥 Dashboard de Vacunación Fiebre Amarilla")
     st.markdown("**Departamento del Tolima - Combinación Temporal Sin Duplicados**")
@@ -459,7 +455,6 @@ def main():
 
     # Determinar fecha de corte
     fecha_corte = determine_cutoff_date(df_barridos)
-
     if fecha_corte:
         st.success(
             f"📅 **Fecha de corte (inicio emergencia):** {fecha_corte.strftime('%d/%m/%Y')}"
