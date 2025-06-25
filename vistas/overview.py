@@ -1,12 +1,64 @@
 """
 vistas/overview.py - Vista de resumen con lógica temporal
-Enfocada en combinación sin duplicados
+VERSIÓN CORREGIDA - Con normalización de municipios
 """
 
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import unicodedata
+import re
+
+
+def normalize_municipality_name(name):
+    """
+    Normaliza nombres de municipios para hacer matching
+    - Extrae nombre del formato 'CÓDIGO - NOMBRE'
+    - Elimina acentos y caracteres especiales
+    - Convierte a mayúsculas
+    """
+    if pd.isna(name):
+        return None
+
+    name_str = str(name).strip()
+
+    # Si tiene formato 'CÓDIGO - NOMBRE', extraer solo el nombre
+    if " - " in name_str:
+        name_str = name_str.split(" - ", 1)[1]
+
+    # Eliminar acentos y normalizar
+    normalized = unicodedata.normalize("NFD", name_str)
+    normalized = "".join(c for c in normalized if unicodedata.category(c) != "Mn")
+
+    # Limpiar y convertir a mayúsculas
+    normalized = re.sub(r"[^\w\s]", "", normalized)
+    normalized = normalized.upper().strip()
+
+    return normalized
+
+
+def create_municipality_mapping(population_dict, vaccination_dict):
+    """
+    Crea mapeo entre nombres de municipios de población y vacunación
+    """
+    mapping = {}
+
+    # Normalizar nombres de población
+    pop_normalized = {}
+    for pop_name in population_dict.keys():
+        norm_name = normalize_municipality_name(pop_name)
+        if norm_name:
+            pop_normalized[norm_name] = pop_name
+
+    # Normalizar nombres de vacunación y crear mapping
+    for vac_name in vaccination_dict.keys():
+        norm_name = normalize_municipality_name(vac_name)
+        if norm_name and norm_name in pop_normalized:
+            pop_original = pop_normalized[norm_name]
+            mapping[pop_original] = vac_name
+
+    return mapping
 
 
 def show_overview_tab(combined_data, COLORS, RANGOS_EDAD):
@@ -22,7 +74,7 @@ def show_overview_tab(combined_data, COLORS, RANGOS_EDAD):
     # Análisis de períodos
     show_periods_analysis(combined_data, COLORS)
 
-    # Análisis territorial si hay población
+    # Análisis territorial si hay población (CORREGIDO)
     if combined_data["population"]["por_municipio"]:
         show_territorial_summary_combined(combined_data, COLORS)
 
@@ -315,7 +367,7 @@ def show_periods_analysis(combined_data, COLORS):
 
 
 def show_territorial_summary_combined(combined_data, COLORS):
-    """Muestra resumen territorial con datos combinados"""
+    """Muestra resumen territorial con datos combinados - VERSIÓN CORREGIDA"""
     st.subheader("🗺️ Resumen Territorial (Datos Combinados)")
 
     total_poblacion = combined_data["population"]["total"]
@@ -344,34 +396,91 @@ def show_territorial_summary_combined(combined_data, COLORS):
     with col4:
         st.metric("Faltante para Meta", f"{faltante_meta:,.0f}")
 
-    # Análisis de municipios
-    municipios_con_datos = len(combined_data["population"]["por_municipio"])
+    # Análisis de municipios CON NORMALIZACIÓN
+    population_by_mun = combined_data["population"]["por_municipio"]
+    individual_by_mun = combined_data["individual_pre"]["por_municipio"]
+    barridos_by_mun = combined_data["barridos"]["vacunados_barrido"]["por_municipio"]
 
-    st.markdown(
-        f"**📊 Análisis de {municipios_con_datos} municipios con población asegurada registrada**"
+    # Crear mappings de nombres normalizados
+    individual_mapping = create_municipality_mapping(
+        population_by_mun, individual_by_mun
+    )
+    barridos_mapping = create_municipality_mapping(population_by_mun, barridos_by_mun)
+
+    municipios_con_datos = len(population_by_mun)
+    municipios_conectados = len(
+        set(individual_mapping.keys()) | set(barridos_mapping.keys())
     )
 
-    # Mostrar concentración poblacional
-    poblacion_municipios = combined_data["population"]["por_municipio"]
-    top_5_poblacion = sorted(
-        poblacion_municipios.items(), key=lambda x: x[1], reverse=True
-    )[:5]
+    st.markdown(
+        f"**📊 Análisis de {municipios_con_datos} municipios** "
+        f"({municipios_conectados} con datos de vacunación)"
+    )
 
-    if top_5_poblacion:
+    # Calcular top 5 municipios CON COBERTURA REAL
+    top_5_data = []
+
+    for municipio_pob, poblacion in list(population_by_mun.items())[
+        :10
+    ]:  # Revisar top 10 por población
+        # Obtener nombres correspondientes usando mapping
+        municipio_individual = individual_mapping.get(municipio_pob)
+        municipio_barridos = barridos_mapping.get(municipio_pob)
+
+        # Calcular vacunados combinados del municipio
+        individual_count = (
+            individual_by_mun.get(municipio_individual, 0)
+            if municipio_individual
+            else 0
+        )
+        barridos_count = (
+            barridos_by_mun.get(municipio_barridos, 0) if municipio_barridos else 0
+        )
+
+        # Manejar valores numpy
+        if hasattr(barridos_count, "item"):
+            barridos_count = int(barridos_count.item())
+
+        total_mun = individual_count + barridos_count
+        cobertura_mun = (total_mun / poblacion) * 100 if poblacion > 0 else 0
+
+        # Extraer nombre limpio para mostrar
+        nombre_display = (
+            municipio_pob.split(" - ")[1] if " - " in municipio_pob else municipio_pob
+        )
+
+        top_5_data.append(
+            {
+                "nombre": nombre_display,
+                "poblacion": poblacion,
+                "vacunados": total_mun,
+                "cobertura": cobertura_mun,
+                "pct_poblacion": (poblacion / total_poblacion) * 100,
+            }
+        )
+
+    # Ordenar por población y tomar top 5
+    top_5_data = sorted(top_5_data, key=lambda x: x["poblacion"], reverse=True)[:5]
+
+    if top_5_data:
         st.markdown("**🏘️ Top 5 Municipios por Población Asegurada:**")
-        for i, (municipio, poblacion) in enumerate(top_5_poblacion, 1):
-            pct_total = (poblacion / total_poblacion) * 100
-
-            # Calcular vacunados combinados del municipio
-            individual_mun = combined_data["individual_pre"]["por_municipio"].get(
-                municipio, 0
-            )
-            barridos_mun = combined_data["barridos"]["vacunados_barrido"][
-                "por_municipio"
-            ].get(municipio, 0)
-            total_mun = individual_mun + barridos_mun
-            cobertura_mun = (total_mun / poblacion) * 100 if poblacion > 0 else 0
-
+        for i, data in enumerate(top_5_data, 1):
             st.write(
-                f"{i}. **{municipio}**: {poblacion:,} hab. ({pct_total:.1f}%) - Cobertura: {cobertura_mun:.1f}%"
+                f"{i}. **{data['nombre']}**: {data['poblacion']:,} hab. "
+                f"({data['pct_poblacion']:.1f}%) - "
+                f"Vacunados: {data['vacunados']:,} - "
+                f"**Cobertura: {data['cobertura']:.1f}%**"
             )
+
+        # Mostrar insight sobre normalización
+        municipios_con_cobertura = len([d for d in top_5_data if d["vacunados"] > 0])
+        if municipios_con_cobertura > 0:
+            st.success(
+                f"✅ **Normalización exitosa:** {municipios_con_cobertura}/5 municipios principales con datos"
+            )
+        else:
+            st.warning(
+                "⚠️ **Problema de normalización:** Los municipios principales no tienen datos conectados"
+            )
+    else:
+        st.warning("⚠️ No se pudieron calcular datos territoriales")
