@@ -1,6 +1,6 @@
 """
 app.py - Dashboard de Vacunación Fiebre Amarilla - Tolima
-VERSIÓN CORREGIDA - Fix para TypeError en comparación de fechas
+VERSIÓN DIAGNÓSTICO DETALLADO - Para identificar problemas de edad y fechas
 """
 
 import streamlit as st
@@ -52,13 +52,12 @@ RANGOS_EDAD = {
     "60+": "60 años y más",
 }
 
-
 def setup_sidebar():
     """Configura la barra lateral con información institucional"""
     with st.sidebar:
         # Logo institucional - cargar archivo real
         logo_path = "assets/images/logo_tolima.png"
-
+        
         if os.path.exists(logo_path):
             st.image(logo_path, width=150, caption="Gobernación del Tolima")
         else:
@@ -80,12 +79,12 @@ def setup_sidebar():
         # Título del dashboard
         st.markdown("### 💉 Dashboard Vacunación - Fiebre Amarilla")
         st.markdown("---")
-
+        
         # Información del desarrollador
         st.markdown("#### 👨‍💻 **Desarrollado por:**")
         st.markdown("**Ing. José Miguel Santos**")
         st.markdown("*Secretaría de Salud del Tolima*")
-
+        
         st.markdown("---")
         # Copyright
         st.markdown(
@@ -96,12 +95,53 @@ def setup_sidebar():
                 © 2025 - Todos los derechos reservados</small>
             </div>
             """,
-            unsafe_allow_html=True,
+            unsafe_allow_html=True
         )
 
+def diagnose_date_column(df, column_name, sample_size=10):
+    """Diagnostica una columna de fechas"""
+    st.write(f"**🔍 DIAGNÓSTICO COLUMNA: {column_name}**")
+    
+    if column_name not in df.columns:
+        st.error(f"❌ Columna '{column_name}' NO EXISTE")
+        st.write(f"Columnas disponibles: {list(df.columns)}")
+        return False
+    
+    col_data = df[column_name]
+    
+    # Estadísticas básicas
+    st.write(f"- Total registros: {len(col_data):,}")
+    st.write(f"- Valores nulos: {col_data.isnull().sum():,}")
+    st.write(f"- Valores únicos: {col_data.nunique():,}")
+    st.write(f"- Tipo de datos: {col_data.dtype}")
+    
+    # Muestra de datos
+    non_null_sample = col_data.dropna().head(sample_size)
+    st.write(f"**Muestra de datos ({len(non_null_sample)} registros):**")
+    for i, valor in enumerate(non_null_sample, 1):
+        st.write(f"  {i}. `{valor}` (tipo: {type(valor).__name__})")
+    
+    # Intentar conversión a datetime
+    st.write("**🔄 Prueba de conversión a datetime:**")
+    try:
+        converted = pd.to_datetime(col_data, errors='coerce')
+        valid_dates = converted.dropna()
+        
+        st.write(f"- ✅ Conversión exitosa")
+        st.write(f"- Fechas válidas: {len(valid_dates):,}")
+        st.write(f"- Fechas inválidas: {len(converted) - len(valid_dates):,}")
+        
+        if len(valid_dates) > 0:
+            st.write(f"- Fecha mínima: {valid_dates.min()}")
+            st.write(f"- Fecha máxima: {valid_dates.max()}")
+            
+        return True
+    except Exception as e:
+        st.error(f"❌ Error en conversión: {str(e)}")
+        return False
 
-def calculate_current_age(fecha_nacimiento):
-    """Calcula la edad ACTUAL desde fecha de nacimiento"""
+def calculate_current_age_debug(fecha_nacimiento):
+    """Calcula la edad ACTUAL desde fecha de nacimiento con diagnóstico"""
     if pd.isna(fecha_nacimiento):
         return None, "Fecha nula"
 
@@ -140,22 +180,17 @@ def classify_age_group_debug(edad):
     elif 51 <= edad <= 59:
         return "51-59", f"Edad {edad} → 51-59"
     else:
-        return "60+"
-
+        return "60+", f"Edad {edad} → 60+"
 
 def load_data_smart():
-    """
-    Carga datos de forma inteligente:
-    - Primero intenta Google Drive (para Streamlit Cloud)
-    - Si falla, intenta archivos locales (para desarrollo local)
-    """
+    """Carga datos de forma inteligente con diagnóstico"""
     # Intentar Google Drive primero
     try:
         available, message = check_drive_availability()
         if available:
             st.info("🔄 Cargando datos desde Google Drive...")
             results = load_from_drive("all")
-
+            
             if results["status"]["vacunacion"] and results["status"]["barridos"]:
                 st.success("✅ Datos cargados exitosamente desde Google Drive")
                 return results["vacunacion"], results["barridos"], results["poblacion"]
@@ -170,20 +205,18 @@ def load_data_smart():
     # Fallback a archivos locales
     return load_local_data()
 
-
 def load_local_data():
     """Carga datos desde archivos locales (desarrollo)"""
     # Cargar vacunación individual
     df_individual = load_individual_data_local()
-
+    
     # Cargar barridos
     df_barridos = load_barridos_data_local()
-
+    
     # Cargar población
     df_population = load_population_data_local()
-
+    
     return df_individual, df_barridos, df_population
-
 
 @st.cache_data
 def load_individual_data_local():
@@ -198,7 +231,22 @@ def load_individual_data_local():
     try:
         df = pd.read_csv(file_path, low_memory=False, encoding="utf-8")
 
-        # Procesar fechas con manejo robusto
+        # DIAGNÓSTICO DETALLADO DE FECHAS
+        st.markdown("### 🔍 **DIAGNÓSTICO DETALLADO DE DATOS INDIVIDUALES**")
+        
+        with st.expander("Ver diagnóstico completo de fechas", expanded=True):
+            st.write(f"**📊 Información general del CSV:**")
+            st.write(f"- Total filas: {len(df):,}")
+            st.write(f"- Total columnas: {len(df.columns)}")
+            st.write(f"- Columnas: {list(df.columns)}")
+            
+            # Diagnosticar FechaNacimiento
+            diagnose_date_column(df, "FechaNacimiento")
+            
+            # Diagnosticar FA UNICA
+            diagnose_date_column(df, "FA UNICA")
+
+        # Procesar fechas con manejo robusto y diagnóstico
         if "FechaNacimiento" in df.columns:
             st.write("🔄 **Procesando FechaNacimiento...**")
             df["FechaNacimiento"] = pd.to_datetime(df["FechaNacimiento"], errors="coerce")
@@ -332,127 +380,29 @@ def determine_cutoff_date(df_barridos):
 
     return fecha_corte
 
-
-def safe_date_comparison(date_series, cutoff_date):
-    """
-    Realiza comparación de fechas de forma segura
-
-    Args:
-        date_series: Serie de pandas con fechas
-        cutoff_date: Fecha de corte
-
-    Returns:
-        Serie booleana con el resultado de la comparación
-    """
-    try:
-        # Asegurar que ambas fechas están en el mismo formato
-        if cutoff_date is None:
-            return pd.Series([False] * len(date_series))
-
-        # Convertir fecha de corte a timestamp si es necesario
-        if isinstance(cutoff_date, datetime):
-            cutoff_timestamp = pd.Timestamp(cutoff_date)
-        elif isinstance(cutoff_date, pd.Timestamp):
-            cutoff_timestamp = cutoff_date
-        else:
-            cutoff_timestamp = pd.Timestamp(cutoff_date)
-
-        # Limpiar la serie de fechas - eliminar NaN y convertir a datetime
-        clean_series = pd.to_datetime(date_series, errors="coerce")
-
-        # Crear máscara booleana con manejo de NaN
-        mask = clean_series < cutoff_timestamp
-
-        # Reemplazar NaN por False
-        mask = mask.fillna(False)
-
-        return mask
-
-    except Exception as e:
-        st.error(f"Error en comparación de fechas: {str(e)}")
-        # Retornar máscara vacía en caso de error
-        return pd.Series([False] * len(date_series))
-
-
-def detect_barridos_columns(df):
-    """Detecta columnas de vacunados en barrido (TPVB) y renuentes (TPNVP)"""
-
-    # Patrones para rangos de edad
-    age_patterns = {
-        "<1": ["< 1", "<1", "MENOR 1", "LACTANTE"],
-        "1-5": ["1-5", "1 A 5", "PREESCOLAR"],
-        "6-10": ["6-10", "6 A 10", "ESCOLAR"],
-        "11-20": ["11-20", "11 A 20", "ADOLESCENTE"],
-        "21-30": ["21-30", "21 A 30"],
-        "31-40": ["31-40", "31 A 40"],
-        "41-50": ["41-50", "41 A 50"],
-        "51-59": ["51-59", "51 A 59"],
-        "60+": ["60+", "60 Y MAS", "MAYOR 60"],
-        "60-69": ["60-69", "60 A 69"],
-        "70+": ["70+", "70 Y MAS", "MAYOR 70"],
-    }
-
-    result = {
-        "vacunados_barrido": {},  # TPVB: vacunados durante el barrido
-        "renuentes": {},  # TPNVP: renuentes/no vacunados
-        "consolidation_needed": [],
-    }
-
-    # Detectar columnas por sección
-    for age_range, patterns in age_patterns.items():
-        found_cols = []
-
-        for col in df.columns:
-            col_str = str(col).upper().strip()
-            if any(pattern in col_str for pattern in patterns):
-                # Evitar conflictos
-                if age_range == "1-5" and any(
-                    conflict in col_str for conflict in ["41-50", "51-59"]
-                ):
-                    continue
-                if age_range == "60+" and any(
-                    conflict in col_str for conflict in ["60-69"]
-                ):
-                    continue
-
-                found_cols.append(col)
-
-        if found_cols:
-            # 4ta sección = TPVB (vacunados en barrido)
-            if len(found_cols) >= 4:
-                result["vacunados_barrido"][age_range] = found_cols[3]
-            # 3ra sección = TPNVP (renuentes)
-            if len(found_cols) >= 3:
-                result["renuentes"][age_range] = found_cols[2]
-
-            # Marcar para consolidación si es 60+ adicional
-            if age_range in ["60-69", "70+"]:
-                result["consolidation_needed"].extend(found_cols)
-
-    return result
-
-
-def process_individual_pre_barridos(df_individual, fecha_corte):
-    """Procesa datos individuales PRE-barridos (sin duplicados) - VERSIÓN CORREGIDA"""
+def process_individual_pre_barridos_debug(df_individual, fecha_corte):
+    """Procesa datos individuales PRE-barridos con DIAGNÓSTICO DETALLADO"""
+    st.markdown("### 🔍 **DIAGNÓSTICO PROCESAMIENTO DE EDADES**")
+    
     if df_individual.empty:
         st.error("❌ DataFrame individual está vacío")
         return {"total": 0, "por_edad": {}, "por_municipio": {}}
 
-    # Filtrar solo vacunas ANTES del primer barrido usando comparación segura
-    if fecha_corte and "FA UNICA" in df_individual.columns:
-        # Usar función de comparación segura
-        mask_pre = safe_date_comparison(df_individual["FA UNICA"], fecha_corte)
-        df_pre = df_individual[mask_pre].copy()
-
-        fecha_corte_str = (
-            fecha_corte.strftime("%d/%m/%Y")
-            if hasattr(fecha_corte, "strftime")
-            else str(fecha_corte)
-        )
-        st.info(f"📅 Usando vacunas individuales antes de {fecha_corte_str}")
-    else:
-        df_pre = df_individual.copy()
-        st.warning("⚠️ No hay fecha de corte - usando todos los datos individuales")
+    with st.expander("Ver diagnóstico detallado de procesamiento", expanded=True):
+        st.write(f"**📊 Datos iniciales:**")
+        st.write(f"- Total registros: {len(df_individual):,}")
+        
+        # Filtrar solo vacunas ANTES del primer barrido usando comparación segura
+        if fecha_corte and "FA UNICA" in df_individual.columns:
+            mask_pre = safe_date_comparison(df_individual["FA UNICA"], fecha_corte)
+            df_pre = df_individual[mask_pre].copy()
+            
+            fecha_corte_str = fecha_corte.strftime('%d/%m/%Y') if hasattr(fecha_corte, 'strftime') else str(fecha_corte)
+            st.write(f"- Fecha de corte: {fecha_corte_str}")
+            st.write(f"- Registros PRE-emergencia: {len(df_pre):,}")
+        else:
+            df_pre = df_individual.copy()
+            st.write("- Sin fecha de corte, usando todos los datos")
 
         result = {"total": len(df_pre), "por_edad": {}, "por_municipio": {}}
 
@@ -535,7 +485,7 @@ def main():
     """Función principal del dashboard con diagnóstico"""
     # Configurar barra lateral mejorada
     setup_sidebar()
-
+    
     # Título principal
     st.title("🏥 Dashboard de Vacunación Fiebre Amarilla - DIAGNÓSTICO")
     st.markdown("**Versión de diagnóstico para identificar problemas**")
@@ -553,37 +503,13 @@ def main():
     # Verificar datos mínimos
     if df_individual.empty and df_barridos.empty:
         st.error("❌ Sin datos suficientes para mostrar el dashboard")
-        st.markdown(
-            """
-        ### 🔧 **Soluciones:**
-        
-        **Para Streamlit Cloud:**
-        1. Ve a Settings > Secrets en tu app
-        2. Configura tus IDs de Google Drive:
-        ```toml
-        [google_drive]
-        vacunacion_csv = "TU_ID_AQUI"
-        resumen_barridos_xlsx = "TU_ID_AQUI"
-        poblacion_xlsx = "TU_ID_AQUI"  # Opcional
-        ```
-        
-        **Para desarrollo local:**
-        - Coloca los archivos en la carpeta `data/`
-        """
-        )
         return
 
     # Determinar fecha de corte
     fecha_corte = determine_cutoff_date(df_barridos)
     if fecha_corte:
-        fecha_corte_str = (
-            fecha_corte.strftime("%d/%m/%Y")
-            if hasattr(fecha_corte, "strftime")
-            else str(fecha_corte)
-        )
+        fecha_corte_str = fecha_corte.strftime('%d/%m/%Y') if hasattr(fecha_corte, 'strftime') else str(fecha_corte)
         st.success(f"📅 **Fecha de corte (inicio emergencia):** {fecha_corte_str}")
-        st.info(f"🏥 **Individuales PRE-emergencia:** Antes de {fecha_corte_str}")
-        st.info(f"🚨 **Barridos DURANTE emergencia:** Desde {fecha_corte_str}")
     else:
         st.warning("⚠️ No se pudo determinar fecha de corte")
 
@@ -592,75 +518,41 @@ def main():
 
     with st.spinner("Procesando..."):
         try:
-            # Datos PRE-emergencia (sin duplicados)
-            individual_data = process_individual_pre_barridos(
-                df_individual, fecha_corte
-            )
+            # Datos PRE-emergencia (sin duplicados) CON DIAGNÓSTICO
+            individual_data = process_individual_pre_barridos_debug(df_individual, fecha_corte)
 
-            # Datos DURANTE emergencia
-            barridos_data = process_barridos_data(df_barridos)
+            # MOSTRAR RESULTADOS DEL DIAGNÓSTICO
+            st.markdown("### 📋 **RESUMEN DE DIAGNÓSTICO**")
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.metric("Total PRE-emergencia", f"{individual_data['total']:,}")
+            
+            with col2:
+                total_con_edad = sum(individual_data['por_edad'].values())
+                st.metric("Con rangos de edad", f"{total_con_edad:,}")
+            
+            with col3:
+                municipios_unicos = len(individual_data['por_municipio'])
+                st.metric("Municipios únicos", f"{municipios_unicos}")
 
-            # Datos de población
-            population_data = process_population_data(df_population)
+            # Si hay problemas, mostrar información adicional
+            if total_con_edad == 0:
+                st.error("🚨 **PROBLEMA IDENTIFICADO: Sin rangos de edad calculados**")
+                st.markdown("""
+                **Posibles causas:**
+                1. Columna 'FechaNacimiento' no existe o tiene nombre diferente
+                2. Fechas de nacimiento en formato no reconocido
+                3. Todas las fechas son nulas/vacías
+                4. Error en función de cálculo de edad
+                """)
+
         except Exception as e:
             st.error(f"❌ Error procesando datos: {str(e)}")
+            st.write("**Detalles del error:**")
+            st.exception(e)
             return
-
-    # Preparar datos combinados (SIN DUPLICADOS)
-    combined_data = {
-        "individual_pre": individual_data,
-        "barridos": barridos_data,
-        "population": population_data,
-        "fecha_corte": fecha_corte,
-        # Totales combinados
-        "total_individual_pre": individual_data["total"],
-        "total_barridos": barridos_data["vacunados_barrido"]["total"],
-        "total_renuentes": barridos_data["renuentes"]["total"],
-        "total_real_combinado": individual_data["total"]
-        + barridos_data["vacunados_barrido"]["total"],
-    }
-
-    # Estado de carga con lógica temporal
-    col1, col2, col3, col4 = st.columns(4)
-
-    with col1:
-        st.metric(
-            "Individual PRE-emergencia", f"{combined_data['total_individual_pre']:,}"
-        )
-    with col2:
-        st.metric("Barridos DURANTE emergencia", f"{combined_data['total_barridos']:,}")
-    with col3:
-        st.metric("Renuentes", f"{combined_data['total_renuentes']:,}")
-    with col4:
-        st.metric(
-            "**TOTAL REAL (Sin duplicados)**",
-            f"{combined_data['total_real_combinado']:,}",
-        )
-
-    st.markdown("---")
-
-    # Tabs principales
-    try:
-        tab1, tab2, tab3, tab4 = st.tabs(
-            ["📊 Resumen", "📅 Temporal", "🗺️ Geográfico", "🏘️ Poblacional"]
-        )
-
-        with tab1:
-            show_overview_tab(combined_data, COLORS, RANGOS_EDAD)
-
-        with tab2:
-            show_temporal_tab(combined_data, df_individual, df_barridos, COLORS)
-
-        with tab3:
-            show_geographic_tab(combined_data, COLORS)
-
-        with tab4:
-            show_population_tab(combined_data, COLORS)
-
-    except Exception as e:
-        st.error(f"❌ Error mostrando pestañas: {str(e)}")
-        st.info("💡 Revisa que todas las vistas estén correctamente configuradas")
-
 
 if __name__ == "__main__":
     main()
